@@ -1,0 +1,4 @@
+numpy
+pyrap.tables
+pyfits
+git+ssh://git@github.com/ska-sa/katsdpsigproc
