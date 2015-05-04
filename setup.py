@@ -8,5 +8,5 @@ setup(
     author="Bruce Merry and Ludwig Schwardt",
     packages=find_packages(),
     scripts=["scripts/katsdpimager.py"],
-    install_requires=['numpy', 'katsdpsigproc', 'pyrap.tables', 'pyfits']
+    install_requires=['numpy', 'katsdpsigproc', 'python-casacore', 'pyfits']
 )

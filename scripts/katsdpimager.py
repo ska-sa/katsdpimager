@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 from __future__ import print_function, division
 import argparse
-import pyrap.tables
+import casacore.tables
 import pyfits
 import katsdpsigproc
 import katsdpimager

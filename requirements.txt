@@ -1,4 +1,4 @@
 numpy
-pyrap.tables
+python-casacore
 pyfits
 git+ssh://git@github.com/ska-sa/katsdpsigproc
