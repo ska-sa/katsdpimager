@@ -4,15 +4,22 @@ import argparse
 import casacore.tables
 import pyfits
 import katsdpsigproc
-import katsdpimager
+import katsdpimager.loader
+from contextlib import closing
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('input_file', type=str, metavar='INPUT', help='Input measurement set')
     parser.add_argument('output_file', type=str, metavar='OUTPUT', help='Output FITS file')
+    parser.add_argument('--channel', '-c', type=int, default=0, help='Channel number')
 
     args = parser.parse_args()
     print("Converting {} to {}".format(args.input_file, args.output_file))
+    with closing(katsdpimager.loader.load(args.input_file)) as dataset:
+        print(dataset.antenna_diameter())
+        print(dataset.longest_baseline())
+        for chunk in dataset.data_iter(args.channel, 65536):
+            print('Received {} rows'.format(len(chunk['vis'])))
 
 if __name__ == '__main__':
     main()
