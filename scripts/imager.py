@@ -19,7 +19,7 @@ def main():
         print(dataset.antenna_diameter())
         print(dataset.longest_baseline())
         for chunk in dataset.data_iter(args.channel, 65536):
-            print('Received {} rows'.format(len(chunk['vis'])))
+            print(chunk['vis'].shape, chunk['weights'].shape, chunk['uvw'].shape)
 
 if __name__ == '__main__':
     main()

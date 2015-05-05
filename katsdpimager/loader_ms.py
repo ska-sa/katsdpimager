@@ -26,7 +26,7 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         for start in xrange(0, self._main.nrows(), max_rows):
             end = min(self._main.nrows(), start + max_rows)
             valid = np.logical_not(self._main.getcol('FLAG_ROW', start, end - start))
-            data = self._main.getcol('DATA', start, end - start)[valid, ...]
+            data = self._main.getcol('DATA', start, end - start)[valid, channel, ...]
             uvw = self._main.getcol('UVW', start, end - start)[valid, ...]
             weight = self._main.getcol('WEIGHT', start, end - start)[valid, ...]
             flag = self._main.getcol('FLAG', start, end - start)[valid, ...]
