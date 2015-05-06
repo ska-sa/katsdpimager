@@ -2,7 +2,7 @@
 import numpy as np
 
 class LoaderBase(object):
-    def __init__(self, filename):
+    def __init__(self, filename, options):
         """Open the file"""
         self.filename = filename
 
