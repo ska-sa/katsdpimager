@@ -2,7 +2,7 @@
 from __future__ import print_function, division
 import argparse
 import casacore.tables
-import pyfits
+import astropy.io.fits
 import katsdpsigproc
 import katsdpimager.loader
 from contextlib import closing
