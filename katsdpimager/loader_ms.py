@@ -28,7 +28,10 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             valid = np.logical_not(self._main.getcol('FLAG_ROW', start, end - start))
             data = self._main.getcol('DATA', start, end - start)[valid, channel, ...]
             uvw = self._main.getcol('UVW', start, end - start)[valid, ...]
-            weight = self._main.getcol('WEIGHT', start, end - start)[valid, ...]
+            if 'WEIGHT_SPECTRUM' in self._main.colnames():
+                weight = self._main.getcol('WEIGHT_SPECTRUM', start, end - start)[valid, channel, ...]
+            else:
+                weight = self._main.getcol('WEIGHT', start, end - start)[valid, ...]
             flag = self._main.getcol('FLAG', start, end - start)[valid, ...]
             weight = weight * np.logical_not(flag[:, channel, :])
             yield dict(uvw=uvw, weights=weight, vis=data)
