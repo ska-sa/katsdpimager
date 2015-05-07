@@ -78,9 +78,9 @@ def main():
             print(chunk['vis'].shape, chunk['weights'].shape, chunk['uvw'].shape)
 
         array_p = dataset.array_parameters()
-        # TODO: get frequency from data
         image_p = parameters.ImageParameters(
-            args.q_fov, args.image_oversample, 0.21 * units.m, array_p,
+            args.q_fov, args.image_oversample,
+            dataset.frequency(args.channel), array_p,
             args.pixel_size, args.pixels)
         print(image_p)
         image = np.zeros((1024, 1024), dtype=np.float32)

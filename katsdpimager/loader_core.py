@@ -56,6 +56,17 @@ class LoaderBase(object):
         return parameters.ArrayParameters(
             self.antenna_diameter(), self.longest_baseline())
 
+    def frequency(self, channel):
+        """Return frequency for a given channel.
+
+        Returns
+        -------
+        Quantity
+            Frequency, in appropriate reference frame for transforming UVW
+            coordinates from distance to wavelength count.
+        """
+        raise NotImplementedError('Abstract base class')
+
     def phase_centre(self):
         """Return direction corresponding to l=0, m=0.
 
