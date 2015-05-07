@@ -54,7 +54,9 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             max_rows = self._main.nrows()
         for start in xrange(0, self._main.nrows(), max_rows):
             end = min(self._main.nrows(), start + max_rows)
-            valid = np.logical_not(self._main.getcol('FLAG_ROW', start, end - start))
+            flag_row = self._main.getcol('FLAG_ROW', start, end - start)
+            field_id = self._main.getcol('FIELD_ID', start, end - start)
+            valid = np.logical_and(np.logical_not(flag_row), field_id == self._field_id)
             data = self._main.getcol(self._data_col, start, end - start)[valid, channel, ...]
             uvw = self._main.getcol('UVW', start, end - start)[valid, ...]
             if 'WEIGHT_SPECTRUM' in self._main.colnames():
