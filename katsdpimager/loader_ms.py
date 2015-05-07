@@ -4,6 +4,7 @@ import katsdpimager.loader_core
 import casacore.tables
 import numpy as np
 import argparse
+import astropy.units as units
 
 class LoaderMS(katsdpimager.loader_core.LoaderBase):
     def __init__(self, filename, options):
@@ -29,10 +30,12 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         return filename.lower().endswith('.ms')
 
     def antenna_diameters(self):
-        return self._antenna.getcol('DISH_DIAMETER')
+        # TODO: process QuantumUnits
+        return self._antenna.getcol('DISH_DIAMETER') * units.m
 
     def antenna_positions(self):
-        return self._antenna.getcol('POSITION')
+        # TODO: process QuantumUnits
+        return self._antenna.getcol('POSITION') * units.m
 
     def phase_centre(self):
         keywords = self._field.getcolkeywords('PHASE_DIR')
@@ -47,7 +50,7 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         value = self._field.getcell('PHASE_DIR', self._field_id)
         if tuple(value.shape) != (1, 2):
             raise ValueError('Unsupported shape for PHASE_DIR: {}'.format(value.shape))
-        return value[0, :]
+        return value[0, :] * units.rad
 
     def data_iter(self, channel, max_rows=None):
         if max_rows is None:

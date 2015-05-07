@@ -1,5 +1,7 @@
 """Base classes used by loader modules"""
 import numpy as np
+import astropy.units as units
+from . import parameters
 
 class LoaderBase(object):
     def __init__(self, filename, options):
@@ -12,7 +14,7 @@ class LoaderBase(object):
         raise NotImplementedError('Abstract base class')
 
     def antenna_diameters(self):
-        """Effective diameters of the antennas, in metres."""
+        """Effective diameters of the antennas."""
         raise NotImplementedError('Abstract base class')
 
     def antenna_diameter(self):
@@ -29,24 +31,41 @@ class LoaderBase(object):
         return D
 
     def antenna_positions(self):
-        """Return a list antenna positions. Each is given as a 3-tuple of
-        (x, y, z), in metres. The coordinate system is arbitrary since it is
-        used only to compute baseline lengths."""
+        """Return the antenna positions. The coordinate system is arbitrary
+        since it is used only to compute baseline lengths.
+
+        Returns
+        -------
+        Quantity, shape (n, 3)
+            XYZ coordinates for each antenna.
+        """
         raise NotImplementedError('Abstract base class')
 
     def longest_baseline(self):
-        """Return the length of the longest baseline, in metres"""
+        """Return the length of the longest baseline."""
         positions = self.antenna_positions()
-        ans = 0.0
+        ans = 0.0 * units.m
         for i in range(len(positions)):
             for j in range(i):
-                baseline = np.array(positions[i]) - np.array(positions[j])
-                ans = max(ans, np.linalg.norm(baseline))
+                baseline = positions[i] - positions[j]
+                ans = max(ans, np.sqrt(baseline.dot(baseline)))
         return ans
 
+    def array_parameters(self):
+        """Return ArrayParameters object for the array used in the observation."""
+        return parameters.ArrayParameters(
+            self.antenna_diameter(), self.longest_baseline())
+
     def phase_centre(self):
-        """Return direction (RA and DEC in J2000, radians) corresponding to
-        l=0, m=0."""
+        """Return direction corresponding to l=0, m=0.
+
+        Returns
+        -------
+        Quantity of shape (2,)
+            RA and DEC for phase centre, in J2000 epoch.
+
+            TODO: use katpoint or astropy.coordinates quantity instead?
+        """
         raise NotImplementedError('Abstract base class')
 
     def data_iter(self, channel, max_rows=None):
