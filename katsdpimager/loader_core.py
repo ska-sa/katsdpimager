@@ -44,6 +44,11 @@ class LoaderBase(object):
                 ans = max(ans, np.linalg.norm(baseline))
         return ans
 
+    def phase_centre(self):
+        """Return direction (RA and DEC in J2000, radians) corresponding to
+        l=0, m=0."""
+        raise NotImplementedError('Abstract base class')
+
     def data_iter(self, channel, max_rows=None):
         """Return an iterator that yields the data in chunks. Each chunk is a
         dictionary containing numpy arrays with the following keys:

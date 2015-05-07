@@ -3,21 +3,26 @@
 import katsdpimager.loader_core
 import casacore.tables
 import numpy as np
+import argparse
 
 class LoaderMS(katsdpimager.loader_core.LoaderBase):
     def __init__(self, filename, options):
         super(LoaderMS, self).__init__(filename, options)
+        parser = argparse.ArgumentParser(prog='Measurement set options', usage=
+            '''Measurement set options: [-i data=COLUMN] [-i field=FIELD]''')
+        parser.add_argument('--data', type=str, metavar='COLUMN', default='DATA', help='Column containing visibilities to image [%(default)s]')
+        parser.add_argument('--field', type=int, default=0, help='Field to image [%(default)s]')
+        args = parser.parse_args(options)
         self._main = casacore.tables.table(filename, ack=False)
         self._antenna = casacore.tables.table(filename + '::ANTENNA', ack=False)
-        self._data_col = 'DATA'
-        for key, value in options.items():
-            if key == 'data':
-                self._data_col = value
-            else:
-                raise ValueError('Unknown MS option {}'.format(key))
+        self._field = casacore.tables.table(filename + '::FIELD', ack=False)
+        self._data_col = args.data
+        self._field_id = args.field
         if self._data_col not in self._main.colnames():
             raise ValueError('{} has no column named {}'.format(
                 filename, self._data_col))
+        if args.field < 0 or args.field >= self._field.nrows():
+            raise ValueError('Field {} is out of range'.format(args.field))
 
     @classmethod
     def match(cls, filename):
@@ -28,6 +33,21 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
 
     def antenna_positions(self):
         return self._antenna.getcol('POSITION')
+
+    def phase_centre(self):
+        keywords = self._field.getcolkeywords('PHASE_DIR')
+        measinfo = keywords.get('MEASINFO')
+        quantum_units = keywords.get('QuantumUnits')
+        if measinfo is not None:
+            if measinfo['Ref'] != 'J2000' or measinfo['type'] != 'direction':
+                raise ValueError('Unsupported MEASINFO for PHASE_DIR: {}'.format(measinfo))
+        if quantum_units is not None:
+            if quantum_units != ['rad', 'rad']:
+                raise ValueError('Unsupported QuantumUnits for PHASE_DIR: {}'.format(quantum_units))
+        value = self._field.getcell('PHASE_DIR', self._field_id)
+        if tuple(value.shape) != (1, 2):
+            raise ValueError('Unsupported shape for PHASE_DIR: {}'.format(value.shape))
+        return value[0, :]
 
     def data_iter(self, channel, max_rows=None):
         if max_rows is None:
@@ -48,3 +68,4 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
     def close(self):
         self._main.close()
         self._antenna.close()
+        self._field.close()

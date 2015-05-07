@@ -10,16 +10,7 @@ import katsdpsigproc
 import katsdpimager.loader
 from contextlib import closing
 
-def _key_values_to_dict(items):
-    out = {}
-    for item in items:
-        kv = item.split('=', 1)
-        if len(kv) != 2:
-            raise ValueError('Missing equals sign in "{}"'.format(item))
-        out[kv[0]] = kv[1]
-    return out
-
-def write_fits(data, cellsizes, filename):
+def write_fits(dataset, image, cellsizes, filename):
     header = fits.Header()
     header['BUNIT'] = 'JY/BEAM'
     header['ORIGIN'] = 'katsdpimager'
@@ -27,8 +18,8 @@ def write_fits(data, cellsizes, filename):
     # coordinates, which are taken to be l, m coordinates. The reference
     # point is current taken to be the centre of the image.
     # Note that astropy.io.fits reverses the axis order.
-    header['CRPIX1'] = data.shape[1] * 0.5 + 0.5
-    header['CRPIX2'] = data.shape[0] * 0.5 + 0.5
+    header['CRPIX1'] = image.shape[1] * 0.5 + 0.5
+    header['CRPIX2'] = image.shape[0] * 0.5 + 0.5
     # FITS uses degrees; and RA increases right-to-left
     header['CDELT1'] = -cellsizes[0] * 180.0 / math.pi
     header['CDELT2'] = cellsizes[1] * 180.0 / math.pi
@@ -42,11 +33,12 @@ def write_fits(data, cellsizes, filename):
     header['CUNIT2'] = 'deg'
     header['CTYPE1'] = 'RA---SIN'
     header['CTYPE2'] = 'DEC--SIN'
-    header['CRVAL1'] = 52.5 # RA of field centre
-    header['CRVAL2'] = -35.0 # DEC of field centre
+    phase_centre = dataset.phase_centre()
+    header['CRVAL1'] = phase_centre[0] * 180.0 / math.pi
+    header['CRVAL2'] = phase_centre[1] * 180.0 / math.pi
 
-    hdu = fits.PrimaryHDU(data, header)
-    hdu.writeto(filename)
+    hdu = fits.PrimaryHDU(image, header)
+    hdu.writeto(filename, clobber=True)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -56,7 +48,7 @@ def main():
     parser.add_argument('--channel', '-c', type=int, default=0, help='Channel number')
 
     args = parser.parse_args()
-    args.input_option = _key_values_to_dict(args.input_option)
+    args.input_option = ['--' + opt for opt in args.input_option]
 
     print("Converting {} to {}".format(args.input_file, args.output_file))
     with closing(katsdpimager.loader.load(args.input_file, args.input_option)) as dataset:
@@ -65,8 +57,8 @@ def main():
         for chunk in dataset.data_iter(args.channel, 65536):
             print(chunk['vis'].shape, chunk['weights'].shape, chunk['uvw'].shape)
 
-    image = np.zeros((1024, 1024), dtype=np.float32)
-    write_fits(image, (4.8481e-06, 4.8481e-06), args.output_file)
+        image = np.zeros((1024, 1024), dtype=np.float32)
+        write_fits(dataset, image, (4.8481e-06, 4.8481e-06), args.output_file)
 
 if __name__ == '__main__':
     main()
