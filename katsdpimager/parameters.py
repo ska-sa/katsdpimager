@@ -75,9 +75,16 @@ class ImageParameters(object):
             pixels = int(0.98 * image_size / self.pixel_size)
             while not is_smooth(pixels):
                 pixels += 1
+        else:
+            if not is_smooth(pixels):
+                recommended = pixels
+                while not is_smooth(recommended):
+                    recommended += 1
+                raise ValueError("Image size {} not supported - try {}".format(pixels, recommended))
+        assert pixels % 2 == 0
         self.pixels = pixels
         self.image_size = self.pixel_size * pixels
-        self.cell_size = self.wavelength / (2.0 * self.image_size)
+        self.cell_size = self.wavelength / self.image_size
 
     def __str__(self):
         return "Pixel size: {:.3f}\nPixels: {}\nFOV: {:.3f}\nCell size: {:.3f}\nWavelength: {:.3f}\n".format(
@@ -85,3 +92,9 @@ class ImageParameters(object):
             self.pixels,
             np.arcsin(self.pixel_size * self.pixels).to(units.deg),
             self.cell_size, self.wavelength)
+
+
+class GridParameters(object):
+    def __init__(self, antialias_size, oversample):
+        self.antialias_size = antialias_size
+        self.oversample = oversample

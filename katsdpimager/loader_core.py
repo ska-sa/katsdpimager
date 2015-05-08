@@ -84,7 +84,7 @@ class LoaderBase(object):
         """Return an iterator that yields the data in chunks. Each chunk is a
         dictionary containing numpy arrays with the following keys:
 
-         - 'uvw': UVW coordinates (target - source) in metres
+         - 'uvw': UVW coordinates (target - source), as a Quantity
          - 'vis': visibilities
          - 'weights': imaging weights
 

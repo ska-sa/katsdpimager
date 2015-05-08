@@ -10,6 +10,7 @@ import numpy as np
 import katsdpsigproc
 import katsdpimager.loader as loader
 import katsdpimager.parameters as parameters
+import katsdpimager.grid as grid
 from contextlib import closing
 
 def write_fits(dataset, image, image_parameters, filename):
@@ -18,10 +19,11 @@ def write_fits(dataset, image, image_parameters, filename):
     header['ORIGIN'] = 'katsdpimager'
     # Transformation from pixel coordinates to intermediate world
     # coordinates, which are taken to be l, m coordinates. The reference
-    # point is current taken to be the centre of the image.
+    # point is current taken to be the centre of the image (actually
+    # half a pixel beyond the centre, because of the way fftshift works).
     # Note that astropy.io.fits reverses the axis order.
-    header['CRPIX1'] = image.shape[1] * 0.5 + 0.5
-    header['CRPIX2'] = image.shape[0] * 0.5 + 0.5
+    header['CRPIX1'] = image.shape[1] * 0.5 + 1
+    header['CRPIX2'] = image.shape[0] * 0.5 + 1
     # FITS uses degrees; and RA increases right-to-left
     delt = np.arcsin(image_parameters.pixel_size).to(units.deg).value
     header['CDELT1'] = -delt
@@ -40,7 +42,7 @@ def write_fits(dataset, image, image_parameters, filename):
     header['CRVAL1'] = phase_centre[0].to(units.deg).value
     header['CRVAL2'] = phase_centre[1].to(units.deg).value
 
-    hdu = fits.PrimaryHDU(image, header)
+    hdu = fits.PrimaryHDU(image[:, ::-1], header)
     hdu.writeto(filename, clobber=True)
 
 def parse_quantity(str_value):
@@ -72,18 +74,17 @@ def main():
 
     print("Converting {} to {}".format(args.input_file, args.output_file))
     with closing(loader.load(args.input_file, args.input_option)) as dataset:
-        print(dataset.antenna_diameter())
-        print(dataset.longest_baseline())
-        for chunk in dataset.data_iter(args.channel, 65536):
-            print(chunk['vis'].shape, chunk['weights'].shape, chunk['uvw'].shape)
-
         array_p = dataset.array_parameters()
         image_p = parameters.ImageParameters(
             args.q_fov, args.image_oversample,
             dataset.frequency(args.channel), array_p,
             args.pixel_size, args.pixels)
-        print(image_p)
-        image = np.zeros((1024, 1024), dtype=np.float32)
+        grid_p = parameters.GridParameters(7, 8)
+        gridder = grid.Gridder(image_p, grid_p)
+        uv = np.zeros((image_p.pixels, image_p.pixels, 1), dtype=np.complex64)
+        for chunk in dataset.data_iter(args.channel, 65536):
+            gridder.grid(uv, chunk['uvw'], chunk['weights'], chunk['vis'])
+        image = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(uv[:, :, 0]))).real
         write_fits(dataset, image, image_p, args.output_file)
 
 if __name__ == '__main__':
