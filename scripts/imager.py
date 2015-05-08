@@ -58,17 +58,25 @@ def parse_quantity(str_value):
             pass
     raise ValueError('Could not parse {} as a quantity'.format(str_value))
 
-def main():
+def get_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('input_file', type=str, metavar='INPUT', help='Input measurement set')
     parser.add_argument('output_file', type=str, metavar='OUTPUT', help='Output FITS file')
-    parser.add_argument('--input-option', '-i', action='append', default=[], metavar='KEY=VALUE', help='Backend-specific input parsing option')
-    parser.add_argument('--channel', '-c', type=int, default=0, help='Channel number')
-    parser.add_argument('--image-oversample', type=float, default=5, help='Pixels per beam')
-    parser.add_argument('--q-fov', type=float, default=1.0, help='Field of view to image, relative to main lobe of beam')
-    parser.add_argument('--pixel-size', type=parse_quantity, help='Size of each image pixel [computed from array]')
-    parser.add_argument('--pixels', type=int, help='Number of pixels in image')
+    group = parser.add_argument_group('Input selection')
+    group.add_argument('--input-option', '-i', action='append', default=[], metavar='KEY=VALUE', help='Backend-specific input parsing option')
+    group.add_argument('--channel', '-c', type=int, default=0, help='Channel number')
+    group.add_argument('--image-oversample', type=float, default=5, help='Pixels per beam')
+    group = parser.add_argument_group('Image options')
+    group.add_argument('--q-fov', type=float, default=1.0, help='Field of view to image, relative to main lobe of beam')
+    group.add_argument('--pixel-size', type=parse_quantity, help='Size of each image pixel [computed from array]')
+    group.add_argument('--pixels', type=int, help='Number of pixels in image')
+    group = parser.add_argument_group('Gridding options')
+    group.add_argument('--grid-oversample', type=int, default=8, help='Oversampling factor for convolution kernels')
+    group.add_argument('--aa-size', type=int, default=7, help='Support of anti-aliasing kernel')
+    return parser
 
+def main():
+    parser = get_parser()
     args = parser.parse_args()
     args.input_option = ['--' + opt for opt in args.input_option]
 
@@ -79,7 +87,7 @@ def main():
             args.q_fov, args.image_oversample,
             dataset.frequency(args.channel), array_p,
             args.pixel_size, args.pixels)
-        grid_p = parameters.GridParameters(7, 8)
+        grid_p = parameters.GridParameters(args.aa_size, args.grid_oversample)
         gridder = grid.Gridder(image_p, grid_p)
         uv = np.zeros((image_p.pixels, image_p.pixels, 1), dtype=np.complex64)
         for chunk in dataset.data_iter(args.channel, 65536):
