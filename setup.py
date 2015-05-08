@@ -7,6 +7,6 @@ setup(
     description="GPU-accelerated radio-astronomy imager",
     author="Bruce Merry and Ludwig Schwardt",
     packages=find_packages(),
-    scripts=["scripts/katsdpimager.py"],
+    scripts=["scripts/imager.py"],
     install_requires=['numpy', 'katsdpsigproc', 'python-casacore', 'astropy']
 )
