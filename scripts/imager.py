@@ -17,13 +17,14 @@ def write_fits(dataset, image, image_parameters, filename):
     header = fits.Header()
     header['BUNIT'] = 'JY/BEAM'
     header['ORIGIN'] = 'katsdpimager'
-    # Transformation from pixel coordinates to intermediate world
-    # coordinates, which are taken to be l, m coordinates. The reference
-    # point is current taken to be the centre of the image (actually
-    # half a pixel beyond the centre, because of the way fftshift works).
-    # Note that astropy.io.fits reverses the axis order.
-    header['CRPIX1'] = image.shape[1] * 0.5 + 1
-    header['CRPIX2'] = image.shape[0] * 0.5 + 1
+    # Transformation from pixel coordinates to intermediate world coordinates,
+    # which are taken to be l, m coordinates. The reference point is current
+    # taken to be the centre of the image (actually half a pixel beyond the
+    # centre, because of the way fftshift works).  Note that astropy.io.fits
+    # reverses the axis order. The X coordinate is computed differently
+    # because the X axis is flipped to allow RA to increase right-to-left.
+    header['CRPIX1'] = image.shape[1] * 0.5
+    header['CRPIX2'] = image.shape[0] * 0.5 + 1.0
     # FITS uses degrees; and RA increases right-to-left
     delt = np.arcsin(image_parameters.pixel_size).to(units.deg).value
     header['CDELT1'] = -delt
