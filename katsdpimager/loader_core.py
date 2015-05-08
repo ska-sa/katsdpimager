@@ -22,7 +22,8 @@ class LoaderBase(object):
 
         Raises
         ------
-        ValueError if the dishes do not all have the same diameter
+        ValueError
+            if the dishes do not all have the same diameter
         """
         diameters = self.antenna_diameters()
         D = diameters[0]
