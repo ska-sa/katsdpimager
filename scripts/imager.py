@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 from __future__ import print_function, division
 import math
+import sys
 import argparse
 import casacore.tables
 import astropy.io.fits as fits
 import astropy.wcs as wcs
 import astropy.units as units
 import numpy as np
-import katsdpsigproc
+import katsdpsigproc.accel as accel
 import katsdpimager.loader as loader
 import katsdpimager.parameters as parameters
 import katsdpimager.grid as grid
@@ -81,6 +82,12 @@ def main():
     args = parser.parse_args()
     args.input_option = ['--' + opt for opt in args.input_option]
 
+    context = accel.create_some_context()
+    if not context.device.is_cuda:
+        print("Only CUDA is supported at present. Please select a CUDA device.", file=sys.stderr)
+        sys.exit(1)
+    queue = context.create_command_queue()
+
     print("Converting {} to {}".format(args.input_file, args.output_file))
     with closing(loader.load(args.input_file, args.input_option)) as dataset:
         array_p = dataset.array_parameters()
@@ -89,11 +96,22 @@ def main():
             dataset.frequency(args.channel), array_p,
             args.pixel_size, args.pixels)
         grid_p = parameters.GridParameters(args.aa_size, args.grid_oversample)
-        gridder = grid.Gridder(image_p, grid_p)
-        uv = np.zeros((image_p.pixels, image_p.pixels, 1), dtype=np.complex64)
-        for chunk in dataset.data_iter(args.channel, 65536):
-            gridder.grid(uv, chunk['uvw'], chunk['weights'], chunk['vis'])
-        image = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(uv[:, :, 0]))).real
+        block_size = 65536 # TODO: make tunable
+        pols = 1 # TODO: get from the dataset and/or command line
+        gridder_template = grid.GridderTemplate(context, grid_p, pols)
+        gridder = gridder_template.instantiate(queue, image_p, block_size, accel.SVMAllocator(context))
+        gridder.ensure_all_bound()
+        gridder.buffer('grid').fill(0)
+
+        for chunk in dataset.data_iter(args.channel, block_size):
+            n = len(chunk['uvw'])
+            gridder.buffer('uvw')[:n] = chunk['uvw'].to(units.m).value
+            gridder.buffer('weights')[:n] = chunk['weights']
+            gridder.buffer('vis')[:n] = chunk['vis']
+            gridder.set_num_vis(n)
+            gridder()
+            queue.finish()
+        image = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(gridder.buffer('grid')[:, :, 0]))).real
         write_fits(dataset, image, image_p, args.output_file)
 
 if __name__ == '__main__':
