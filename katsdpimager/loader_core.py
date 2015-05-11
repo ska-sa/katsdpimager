@@ -80,6 +80,17 @@ class LoaderBase(object):
         """
         raise NotImplementedError('Abstract base class')
 
+    def polarizations(self):
+        """Return polarizations stored in the data.
+
+        Returns
+        -------
+        list
+            List of polarization constants from
+            :py:mod:`katsdpsigproc.parameters`.
+        """
+        raise NotImplementedError('Abstract base class')
+
     def data_iter(self, channel, max_rows=None):
         """Return an iterator that yields the data in chunks. Each chunk is a
         dictionary containing numpy arrays with the following keys:
@@ -89,7 +100,7 @@ class LoaderBase(object):
          - 'weights': imaging weights
 
         The arrays are indexed first by a 1D time/baseline coordinate. The second
-        index is x/y/z for 'uvw' and polarisation product for 'vis' and 'weights'.
+        index is x/y/z for 'uvw' and polarization product for 'vis' and 'weights'.
         Flags are not explicitly returned: they are either omitted entirely
         (if all pols are flagged) or indicated with a zero weight.
 

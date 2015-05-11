@@ -5,7 +5,7 @@ typedef ${real_type} Real;
 typedef ${real_type}2 Complex;
 typedef atomic_accum_${real_type}2 atomic_accum_Complex;
 #define BATCH_SIZE ${wgs_x * wgs_y}
-#define POLS ${pols}
+#define NPOLS ${num_polarizations}
 #define TILE_X ${multi_x * wgs_x}
 #define TILE_Y ${multi_y * wgs_y}
 #define MULTI_X ${multi_x}
@@ -37,10 +37,10 @@ DEVICE_FN int wrap(int low, int tile_size, int pos)
 
 DEVICE_FN void writeback(
     GLOBAL atomic_accum_Complex * RESTRICT out, int out_stride,
-    int u, int v, const Complex values[POLS])
+    int u, int v, const Complex values[NPOLS])
 {
-    int offset = (v * out_stride + u) * POLS;
-    for (int p = 0; p < POLS; p++)
+    int offset = (v * out_stride + u) * NPOLS;
+    for (int p = 0; p < NPOLS; p++)
         atomic_accum_Complex_add(&out[offset + p], values[p]);
 }
 
@@ -66,10 +66,10 @@ void grid(
     // Index for first grid point to update
     LOCAL_DECL int2 batch_min_uv[BATCH_SIZE];
     // Visibilities multiplied by weights
-    LOCAL_DECL Complex batch_vis[POLS][BATCH_SIZE];
+    LOCAL_DECL Complex batch_vis[NPOLS][BATCH_SIZE];
 
     // In-register sums
-    Complex sums[POLS][MULTI_Y][MULTI_X];
+    Complex sums[NPOLS][MULTI_Y][MULTI_X];
     // Last-known UV coordinates
     int2 cur_uv[MULTI_Y][MULTI_X];
 
@@ -77,7 +77,7 @@ void grid(
     for (int y = 0; y < MULTI_Y; y++)
         for (int x = 0; x < MULTI_X; x++)
         {
-            for (int p = 0; p < POLS; p++)
+            for (int p = 0; p < NPOLS; p++)
                 sums[y][x][p] = make_Complex(0.0f, 0.0f);
             cur_uv[y][x] = make_int2(0, 0);
         }
@@ -104,9 +104,9 @@ void grid(
             int min_u = fine_u >> CONVOLVE_KERNEL_OVERSAMPLE_SHIFT;
             int min_v = fine_v >> CONVOLVE_KERNEL_OVERSAMPLE_SHIFT;
 
-            for (int p = 0; p < POLS; p++)
+            for (int p = 0; p < NPOLS; p++)
             {
-                int idx = vis_id * POLS + p;
+                int idx = vis_id * NPOLS + p;
                 Complex v = vis[idx];
                 Real w = weights[idx];
                 v.x *= w;
@@ -124,8 +124,8 @@ void grid(
         // Process batch
         for (int vis_id = 0; vis_id < batch_size; vis_id++)
         {
-            Complex sample_vis[POLS];
-            for (int p = 0; p < POLS; p++)
+            Complex sample_vis[NPOLS];
+            for (int p = 0; p < NPOLS; p++)
                 sample_vis[p] = batch_vis[p][vis_id];
             int2 min_uv = batch_min_uv[vis_id];
             int base_offset = batch_offset[vis_id];
@@ -142,12 +142,12 @@ void grid(
                     {
                         writeback(out, out_stride, cur_uv[y][x].x, cur_uv[y][x].y, sums[y][x]);
                         cur_uv[y][x] = make_int2(u, v);
-                        for (int p = 0; p < POLS; p++)
+                        for (int p = 0; p < NPOLS; p++)
                             sums[y][x][p] = make_Complex(0.0f, 0.0f);
                     }
                     int offset = v * CONVOLVE_KERNEL_ROW_STRIDE + u + base_offset;
                     Complex weight = convolve_kernel[offset];
-                    for (int p = 0; p < POLS; p++)
+                    for (int p = 0; p < NPOLS; p++)
                         sums[y][x][p] = Complex_mad(weight, sample_vis[p], sums[y][x][p]);
                 }
         }

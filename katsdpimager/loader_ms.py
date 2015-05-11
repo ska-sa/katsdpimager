@@ -18,6 +18,7 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         self._antenna = casacore.tables.table(filename + '::ANTENNA', ack=False)
         self._field = casacore.tables.table(filename + '::FIELD', ack=False)
         self._spw = casacore.tables.table(filename + '::SPECTRAL_WINDOW', ack=False)
+        self._polarization = casacore.tables.table(filename + '::POLARIZATION', ack=False)
         self._data_col = args.data
         self._field_id = args.field
         if self._data_col not in self._main.colnames():
@@ -62,6 +63,10 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             raise ValueError('Unsupported QuantumUnits for CHAN_FREQ: {}'.format(quantum_units))
         return self._spw.getcol('CHAN_FREQ')[0, channel] * units.Hz
 
+    def polarizations(self):
+        # TODO: handle multiple data descriptions and polarization IDs
+        return list(self._polarization.getcell('CORR_TYPE', 0))
+
     def data_iter(self, channel, max_rows=None):
         if max_rows is None:
             max_rows = self._main.nrows()
@@ -79,9 +84,6 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
                 weight = self._main.getcol('WEIGHT', start, end - start)[valid, ...]
             flag = self._main.getcol('FLAG', start, end - start)[valid, ...]
             weight = weight * np.logical_not(flag[:, channel, :])
-            # For now, only image first polarisation
-            data = data[..., 0:1]
-            weight = weight[..., 0:1]
             yield dict(uvw=uvw, weights=weight, vis=data)
 
     def close(self):
@@ -89,3 +91,4 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         self._antenna.close()
         self._field.close()
         self._spw.close()
+        self._polarization.close()

@@ -4,6 +4,22 @@ katsdpimager package
 Submodules
 ----------
 
+katsdpimager.grid module
+------------------------
+
+.. automodule:: katsdpimager.grid
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+katsdpimager.io module
+----------------------
+
+.. automodule:: katsdpimager.io
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 katsdpimager.loader module
 --------------------------
 

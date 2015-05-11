@@ -3,12 +3,56 @@ functions take physical quantities as Astropy quantities, rather than
 specifying any specific units.
 
 Most formulae are taken from SKA-TEL-SDP-0000003.
+
+Enumeration of polarizations uses the CASA enumeration values, which are
+different from those used in FITS:
+
+.. py:data:: STOKES_I
+
+.. py:data:: STOKES_Q
+
+.. py:data:: STOKES_U
+
+.. py:data:: STOKES_V
+
+.. py:data:: STOKES_RR
+
+.. py:data:: STOKES_RL
+
+.. py:data:: STOKES_LR
+
+.. py:data:: STOKES_LL
+
+.. py:data:: STOKES_XX
+
+.. py:data:: STOKES_XY
+
+.. py:data:: STOKES_YX
+
+.. py:data:: STOKES_YY
 """
 
 from __future__ import division
 import astropy.units as units
 import math
 import numpy as np
+
+
+STOKES_I = 1
+STOKES_Q = 2
+STOKES_U = 3
+STOKES_V = 4
+STOKES_RR = 5
+STOKES_RL = 6
+STOKES_LR = 7
+STOKES_LL = 8
+STOKES_XX = 9
+STOKES_XY = 10
+STOKES_YX = 11
+STOKES_YY = 12
+
+STOKES_NAMES = [None, 'I', 'Q', 'U', 'V', 'RR', 'RL', 'LR', 'LL', 'XX', 'XY', 'YX', 'YY']
+
 
 def is_smooth(x):
     """Whether x is a good candidate for FFT. We heuristically require
@@ -45,13 +89,18 @@ class ImageParameters(object):
     frequency : Quantity
         Representative frequency, for converting UVW between metres and
         wavelengths. It may also be specified as a wavelength.
+    array : :class:`ArrayParameters`
+        Properties of the array. It is not needed if both `pixel_size` and
+        `pixels` are specified.
+    polarizations : list
+        List of polarizations that will appear in the image
     pixel_size : Quantity or float, optional
         Angular size of a single pixel, or dimensionless to specify l or m
         size directly. If specified, `image_oversample` is ignored.
-    pixel : int, optional
+    pixels : int, optional
         Number of pixels in the image. If specified, `q_fov` is ignored.
     """
-    def __init__(self, q_fov, image_oversample, frequency, array, pixel_size=None, pixels=None):
+    def __init__(self, q_fov, image_oversample, frequency, array, polarizations, pixel_size=None, pixels=None):
         self.wavelength = frequency.to(units.m, equivalencies=units.spectral())
         # Compute pixel size
         if pixel_size is None:
@@ -85,13 +134,22 @@ class ImageParameters(object):
         self.pixels = pixels
         self.image_size = self.pixel_size * pixels
         self.cell_size = self.wavelength / self.image_size
+        self.polarizations = polarizations
 
     def __str__(self):
-        return "Pixel size: {:.3f}\nPixels: {}\nFOV: {:.3f}\nCell size: {:.3f}\nWavelength: {:.3f}\n".format(
+        return """\
+Pixel size: {:.3f}
+Pixels: {}
+FOV: {:.3f}
+Cell size: {:.3f}
+Wavelength: {:.3f}
+Polarizations: {}
+""".format(
             np.arcsin(self.pixel_size).to(units.arcsec),
             self.pixels,
             np.arcsin(self.pixel_size * self.pixels).to(units.deg),
-            self.cell_size, self.wavelength)
+            self.cell_size, self.wavelength,
+            ','.join([STOKES_NAMES[i] for i in self.polarizations]))
 
 
 class GridParameters(object):

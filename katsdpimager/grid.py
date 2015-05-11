@@ -55,9 +55,11 @@ def subpixel_coord(x, oversample):
 
 
 class GridderTemplate(object):
-    def __init__(self, context, grid_parameters, pols, tuning=None):
+    def __init__(self, context, grid_parameters, num_polarizations, tuning=None):
         if tuning is None:
-            tuning = self.autotune(context, grid_parameters.antialias_size, grid_parameters.oversample, pols)
+            tuning = self.autotune(
+                context, grid_parameters.antialias_size, grid_parameters.oversample,
+                num_polarizations)
         self.grid_parameters = grid_parameters
         convolve_kernel = antialias_kernel(grid_parameters.antialias_size,
                                            grid_parameters.oversample)
@@ -66,7 +68,7 @@ class GridderTemplate(object):
         self.wgs_y = 8
         self.multi_x = 1
         self.multi_y = 1
-        self.pols = pols
+        self.num_polarizations = num_polarizations
         tile_x = self.wgs_x * self.multi_x
         tile_y = self.wgs_y * self.multi_y
         assert self.convolve_kernel_size <= tile_y
@@ -87,13 +89,13 @@ class GridderTemplate(object):
                 'multi_y': self.multi_y,
                 'wgs_x': self.wgs_x,
                 'wgs_y': self.wgs_y,
-                'pols': self.pols
+                'num_polarizations': self.num_polarizations
             },
             extra_dirs=[pkg_resources.resource_filename(__name__, '')])
 
     @classmethod
     @tune.autotuner(test={})
-    def autotune(cls, context, antialias_size, oversample, pols):
+    def autotune(cls, context, antialias_size, oversample, num_polarizations):
         # Nothing to autotune yet
         return {}
 
@@ -104,17 +106,21 @@ class GridderTemplate(object):
 class Gridder(accel.Operation):
     def __init__(self, template, command_queue, image_parameters, max_vis, allocator=None):
         super(Gridder, self).__init__(command_queue, allocator)
+        if len(image_parameters.polarizations) != template.num_polarizations:
+            raise ValueError('Mismatch in number of polarizations')
         self.template = template
         self.image_parameters = image_parameters
         self.max_vis = max_vis
         self.slots['grid'] = accel.IOSlot(
-            (image_parameters.pixels, image_parameters.pixels, 1), np.complex64)
+            (image_parameters.pixels, image_parameters.pixels,
+                accel.Dimension(template.num_polarizations, exact=True)),
+            np.complex64)
         self.slots['uvw'] = accel.IOSlot(
             (max_vis, accel.Dimension(3, exact=True)), np.float32)
         self.slots['weights'] = accel.IOSlot(
-            (max_vis, accel.Dimension(template.pols, exact=True)), np.float32)
+            (max_vis, accel.Dimension(template.num_polarizations, exact=True)), np.float32)
         self.slots['vis'] = accel.IOSlot(
-            (max_vis, accel.Dimension(template.pols, exact=True)), np.complex64)
+            (max_vis, accel.Dimension(template.num_polarizations, exact=True)), np.complex64)
         self.kernel = template.program.get_kernel('grid')
         self._num_vis = 0
         cell_size_m = image_parameters.cell_size.to(units.m).value
@@ -176,13 +182,13 @@ class GridderHost(object):
         Parameters
         ----------
         grid : 3D ndarray of complex
-            Grid, indexed by m, l and pol. The DC term is at the centre.
+            Grid, indexed by m, l and polarization. The DC term is at the centre.
         uvw : 2D Quantity array
             UVW coordinates for visibilities, indexed by sample then u/v/w
         weight: 2D ndarray of real
-            Weights for visibilities, indexed by sample and pol.
+            Weights for visibilities, indexed by sample and polarization.
         vis : 2D ndarray of complex
-            Visibility data, indexed by sample and pol.
+            Visibility data, indexed by sample and polarization.
         """
         assert uvw.unit.physical_type == 'length'
         pixels = self.image_parameters.pixels
