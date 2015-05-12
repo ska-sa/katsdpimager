@@ -88,7 +88,7 @@ def main():
                 gridder()
                 queue.finish()
 
-        image = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(grid_data), axes=(0, 1)).real)
+        image = np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(grid_data), axes=(0, 1)).real)
         if args.write_grid is not None:
             io.write_fits_grid(grid_data, image_p, args.write_grid)
         io.write_fits_image(dataset, image, image_p, args.output_file)

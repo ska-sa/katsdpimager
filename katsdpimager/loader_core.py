@@ -95,9 +95,16 @@ class LoaderBase(object):
         """Return an iterator that yields the data in chunks. Each chunk is a
         dictionary containing numpy arrays with the following keys:
 
-         - 'uvw': UVW coordinates (target - source), as a Quantity
+         - 'uvw': UVW coordinates (position1 - position2), as a Quantity
          - 'vis': visibilities
          - 'weights': imaging weights
+
+        .. note::
+
+           The sign convention for UVW matches the white book and AIPS, but is
+           opposite_ to that used in Measurement Sets.
+
+        .. _opposite: http://casa.nrao.edu/Memos/CoordConvention.pdf
 
         The arrays are indexed first by a 1D time/baseline coordinate. The second
         index is x/y/z for 'uvw' and polarization product for 'vis' and 'weights'.

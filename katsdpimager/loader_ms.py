@@ -76,7 +76,8 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             field_id = self._main.getcol('FIELD_ID', start, end - start)
             valid = np.logical_and(np.logical_not(flag_row), field_id == self._field_id)
             data = self._main.getcol(self._data_col, start, end - start)[valid, channel, ...]
-            uvw = self._main.getcol('UVW', start, end - start)[valid, ...]
+            # Note: UVW is negated due to differing sign conventions
+            uvw = -self._main.getcol('UVW', start, end - start)[valid, ...]
             uvw = units.Quantity(uvw, units.m, copy=False)
             if 'WEIGHT_SPECTRUM' in self._main.colnames():
                 weight = self._main.getcol('WEIGHT_SPECTRUM', start, end - start)[valid, channel, ...]
