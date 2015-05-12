@@ -12,20 +12,27 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         parser = argparse.ArgumentParser(prog='Measurement set options', usage=
             '''Measurement set options: [-i data=COLUMN] [-i field=FIELD]''')
         parser.add_argument('--data', type=str, metavar='COLUMN', default='DATA', help='Column containing visibilities to image [%(default)s]')
+        parser.add_argument('--data-desc', type=int, default=0, help='Data description ID to image [%(default)s]')
         parser.add_argument('--field', type=int, default=0, help='Field to image [%(default)s]')
         args = parser.parse_args(options)
         self._main = casacore.tables.table(filename, ack=False)
         self._antenna = casacore.tables.table(filename + '::ANTENNA', ack=False)
+        self._data_description = casacore.tables.table(filename + '::DATA_DESCRIPTION', ack=False)
         self._field = casacore.tables.table(filename + '::FIELD', ack=False)
-        self._spw = casacore.tables.table(filename + '::SPECTRAL_WINDOW', ack=False)
+        self._spectral_window = casacore.tables.table(filename + '::SPECTRAL_WINDOW', ack=False)
         self._polarization = casacore.tables.table(filename + '::POLARIZATION', ack=False)
         self._data_col = args.data
         self._field_id = args.field
+        self._data_desc_id = args.data_desc
         if self._data_col not in self._main.colnames():
             raise ValueError('{} has no column named {}'.format(
                 filename, self._data_col))
         if args.field < 0 or args.field >= self._field.nrows():
             raise ValueError('Field {} is out of range'.format(args.field))
+        if args.data_desc < 0 or args.data_desc >= self._data_description.nrows():
+            raise ValueError('Data description {} is out of range'.format(args.data_desc))
+        self._polarization_id = self._data_description.getcell('POLARIZATION_ID', args.data_desc)
+        self._spectral_window_id = self._data_description.getcell('SPECTRAL_WINDOW_ID', args.data_desc)
 
     @classmethod
     def match(cls, filename):
@@ -55,17 +62,14 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         return value[0, :] * units.rad
 
     def frequency(self, channel):
-        if self._spw.nrows() != 1:
-            raise ValueError('Multiple spectral windows are not yet supported')
-        keywords = self._spw.getcolkeywords('CHAN_FREQ')
+        keywords = self._spectral_window.getcolkeywords('CHAN_FREQ')
         quantum_units = keywords.get('QuantumUnits')
         if quantum_units is not None and quantum_units != ['Hz']:
             raise ValueError('Unsupported QuantumUnits for CHAN_FREQ: {}'.format(quantum_units))
-        return self._spw.getcol('CHAN_FREQ')[0, channel] * units.Hz
+        return self._spectral_window.getcell('CHAN_FREQ', self._spectral_window_id)[channel] * units.Hz
 
     def polarizations(self):
-        # TODO: handle multiple data descriptions and polarization IDs
-        return list(self._polarization.getcell('CORR_TYPE', 0))
+        return list(self._polarization.getcell('CORR_TYPE', self._polarization_id))
 
     def data_iter(self, channel, max_rows=None):
         if max_rows is None:
@@ -74,7 +78,10 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             end = min(self._main.nrows(), start + max_rows)
             flag_row = self._main.getcol('FLAG_ROW', start, end - start)
             field_id = self._main.getcol('FIELD_ID', start, end - start)
-            valid = np.logical_and(np.logical_not(flag_row), field_id == self._field_id)
+            data_desc_id = self._main.getcol('DATA_DESC_ID', start, end - start)
+            valid = np.logical_not(flag_row)
+            valid = np.logical_and(valid, field_id == self._field_id)
+            valid = np.logical_and(valid, data_desc_id == self._data_desc_id)
             data = self._main.getcol(self._data_col, start, end - start)[valid, channel, ...]
             # Note: UVW is negated due to differing sign conventions
             uvw = -self._main.getcol('UVW', start, end - start)[valid, ...]
@@ -90,6 +97,7 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
     def close(self):
         self._main.close()
         self._antenna.close()
+        self._data_description.close()
         self._field.close()
-        self._spw.close()
+        self._spectral_window.close()
         self._polarization.close()
