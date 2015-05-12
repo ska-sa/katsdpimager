@@ -52,7 +52,11 @@ def _fits_polarizations(header, axis, polarizations):
     # coordinates, but the common cases can all be handled by a permutation
     # and a linear transformation.
     polarizations = np.array([_FITS_POLARIZATIONS[i] for i in polarizations])
-    pol_permute = np.argsort(polarizations)
+    if polarizations[0] >= 0:
+        pol_permute = np.argsort(polarizations)
+    else:
+        # FITS numbers non-IQUV polarizations in a decreasing manner
+        pol_permute = np.argsort(-polarizations)
     polarizations = polarizations[pol_permute]
     pol_ref = polarizations[0]
     if len(polarizations) > 1:
@@ -62,9 +66,9 @@ def _fits_polarizations(header, axis, polarizations):
     if np.any(polarizations != np.arange(len(polarizations)) * pol_delta + pol_ref):
         raise ValueError('Polarizations do not form a linear sequence in FITS enumeration')
     header['CTYPE{}'.format(axis)] = 'STOKES'
-    header['CRPIX{}'.format(axis)] = 1
-    header['CRVAL{}'.format(axis)] = pol_ref
-    header['CDELT{}'.format(axis)] = pol_delta
+    header['CRPIX{}'.format(axis)] = 1.0
+    header['CRVAL{}'.format(axis)] = float(pol_ref)
+    header['CDELT{}'.format(axis)] = float(pol_delta)
     return pol_permute
 
 
@@ -82,6 +86,12 @@ def write_fits_image(dataset, image, image_parameters, filename):
         Metadata associated with the image
     filename : `str`
         File to write. It is silently overwritten if already present.
+
+    Raises
+    ------
+    ValueError
+        If the set of `polarizations` cannot be represented as a linear
+        transform in the FITS header.
     """
     header = fits.Header()
     header['BUNIT'] = 'JY/BEAM'
@@ -142,20 +152,42 @@ def _split_array(x, dtype):
     return np.asarray(np.lib.stride_tricks.DummyArray(interface, base=x))
 
 def write_fits_grid(grid, image_parameters, filename):
-    # TODO: document
+    """Writes a UV grid to a FITS file.
+
+    Parameters
+    ----------
+    grid : ndarray of complex
+        Grid data indexed by m, l, polarization
+    image_parameters : :class:`katsdpimager.parameters.ImageParameters`
+        Metadata used to set headers
+    filename : str
+        File to write. It is silently overwritten if already present.
+
+    Raises
+    ------
+    ValueError
+        If the set of `polarizations` cannot be represented as a linear
+        transform in the FITS header.
+    """
     grid = _split_array(grid, np.float32)
     grid = grid.transpose(3, 2, 0, 1)
 
     header = fits.Header()
     header['BUNIT'] = 'JY'
     header['ORIGIN'] = 'katsdpimager'
-    header['CUNIT1'] = 'M'
-    header['CUNIT2'] = 'M'
-    _fits_polarizations(header, 3, image_parameters.polarizations)
+    header['CUNIT1'] = 'm'
+    header['CRPIX1'] = grid.shape[3] // 2 + 1.0
+    header['CRVAL1'] = 0.0
+    header['CDELT1'] = float(image_parameters.cell_size / units.m)
+    header['CUNIT2'] = 'm'
+    header['CRPIX2'] = grid.shape[2] // 2 + 1.0
+    header['CRVAL2'] = 0.0
+    header['CDELT2'] = float(image_parameters.cell_size / units.m)
+    pol_permute = _fits_polarizations(header, 3, image_parameters.polarizations)
     header['CTYPE4'] = 'COMPLEX'
-    header['CRPIX4'] = 1
-    header['CRVAL4'] = 1
-    header['CDELT4'] = 1
+    header['CRPIX4'] = 1.0
+    header['CRVAL4'] = 1.0
+    header['CDELT4'] = 1.0
 
-    hdu = fits.PrimaryHDU(grid, header)
+    hdu = fits.PrimaryHDU(grid[:, pol_permute, :, :], header)
     hdu.writeto(filename, clobber=True)
