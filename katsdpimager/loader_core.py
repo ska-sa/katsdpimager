@@ -98,6 +98,8 @@ class LoaderBase(object):
          - 'uvw': UVW coordinates (position1 - position2), as a Quantity
          - 'vis': visibilities
          - 'weights': imaging weights
+         - 'progress': progress made through the file, in some arbitrary units
+         - 'total': size of the file, in same units as 'progress'
 
         .. note::
 

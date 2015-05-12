@@ -5,12 +5,13 @@ import sys
 import argparse
 import astropy.units as units
 import numpy as np
+import progress.bar
 import katsdpsigproc.accel as accel
 import katsdpimager.loader as loader
 import katsdpimager.parameters as parameters
 import katsdpimager.grid as grid
 import katsdpimager.io as io
-from contextlib import closing
+from contextlib import closing, contextmanager
 
 def parse_quantity(str_value):
     """Parse a string into an astropy Quantity. Rather than trying to guess
@@ -47,6 +48,17 @@ def get_parser():
     group.add_argument('--write-grid', metavar='FILE', help='Write UV grid to FITS file')
     return parser
 
+def make_progressbar(name, *args, **kwargs):
+    return progress.bar.Bar("{:16}".format(name), suffix='%(percent)3d%% [%(eta_td)s]', *args, **kwargs)
+
+@contextmanager
+def step(name):
+    progress = make_progressbar(name, max=1)
+    progress.update()
+    yield
+    progress.next()
+    progress.finish()
+
 def main():
     parser = get_parser()
     args = parser.parse_args()
@@ -59,7 +71,6 @@ def main():
             sys.exit(1)
         queue = context.create_command_queue()
 
-    print("Converting {} to {}".format(args.input_file, args.output_file))
     with closing(loader.load(args.input_file, args.input_option)) as dataset:
         polarizations = dataset.polarizations()
         array_p = dataset.array_parameters()
@@ -77,7 +88,10 @@ def main():
             gridder.ensure_all_bound()
             grid_data = gridder.buffer('grid')
             grid_data.fill(0)
+        progress = None
         for chunk in dataset.data_iter(args.channel, args.vis_block):
+            if progress is None:
+                progress = make_progressbar("Gridding", max=chunk['total'])
             n = len(chunk['uvw'])
             if args.host:
                 gridder.grid(grid_data, chunk['uvw'], chunk['weights'], chunk['vis'])
@@ -88,11 +102,16 @@ def main():
                 gridder.set_num_vis(n)
                 gridder()
                 queue.finish()
+            progress.goto(chunk['progress'])
+        progress.finish()
 
-        image = np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(grid_data), axes=(0, 1)).real)
+        with step('FFT'):
+            image = np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(grid_data), axes=(0, 1)).real)
         if args.write_grid is not None:
-            io.write_fits_grid(grid_data, image_p, args.write_grid)
-        io.write_fits_image(dataset, image, image_p, args.output_file)
+            with step('Write grid'):
+                io.write_fits_grid(grid_data, image_p, args.write_grid)
+        with step('Write image'):
+            io.write_fits_image(dataset, image, image_p, args.output_file)
 
 if __name__ == '__main__':
     main()

@@ -8,5 +8,5 @@ setup(
     author="Bruce Merry and Ludwig Schwardt",
     packages=find_packages(),
     scripts=["scripts/imager.py"],
-    install_requires=['numpy', 'katsdpsigproc', 'python-casacore', 'astropy']
+    install_requires=['numpy', 'katsdpsigproc', 'python-casacore', 'astropy', 'progress']
 )
