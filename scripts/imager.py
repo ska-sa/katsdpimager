@@ -40,6 +40,8 @@ def get_parser():
     group = parser.add_argument_group('Gridding options')
     group.add_argument('--grid-oversample', type=int, default=8, help='Oversampling factor for convolution kernels [%(default)s]')
     group.add_argument('--aa-size', type=int, default=7, help='Support of anti-aliasing kernel [%(default)s]')
+    group = parser.add_argument_group('Performance tuning options')
+    group.add_argument('--vis-block', type=int, default=1048576, help='Number of visibilities to load at a time [%(default)s]')
     group = parser.add_argument_group('Debugging options')
     group.add_argument('--host', action='store_true', help='Perform gridding on the CPU')
     group.add_argument('--write-grid', metavar='FILE', help='Write UV grid to FITS file')
@@ -66,17 +68,16 @@ def main():
             dataset.frequency(args.channel), array_p, polarizations,
             args.pixel_size, args.pixels)
         grid_p = parameters.GridParameters(args.aa_size, args.grid_oversample)
-        block_size = 65536 # TODO: make tunable
         if args.host:
             gridder = grid.GridderHost(image_p, grid_p)
             grid_data = np.zeros((image_p.pixels, image_p.pixels, len(polarizations)), dtype=np.complex64)
         else:
             gridder_template = grid.GridderTemplate(context, grid_p, len(polarizations))
-            gridder = gridder_template.instantiate(queue, image_p, block_size, accel.SVMAllocator(context))
+            gridder = gridder_template.instantiate(queue, image_p, args.vis_block, accel.SVMAllocator(context))
             gridder.ensure_all_bound()
             grid_data = gridder.buffer('grid')
             grid_data.fill(0)
-        for chunk in dataset.data_iter(args.channel, block_size):
+        for chunk in dataset.data_iter(args.channel, args.vis_block):
             n = len(chunk['uvw'])
             if args.host:
                 gridder.grid(grid_data, chunk['uvw'], chunk['weights'], chunk['vis'])
