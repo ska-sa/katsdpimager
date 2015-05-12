@@ -135,7 +135,6 @@ void grid(
                     // TODO: expand convolution kernel footprint such that
                     // multi-xy block is emitted as a unit, instead of separate
                     // cur_uv for each element.
-                    // TODO: host check for overflow outside the output
                     int u = wrap(min_uv.x, TILE_X, MULTI_X * get_local_id(0) + x);
                     int v = wrap(min_uv.y, TILE_Y, MULTI_Y * get_local_id(1) + y);
                     if (u != cur_uv[y][x].x || v != cur_uv[y][x].y)

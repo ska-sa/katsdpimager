@@ -84,7 +84,7 @@ def main():
             grid_data = np.zeros((image_p.pixels, image_p.pixels, len(polarizations)), dtype=np.complex64)
         else:
             gridder_template = grid.GridderTemplate(context, grid_p, len(polarizations))
-            gridder = gridder_template.instantiate(queue, image_p, args.vis_block, accel.SVMAllocator(context))
+            gridder = gridder_template.instantiate(queue, image_p, array_p, args.vis_block, accel.SVMAllocator(context))
             gridder.ensure_all_bound()
             grid_data = gridder.buffer('grid')
             grid_data.fill(0)

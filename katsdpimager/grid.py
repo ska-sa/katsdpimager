@@ -99,15 +99,19 @@ class GridderTemplate(object):
         # Nothing to autotune yet
         return {}
 
-    def instantiate(self, command_queue, image_parameters, max_vis, allocator=None):
-        return Gridder(self, command_queue, image_parameters, max_vis, allocator)
+    def instantiate(self, *args, **kwargs):
+        return Gridder(self, *args, **kwargs)
 
 
 class Gridder(accel.Operation):
-    def __init__(self, template, command_queue, image_parameters, max_vis, allocator=None):
+    def __init__(self, template, command_queue, image_parameters, array_parameters, max_vis, allocator=None):
         super(Gridder, self).__init__(command_queue, allocator)
         if len(image_parameters.polarizations) != template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
+        # Check that longest baseline won't cause an out-of-bounds access
+        max_uv = float(array_parameters.longest_baseline / image_parameters.cell_size) + template.convolve_kernel_size / 2
+        if max_uv >= image_parameters.pixels // 2 - 1 - 1e-3:
+            raise ValueError('image_oversample is too small to capture all visibilities in the UV plane')
         self.template = template
         self.image_parameters = image_parameters
         self.max_vis = max_vis
