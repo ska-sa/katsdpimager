@@ -1,6 +1,8 @@
 """Utilities to wrap scikits.cuda.fft for imaging purposes"""
 
+from __future__ import print_function, division
 import numpy as np
+import pkg_resources
 import scikits.cuda.fft
 from katsdpsigproc import accel
 
@@ -33,10 +35,89 @@ class _GpudataWrapper(object):
         return getattr(self._wrapped, attr)
 
 
+class FftshiftTemplate(object):
+    """Operation template for the equivalent of :py:meth:`np.fft.fftshift` on
+    the device, in-place. The first two dimensions are shifted, and these
+    dimensions must have even size.
+
+    Parameters
+    ----------
+    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+        Context for which kernels will be compiled
+    dtype : numpy dtype
+        Data type being stored
+    alignment : int, optional
+        If specified, indicates that all values will move by a multiple of this
+        many bytes, which must be a power of two. The default is the largest
+        power of two dividing the itemsize of `dtype`.
+    """
+    def __init__(self, context, dtype, alignment=None, tuning=None):
+        self.context = context
+        self.dtype = np.dtype(dtype)
+        if alignment is None:
+            alignment = 1
+            while self.dtype.itemsize % (alignment * 2) == 0:
+                alignment *= 2
+        if alignment <= 0 or (alignment & (alignment - 1)):
+            raise ValueError('alignment is not a power of 2')
+        if alignment == 1:
+            ctype = 'char'
+        elif alignment == 2:
+            ctype = 'short'
+        elif alignment == 4:
+            ctype = 'float'
+        elif alignment == 8:
+            ctype = 'float2'
+        else:
+            ctype = 'float4'
+            alignment = 16
+        self.alignment = alignment
+        # TODO: autotune
+        self.wgsx = 16
+        self.wgsy = 8
+        self.program = accel.build(context, "imager_kernels/fftshift.mako",
+            {
+                'ctype': ctype,
+                'wgsx': self.wgsx,
+                'wgsy': self.wgsy
+            },
+            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+
+    def instantiate(self, *args, **kwargs):
+        return Fftshift(self, *args, **kwargs)
+
+
+class Fftshift(accel.Operation):
+    def __init__(self, template, command_queue, shape, allocator=None):
+        super(Fftshift, self).__init__(command_queue, allocator)
+        self.template = template
+        self.kernel = template.program.get_kernel('fftshift')
+        if shape[0] % 2 != 0 or shape[1] % 2 != 0:
+            raise ValueError('First two dimensions of shape must be even')
+        self.slots['data'] = accel.IOSlot(shape, template.dtype)
+
+    def _run(self):
+        data = self.buffer('data')
+        bytes_item = self.template.dtype.itemsize
+        bytes_x = data.shape[1] // 2 * int(np.product(data.padded_shape[2:])) * bytes_item
+        if bytes_x % self.template.alignment != 0:
+            raise ValueError('Data array is not aligned as promised')
+        items_x = bytes_x // self.template.alignment
+        items_y = data.shape[0] // 2
+        self.command_queue.enqueue_kernel(
+            self.kernel,
+            [
+                data.buffer, np.int32(data.padded_shape[1]),
+                np.int32(items_x), np.int32(items_y),
+                np.int32(items_y * data.padded_shape[1])
+            ],
+            global_size=(accel.roundup(items_x, self.template.wgsx),
+                         accel.roundup(items_y, self.template.wgsy)),
+            local_size=(self.template.wgsx, self.template.wgsy)
+        )
+
 class IfftTemplate(object):
-    """Operation template for an inverse FFT from complex to complex. The
-    operation includes an FFT shift (ala :py:meth:`np.fft.fftshift`) on both
-    the input and the output.
+    """Operation template for an inverse FFT from complex to complex.
 
     This template bakes in more information than most (command queue and data
     shapes), which is due to constraints in CUFFT.
@@ -47,25 +128,25 @@ class IfftTemplate(object):
         Command queue for the operation
     shape : 3-tuple
         Shape of the input, as (rows, columns, polarizations)
-    padded_shape_in : 3-tuple
+    padded_shape_src : 3-tuple
         Padded shape of the input
-    padded_shape_out : 3-tuple
+    padded_shape_dest : 3-tuple
         Padded shape of the output
     """
-    def __init__(self, command_queue, shape, padded_shape_in, padded_shape_out, tuning=None):
+    def __init__(self, command_queue, shape, padded_shape_src, padded_shape_dest, tuning=None):
         self.command_queue = command_queue
         self.shape = shape
-        self.padded_shape_in = padded_shape_in
-        self.padded_shape_out = padded_shape_out
+        self.padded_shape_src = padded_shape_src
+        self.padded_shape_dest = padded_shape_dest
         with command_queue.context:
             self.plan = scikits.cuda.fft.Plan(
                 shape[:2], np.complex64, np.complex64, shape[2],
                 stream=command_queue._pycuda_stream,
-                inembed=np.array(padded_shape_in[:2], np.int32),
-                istride=padded_shape_in[2],
+                inembed=np.array(padded_shape_src[:2], np.int32),
+                istride=padded_shape_src[2],
                 idist=1,
-                onembed=np.array(padded_shape_out[:2], np.int32),
-                ostride=padded_shape_out[2],
+                onembed=np.array(padded_shape_dest[:2], np.int32),
+                ostride=padded_shape_dest[2],
                 odist=1)
 
     def instantiate(self, allocator=None):
@@ -76,27 +157,23 @@ class Ifft(accel.Operation):
     def __init__(self, template, allocator=None):
         super(Ifft, self).__init__(template.command_queue, allocator)
         self.template = template
-        in_dims = [accel.Dimension(d[0], min_padded_size=d[1])
-                   for d in zip(template.shape, template.padded_shape_in)]
-        out_dims = [accel.Dimension(d[0], min_padded_size=d[1])
-                    for d in zip(template.shape, template.padded_shape_out)]
-        self.slots['in'] = accel.IOSlot(in_dims, np.complex64)
-        self.slots['out'] = accel.IOSlot(out_dims, np.complex64)
+        src_dims = [accel.Dimension(d[0], min_padded_size=d[1])
+                    for d in zip(template.shape, template.padded_shape_src)]
+        dest_dims = [accel.Dimension(d[0], min_padded_size=d[1])
+                     for d in zip(template.shape, template.padded_shape_dest)]
+        self.slots['src'] = accel.IOSlot(src_dims, np.complex64)
+        self.slots['dest'] = accel.IOSlot(dest_dims, np.complex64)
 
     def _run(self):
-        in_buffer = self.buffer('in')
-        out_buffer = self.buffer('out')
+        src_buffer = self.buffer('src')
+        dest_buffer = self.buffer('dest')
         # accel.Dimension doesn't currently have a way to enforce an
         # exact but non-zero amount of padding, so we need to fall back
         # on this check.
-        if in_buffer.padded_shape != self.template.padded_shape_in:
-            raise ValueError('Input buffer is incorrectly padded for plan')
-        if out_buffer.padded_shape != self.template.padded_shape_out:
+        if src_buffer.padded_shape != self.template.padded_shape_src:
+            raise ValueError('Source buffer is incorrectly padded for plan')
+        if dest_buffer.padded_shape != self.template.padded_shape_dest:
             raise ValueError('Output buffer is incorrectly padded for plan')
-        # TODO: do these shifts with a kernel
-        in_buffer[:] = np.fft.fftshift(in_buffer)
         with self.template.command_queue.context:
-            scikits.cuda.fft.ifft(_GpudataWrapper(in_buffer), _GpudataWrapper(out_buffer),
+            scikits.cuda.fft.ifft(_GpudataWrapper(src_buffer), _GpudataWrapper(dest_buffer),
                                   self.template.plan)
-            self.template.command_queue.finish()
-        out_buffer[:] = np.fft.fftshift(out_buffer)
