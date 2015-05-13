@@ -6,6 +6,11 @@ import pkg_resources
 import scikits.cuda.fft
 from katsdpsigproc import accel
 
+#: Forward FFT
+FFT_FORWARD = 0
+#: Inverse FFT, without normalization factor of 1/N
+FFT_INVERSE = 1
+
 class _Gpudata(object):
     """Adapter to allow scikits.cuda.fft to work with managed memory
     allocations. Add it as a `gpudata` member on an arbitrary object, to allow
@@ -26,9 +31,17 @@ class _Gpudata(object):
 
 
 class _GpudataWrapper(object):
+    """Forwarding wrapper around a :py:class:`katsdpsigproc.accel.SVMArray` or
+    :py:class:`katsdpsigproc.accel.DeviceArray` that allows it to be passed
+    to scikits.cuda.fft.
+    """
     def __init__(self, wrapped):
         self._wrapped = wrapped
-        if not hasattr(wrapped, 'gpudata'):
+        try:
+            # Handle DeviceArray case
+            self.gpudata = wrapper.buffer.gpudata
+        except:
+            # SVMArray case
             self.gpudata = _Gpudata(wrapped)
 
     def __getattr__(self, attr):
@@ -38,7 +51,8 @@ class _GpudataWrapper(object):
 class FftshiftTemplate(object):
     """Operation template for the equivalent of :py:meth:`np.fft.fftshift` on
     the device, in-place. The first two dimensions are shifted, and these
-    dimensions must have even size.
+    dimensions must have even size. Because the size is even, this operation
+    is its own inverse.
 
     Parameters
     ----------
@@ -46,32 +60,12 @@ class FftshiftTemplate(object):
         Context for which kernels will be compiled
     dtype : numpy dtype
         Data type being stored
-    alignment : int, optional
-        If specified, indicates that all values will move by a multiple of this
-        many bytes, which must be a power of two. The default is the largest
-        power of two dividing the itemsize of `dtype`.
+    ctype : str
+        OpenCL/CUDA C name for the type
     """
-    def __init__(self, context, dtype, alignment=None, tuning=None):
+    def __init__(self, context, dtype, ctype, tuning=None):
         self.context = context
         self.dtype = np.dtype(dtype)
-        if alignment is None:
-            alignment = 1
-            while self.dtype.itemsize % (alignment * 2) == 0:
-                alignment *= 2
-        if alignment <= 0 or (alignment & (alignment - 1)):
-            raise ValueError('alignment is not a power of 2')
-        if alignment == 1:
-            ctype = 'char'
-        elif alignment == 2:
-            ctype = 'short'
-        elif alignment == 4:
-            ctype = 'float'
-        elif alignment == 8:
-            ctype = 'float2'
-        else:
-            ctype = 'float4'
-            alignment = 16
-        self.alignment = alignment
         # TODO: autotune
         self.wgsx = 16
         self.wgsy = 8
@@ -98,26 +92,29 @@ class Fftshift(accel.Operation):
 
     def _run(self):
         data = self.buffer('data')
-        bytes_item = self.template.dtype.itemsize
-        bytes_x = data.shape[1] // 2 * int(np.product(data.padded_shape[2:])) * bytes_item
-        if bytes_x % self.template.alignment != 0:
-            raise ValueError('Data array is not aligned as promised')
-        items_x = bytes_x // self.template.alignment
+        minor = int(np.product(data.padded_shape[2:]))
+        stride = minor * data.padded_shape[1]
+        items_x = data.shape[1] // 2 * minor
         items_y = data.shape[0] // 2
         self.command_queue.enqueue_kernel(
             self.kernel,
             [
-                data.buffer, np.int32(data.padded_shape[1]),
+                data.buffer, np.int32(stride),
                 np.int32(items_x), np.int32(items_y),
-                np.int32(items_y * data.padded_shape[1])
+                np.int32(items_y * stride)
             ],
             global_size=(accel.roundup(items_x, self.template.wgsx),
                          accel.roundup(items_y, self.template.wgsy)),
             local_size=(self.template.wgsx, self.template.wgsy)
         )
 
-class IfftTemplate(object):
-    """Operation template for an inverse FFT from complex to complex.
+class FftTemplate(object):
+    """Operation template for a forward or reverse FFT, complex to complex.
+    The transformation is done over the first N dimensions, with the remaining
+    dimensions for interleaving multiple arrays to be transformed. Dimensions
+    beyond the first N must have consistent padding between the source and
+    destination, and it is recommended to have no padding at all since the
+    padding arrays are also transformed.
 
     This template bakes in more information than most (command queue and data
     shapes), which is due to constraints in CUFFT.
@@ -126,75 +123,93 @@ class IfftTemplate(object):
     ----------
     command_queue : :class:`katsdpsigproc.cuda.CommandQueue`
         Command queue for the operation
-    shape : 3-tuple
-        Shape of the input, as (rows, columns, polarizations)
-    padded_shape_src : 3-tuple
+    N : int
+        Number of dimensions for the transform
+    shape : tuple
+        Shape of the input (N or more dimensions)
+    dtype : {`np.complex64`, `np.complex128`}
+        Data type, for both input and output
+    padded_shape_src : tuple
         Padded shape of the input
-    padded_shape_dest : 3-tuple
+    padded_shape_dest : tuple
         Padded shape of the output
+    tuning : dict, optional
+        Tuning parameters (currently unused)
     """
-    def __init__(self, command_queue, shape, padded_shape_src, padded_shape_dest, tuning=None):
+    def __init__(self, command_queue, N, shape, dtype, padded_shape_src, padded_shape_dest, tuning=None):
+        if padded_shape_src[N:] != padded_shape_dest[N:]:
+            raise ValueError('Source and destination padding does not match on batch dimensions')
         self.command_queue = command_queue
         self.shape = shape
+        self.dtype = dtype
         self.padded_shape_src = padded_shape_src
         self.padded_shape_dest = padded_shape_dest
+        batches = int(np.product(padded_shape_src[N:]))
         with command_queue.context:
             self.plan = scikits.cuda.fft.Plan(
-                shape[:2], np.complex64, np.complex64, shape[2],
+                shape[:N], dtype, dtype, batches,
                 stream=command_queue._pycuda_stream,
-                inembed=np.array(padded_shape_src[:2], np.int32),
-                istride=padded_shape_src[2],
+                inembed=np.array(padded_shape_src[:N], np.int32),
+                istride=batches,
                 idist=1,
-                onembed=np.array(padded_shape_dest[:2], np.int32),
-                ostride=padded_shape_dest[2],
+                onembed=np.array(padded_shape_dest[:N], np.int32),
+                ostride=batches,
                 odist=1)
 
-    def instantiate(self, allocator=None):
-        return Ifft(self, allocator)
+    def instantiate(self, *args, **kwargs):
+        return Fft(self, *args, **kwargs)
 
 
-class Ifft(accel.Operation):
-    def __init__(self, template, allocator=None):
-        super(Ifft, self).__init__(template.command_queue, allocator)
+class Fft(accel.Operation):
+    """Forward or inverse Fourier transformation.
+
+    .. rubric:: Slots
+
+    **src**
+        Input data
+    **dest**
+        Output data
+    """
+    def __init__(self, template, mode, allocator=None):
+        super(Fft, self).__init__(template.command_queue, allocator)
         self.template = template
-        src_dims = [accel.Dimension(d[0], min_padded_size=d[1])
+        src_dims = [accel.Dimension(d[0], min_padded_size=d[1], exact=True)
                     for d in zip(template.shape, template.padded_shape_src)]
-        dest_dims = [accel.Dimension(d[0], min_padded_size=d[1])
+        dest_dims = [accel.Dimension(d[0], min_padded_size=d[1], exact=True)
                      for d in zip(template.shape, template.padded_shape_dest)]
-        self.slots['src'] = accel.IOSlot(src_dims, np.complex64)
-        self.slots['dest'] = accel.IOSlot(dest_dims, np.complex64)
+        self.slots['src'] = accel.IOSlot(src_dims, template.dtype)
+        self.slots['dest'] = accel.IOSlot(dest_dims, template.dtype)
+        self.mode = mode
 
     def _run(self):
         src_buffer = self.buffer('src')
         dest_buffer = self.buffer('dest')
-        # accel.Dimension doesn't currently have a way to enforce an
-        # exact but non-zero amount of padding, so we need to fall back
-        # on this check.
-        if src_buffer.padded_shape != self.template.padded_shape_src:
-            raise ValueError('Source buffer is incorrectly padded for plan')
-        if dest_buffer.padded_shape != self.template.padded_shape_dest:
-            raise ValueError('Output buffer is incorrectly padded for plan')
         with self.template.command_queue.context:
-            scikits.cuda.fft.ifft(_GpudataWrapper(src_buffer), _GpudataWrapper(dest_buffer),
-                                  self.template.plan)
+            if self.mode == FFT_FORWARD:
+                scikits.cuda.fft.fft(_GpudataWrapper(src_buffer), _GpudataWrapper(dest_buffer),
+                                     self.template.plan)
+            else:
+                scikits.cuda.fft.ifft(_GpudataWrapper(src_buffer), _GpudataWrapper(dest_buffer),
+                                      self.template.plan)
 
 
 class GridToImageTemplate(object):
     def __init__(self, command_queue, shape, padded_shape_src, padded_shape_dest):
-        self.shift_template = FftshiftTemplate(command_queue.context, np.complex64)
-        self.ifft_template = IfftTemplate(command_queue, shape, padded_shape_src, padded_shape_dest)
+        self.shift_template = FftshiftTemplate(command_queue.context, np.complex64, 'float2')
+        self.fft_template = FftTemplate(command_queue, 2, shape, np.complex64,
+                                        padded_shape_src, padded_shape_dest)
 
     def instantiate(self, *args, **kwargs):
         return GridToImage(self, *args, **kwargs)
 
 class GridToImage(accel.OperationSequence):
     def __init__(self, template, allocator=None):
-        command_queue = template.ifft_template.command_queue
+        command_queue = template.fft_template.command_queue
         self.shift_grid = template.shift_template.instantiate(
-            command_queue, template.ifft_template.shape, allocator)
-        self.ifft = template.ifft_template.instantiate(allocator)
+            command_queue, template.fft_template.shape, allocator)
+        self.ifft = template.fft_template.instantiate(FFT_INVERSE, allocator)
         self.shift_image = template.shift_template.instantiate(
-            command_queue, template.ifft_template.shape, allocator)
+            command_queue, template.fft_template.shape, allocator)
         operations = [
             ('shift_grid', self.shift_grid),
             ('ifft', self.ifft),
