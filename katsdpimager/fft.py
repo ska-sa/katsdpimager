@@ -177,3 +177,31 @@ class Ifft(accel.Operation):
         with self.template.command_queue.context:
             scikits.cuda.fft.ifft(_GpudataWrapper(src_buffer), _GpudataWrapper(dest_buffer),
                                   self.template.plan)
+
+
+class GridToImageTemplate(object):
+    def __init__(self, command_queue, shape, padded_shape_src, padded_shape_dest):
+        self.shift_template = FftshiftTemplate(command_queue.context, np.complex64)
+        self.ifft_template = IfftTemplate(command_queue, shape, padded_shape_src, padded_shape_dest)
+
+    def instantiate(self, *args, **kwargs):
+        return GridToImage(self, *args, **kwargs)
+
+class GridToImage(accel.OperationSequence):
+    def __init__(self, template, allocator=None):
+        command_queue = template.ifft_template.command_queue
+        self.shift_grid = template.shift_template.instantiate(
+            command_queue, template.ifft_template.shape, allocator)
+        self.ifft = template.ifft_template.instantiate(allocator)
+        self.shift_image = template.shift_template.instantiate(
+            command_queue, template.ifft_template.shape, allocator)
+        operations = [
+            ('shift_grid', self.shift_grid),
+            ('ifft', self.ifft),
+            ('shift_image', self.shift_image)
+        ]
+        compounds = {
+            'grid': ['shift_grid:data', 'ifft:src'],
+            'image': ['ifft:dest', 'shift_image:data']
+        }
+        super(GridToImage, self).__init__(command_queue, operations, compounds)

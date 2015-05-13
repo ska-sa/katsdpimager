@@ -135,20 +135,11 @@ def main():
                 image = np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(grid_data), axes=(0, 1)).real)
             else:
                 image = accel.SVMArray(context, grid_data.shape, np.complex64)
-                # TODO: bundle all this up into an OperationSequence
-                shift_template = fft.FftshiftTemplate(context, np.complex64)
-                shift_grid = shift_template.instantiate(queue, grid_data.shape, accel.SVMAllocator(context))
-                shift_grid.bind(data=grid_data)
-                shift_image = shift_template.instantiate(queue, image.shape, accel.SVMAllocator(context))
-                shift_image.bind(data=image)
-                ifft_template = fft.IfftTemplate(queue, grid_data.shape,
-                                                 grid_data.padded_shape, grid_data.shape)
-                ifft = ifft_template.instantiate(accel.SVMAllocator(context))
-                ifft.bind(src=grid_data, dest=image)
-
-                shift_grid()
-                ifft()
-                shift_image()
+                invert_template = fft.GridToImageTemplate(
+                    queue, grid_data.shape, grid_data.padded_shape, image.shape)
+                invert = invert_template.instantiate(accel.SVMAllocator(context))
+                invert.bind(grid=grid_data, image=image)
+                invert()
                 queue.finish()
                 image = image.real
         if args.write_grid is not None:
