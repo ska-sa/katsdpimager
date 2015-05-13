@@ -3,4 +3,5 @@ python-casacore
 astropy
 progress
 nose
+scikits.cuda>=0.5.0b1
 git+ssh://git@github.com/ska-sa/katsdpsigproc

@@ -8,5 +8,8 @@ setup(
     author="Bruce Merry and Ludwig Schwardt",
     packages=find_packages(),
     scripts=["scripts/imager.py"],
-    install_requires=['numpy', 'katsdpsigproc', 'python-casacore', 'astropy', 'progress']
+    install_requires=[
+        'numpy', 'katsdpsigproc', 'python-casacore', 'astropy', 'progress',
+        'scikits.cuda>=0.5.0b1'
+    ]
 )
