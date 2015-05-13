@@ -2,4 +2,5 @@ numpy
 python-casacore
 astropy
 progress
+nose
 git+ssh://git@github.com/ska-sa/katsdpsigproc

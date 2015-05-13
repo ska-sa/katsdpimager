@@ -49,7 +49,6 @@ void grid(
     GLOBAL atomic_accum_Complex * RESTRICT out,
     int out_stride,
     const GLOBAL float * RESTRICT uvw,
-    const GLOBAL Real * RESTRICT weights,
     const GLOBAL Complex * RESTRICT vis,
     const GLOBAL Complex * RESTRICT convolve_kernel,
     float uv_scale,
@@ -106,12 +105,9 @@ void grid(
 
             for (int p = 0; p < NPOLS; p++)
             {
+                // TODO: could improve this using float4s where appropriate
                 int idx = vis_id * NPOLS + p;
-                Complex v = vis[idx];
-                Real w = weights[idx];
-                v.x *= w;
-                v.y *= w;
-                batch_vis[p][lid] = v;
+                batch_vis[p][lid] = vis[idx];
             }
             batch_min_uv[lid] = make_int2(min_u, min_v);
             int slice = sub_v * CONVOLVE_KERNEL_OVERSAMPLE + sub_u;

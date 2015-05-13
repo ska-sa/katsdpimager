@@ -121,8 +121,6 @@ class Gridder(accel.Operation):
             np.complex64)
         self.slots['uvw'] = accel.IOSlot(
             (max_vis, accel.Dimension(3, exact=True)), np.float32)
-        self.slots['weights'] = accel.IOSlot(
-            (max_vis, accel.Dimension(template.num_polarizations, exact=True)), np.float32)
         self.slots['vis'] = accel.IOSlot(
             (max_vis, accel.Dimension(template.num_polarizations, exact=True)), np.complex64)
         self.kernel = template.program.get_kernel('grid')
@@ -151,7 +149,6 @@ class Gridder(accel.Operation):
                 grid.buffer,
                 np.int32(grid.padded_shape[1]),
                 self.buffer('uvw').buffer,
-                self.buffer('weights').buffer,
                 self.buffer('vis').buffer,
                 self.template.convolve_kernel.buffer,
                 np.float32(self.uv_scale),
@@ -179,7 +176,7 @@ class GridderHost(object):
         # TODO: compute taper function (FT of kernel)
         # See http://www.dsprelated.com/freebooks/sasp/Kaiser_Window.html
 
-    def grid(self, grid, uvw, weights, vis):
+    def grid(self, grid, uvw, vis):
         """Add visibilities to a grid, with convolutional gridding using the
         anti-aliasing filter.
 
@@ -189,10 +186,9 @@ class GridderHost(object):
             Grid, indexed by m, l and polarization. The DC term is at the centre.
         uvw : 2D Quantity array
             UVW coordinates for visibilities, indexed by sample then u/v/w
-        weight: 2D ndarray of real
-            Weights for visibilities, indexed by sample and polarization.
         vis : 2D ndarray of complex
-            Visibility data, indexed by sample and polarization.
+            Visibility data, indexed by sample and polarization, and
+            pre-multiplied by all weights
         """
         assert uvw.unit.physical_type == 'length'
         pixels = self.image_parameters.pixels
@@ -210,6 +206,6 @@ class GridderHost(object):
             sub_m = subpixel_coord(m, self.grid_parameters.oversample)
             l = int(math.floor(l))
             m = int(math.floor(m))
-            sample = weights[row, :] * vis[row, :]
+            sample = vis[row, :]
             sub_kernel = self.kernel[sub_m, sub_l, ..., np.newaxis]
             grid[m : m+ksize, l : l+ksize, :] += sample * sub_kernel

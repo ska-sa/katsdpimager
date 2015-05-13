@@ -51,8 +51,24 @@ STOKES_XY = 10
 STOKES_YX = 11
 STOKES_YY = 12
 
+#: Names for polarizations used in display and command line
 STOKES_NAMES = [None, 'I', 'Q', 'U', 'V', 'RR', 'RL', 'LR', 'LL', 'XX', 'XY', 'YX', 'YY']
 
+#: Coefficients for each polarization relative to IQUV
+STOKES_COEFF = np.array([
+    [0, 0, 0, 0],
+    [1, 0, 0, 0],
+    [0, 1, 0, 0],
+    [0, 0, 1, 0],
+    [0, 0, 0, 1],
+    [1, 0, 0, 1],
+    [0, 1, 1j, 0],
+    [0, 1, -1j, 0],
+    [1, 0, 0, -1],
+    [1, 1, 0, 0],
+    [0, 0, 1, 1j],
+    [0, 0, 1, -1j],
+    [1, -1, 0, 0]])
 
 def is_smooth(x):
     """Whether x is a good candidate for FFT. We heuristically require
@@ -156,3 +172,31 @@ class GridParameters(object):
     def __init__(self, antialias_size, oversample):
         self.antialias_size = antialias_size
         self.oversample = oversample
+
+def polarization_matrix(outputs, inputs):
+    """Return a matrix that will map the input polarizations to the outputs.
+
+    The matrix is computed using linear algebra. Let `s` represent the Stokes
+    parameters (IQUV). The inputs correspond to :math:`As`, for some matrix
+    `A`, and similarly the outputs to :math:`Bs`. We are thus searching for
+    the matrix `X` such that :math:`Bs=XAs` or :math:`A^TX^T = B^T`.
+
+    If redundant inputs are given, then the solution is not uniquely
+    determined.
+
+    Raises
+    ------
+    ValueError
+        if the inputs do not contain the necessary elements to compute the
+        outputs.
+    """
+    A = np.matrix(STOKES_COEFF[inputs, :]).T
+    B = np.matrix(STOKES_COEFF[outputs, :]).T
+    X, residuals, rank, s = np.linalg.lstsq(A, B, 1e-5)
+    # We can't just check for non-zero residuals, because lstsq doesn't
+    # return them if A is rank-deficient. Rank-deficiency doesn't
+    # necessarily mean there isn't a solution, if B lies in the subspace
+    # spanned by A.
+    if np.linalg.norm(A * X - B, 'fro') > 1e-5:
+        raise ValueError('no solution')
+    return X.T

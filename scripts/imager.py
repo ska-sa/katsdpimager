@@ -26,6 +26,21 @@ def parse_quantity(str_value):
             pass
     raise ValueError('Could not parse {} as a quantity'.format(str_value))
 
+def parse_stokes(str_value):
+    ans = []
+    for p in str_value:
+        if p not in 'IQUV':
+            raise ValueError('Invalid Stokes parameter {}'.format(p))
+    if not str_value:
+        raise ValueError('Empty Stokes parameter list')
+    for p in 'IQUV':
+        cnt = str_value.count(p)
+        if cnt > 1:
+            raise ValueError('Stokes parameter {} listed multiple times'.format(p))
+        elif cnt > 0:
+            ans.append(parameters.STOKES_NAMES.index(p))
+    return sorted(ans)
+
 def get_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('input_file', type=str, metavar='INPUT', help='Input measurement set')
@@ -38,6 +53,7 @@ def get_parser():
     group.add_argument('--image-oversample', type=float, default=5, help='Pixels per beam [%(default)s]')
     group.add_argument('--pixel-size', type=parse_quantity, help='Size of each image pixel [computed from array]')
     group.add_argument('--pixels', type=int, help='Number of pixels in image [computed from array]')
+    group.add_argument('--stokes', type=parse_stokes, default='I', help='Stokes parameters to image e.g. IQUV for full-Stokes [%(default)s]')
     group = parser.add_argument_group('Gridding options')
     group.add_argument('--grid-oversample', type=int, default=8, help='Oversampling factor for convolution kernels [%(default)s]')
     group.add_argument('--aa-size', type=int, default=7, help='Support of anti-aliasing kernel [%(default)s]')
@@ -72,33 +88,41 @@ def main():
         queue = context.create_command_queue()
 
     with closing(loader.load(args.input_file, args.input_option)) as dataset:
-        polarizations = dataset.polarizations()
+        input_polarizations = dataset.polarizations()
+        output_polarizations = args.stokes
+        polarization_matrix = parameters.polarization_matrix(output_polarizations, input_polarizations)
         array_p = dataset.array_parameters()
         image_p = parameters.ImageParameters(
             args.q_fov, args.image_oversample,
-            dataset.frequency(args.channel), array_p, polarizations,
+            dataset.frequency(args.channel), array_p, output_polarizations,
             args.pixel_size, args.pixels)
         grid_p = parameters.GridParameters(args.aa_size, args.grid_oversample)
         if args.host:
             gridder = grid.GridderHost(image_p, grid_p)
-            grid_data = np.zeros((image_p.pixels, image_p.pixels, len(polarizations)), dtype=np.complex64)
+            grid_data = np.zeros((image_p.pixels, image_p.pixels, len(output_polarizations)), dtype=np.complex64)
         else:
-            gridder_template = grid.GridderTemplate(context, grid_p, len(polarizations))
+            gridder_template = grid.GridderTemplate(context, grid_p, len(output_polarizations))
             gridder = gridder_template.instantiate(queue, image_p, array_p, args.vis_block, accel.SVMAllocator(context))
             gridder.ensure_all_bound()
             grid_data = gridder.buffer('grid')
             grid_data.fill(0)
         progress = None
         for chunk in dataset.data_iter(args.channel, args.vis_block):
+            uvw = chunk['uvw']
+            weights = chunk['weights']
+            vis = chunk['vis']
             if progress is None:
                 progress = make_progressbar("Gridding", max=chunk['total'])
-            n = len(chunk['uvw'])
+            n = len(uvw)
+            # Pre-weight the visibilities
+            vis *= weights
+            # Transform the visibilities to the desired polarization
+            vis = np.einsum('ij,...j->...i', polarization_matrix, vis)
             if args.host:
-                gridder.grid(grid_data, chunk['uvw'], chunk['weights'], chunk['vis'])
+                gridder.grid(grid_data, uvw, vis)
             else:
-                gridder.buffer('uvw')[:n] = chunk['uvw'].to(units.m).value
-                gridder.buffer('weights')[:n] = chunk['weights']
-                gridder.buffer('vis')[:n] = chunk['vis']
+                gridder.buffer('uvw')[:n] = uvw.to(units.m).value
+                gridder.buffer('vis')[:n] = vis
                 gridder.set_num_vis(n)
                 gridder()
                 queue.finish()
