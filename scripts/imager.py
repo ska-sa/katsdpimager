@@ -66,12 +66,13 @@ def get_parser():
     return parser
 
 def make_progressbar(name, *args, **kwargs):
-    return progress.bar.Bar("{:16}".format(name), suffix='%(percent)3d%% [%(eta_td)s]', *args, **kwargs)
+    bar = progress.bar.Bar("{:16}".format(name), suffix='%(percent)3d%% [%(eta_td)s]', *args, **kwargs)
+    bar.update()
+    return bar
 
 @contextmanager
 def step(name):
     progress = make_progressbar(name, max=1)
-    progress.update()
     yield
     progress.next()
     progress.finish()
@@ -141,7 +142,7 @@ def main():
                 invert.bind(grid=grid_data, image=image)
                 invert()
                 queue.finish()
-                image = image.real
+                image = image.real * (1.0 / (image.shape[0] * image.shape[1]))
         if args.write_grid is not None:
             with step('Write grid'):
                 io.write_fits_grid(grid_data, image_p, args.write_grid)
