@@ -11,6 +11,7 @@ import katsdpimager.loader as loader
 import katsdpimager.parameters as parameters
 import katsdpimager.grid as grid
 import katsdpimager.io as io
+import katsdpimager.fft as fft
 from contextlib import closing, contextmanager
 
 def parse_quantity(str_value):
@@ -130,7 +131,18 @@ def main():
         progress.finish()
 
         with step('FFT'):
-            image = np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(grid_data), axes=(0, 1)).real)
+            if args.host:
+                image = np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(grid_data), axes=(0, 1)).real)
+            else:
+                image = accel.SVMArray(context, grid_data.shape, np.complex64)
+                ifft_template = fft.IfftTemplate(queue, grid_data.shape,
+                                                 grid_data.padded_shape, grid_data.shape)
+                ifft = ifft_template.instantiate(accel.SVMAllocator(context))
+                ifft.bind(**{'in': grid_data})
+                ifft.ensure_all_bound()
+                ifft()
+                queue.finish()
+                image = ifft.buffer('out').real
         if args.write_grid is not None:
             with step('Write grid'):
                 io.write_fits_grid(grid_data, image_p, args.write_grid)
