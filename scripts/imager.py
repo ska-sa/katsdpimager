@@ -9,6 +9,7 @@ import progress.bar
 import katsdpsigproc.accel as accel
 import katsdpimager.loader as loader
 import katsdpimager.parameters as parameters
+import katsdpimager.polarization as polarization
 import katsdpimager.grid as grid
 import katsdpimager.io as io
 from contextlib import closing, contextmanager
@@ -38,8 +39,17 @@ def parse_stokes(str_value):
         if cnt > 1:
             raise ValueError('Stokes parameter {} listed multiple times'.format(p))
         elif cnt > 0:
-            ans.append(parameters.STOKES_NAMES.index(p))
+            ans.append(polarization.STOKES_NAMES.index(p))
     return sorted(ans)
+
+@contextmanager
+def seterr(*args, **kwargs):
+    """Context-manager version of :py:func:`np.seterr` that restores the
+    previous state on exit from the context.
+    """
+    old = np.seterr(*args, **kwargs)
+    yield
+    np.seterr(**old)
 
 def get_parser():
     parser = argparse.ArgumentParser()
@@ -90,7 +100,7 @@ def main():
     with closing(loader.load(args.input_file, args.input_option)) as dataset:
         input_polarizations = dataset.polarizations()
         output_polarizations = args.stokes
-        polarization_matrix = parameters.polarization_matrix(output_polarizations, input_polarizations)
+        polarization_matrix = polarization.polarization_matrix(output_polarizations, input_polarizations)
         array_p = dataset.array_parameters()
         image_p = parameters.ImageParameters(
             args.q_fov, args.image_oversample,
@@ -114,10 +124,17 @@ def main():
             if progress is None:
                 progress = make_progressbar("Gridding", max=chunk['total'])
             n = len(uvw)
+            # Transform weights to variance estimates. The abs() is to force
+            # negative zeros to positive zeros, so that the reciprocal
+            # is +inf.
+            with seterr(divide='ignore'):
+                variance = 1.0 / np.abs(weights)
+            # Transform the visibilities to the desired polarization
+            vis = polarization.apply_polarization_matrix(vis, polarization_matrix)
+            variance = polarization.apply_polarization_matrix(variance, np.abs(polarization_matrix))
+            weights = 1.0 / variance
             # Pre-weight the visibilities
             vis *= weights
-            # Transform the visibilities to the desired polarization
-            vis = np.einsum('ij,...j->...i', polarization_matrix, vis)
             if args.host:
                 gridder.grid(grid_data, uvw, vis)
             else:

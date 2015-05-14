@@ -4,22 +4,22 @@ from __future__ import division, print_function
 import numpy as np
 import astropy.units as units
 import astropy.io.fits as fits
-import katsdpimager.parameters as parameters
+import katsdpimager.polarization as polarization
 
 #: Maps internal polarization constants to those used in FITS
 _FITS_POLARIZATIONS = {
-    parameters.STOKES_I: 1,
-    parameters.STOKES_Q: 2,
-    parameters.STOKES_U: 3,
-    parameters.STOKES_V: 4,
-    parameters.STOKES_RR: -1,
-    parameters.STOKES_LL: -2,
-    parameters.STOKES_RL: -3,
-    parameters.STOKES_LR: -4,
-    parameters.STOKES_XX: -5,
-    parameters.STOKES_YY: -6,
-    parameters.STOKES_XY: -7,
-    parameters.STOKES_YX: -8
+    polarization.STOKES_I: 1,
+    polarization.STOKES_Q: 2,
+    polarization.STOKES_U: 3,
+    polarization.STOKES_V: 4,
+    polarization.STOKES_RR: -1,
+    polarization.STOKES_LL: -2,
+    polarization.STOKES_RL: -3,
+    polarization.STOKES_LR: -4,
+    polarization.STOKES_XX: -5,
+    polarization.STOKES_YY: -6,
+    polarization.STOKES_XY: -7,
+    polarization.STOKES_YX: -8
 }
 
 def _fits_polarizations(header, axis, polarizations):
