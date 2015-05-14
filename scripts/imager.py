@@ -42,15 +42,6 @@ def parse_stokes(str_value):
             ans.append(polarization.STOKES_NAMES.index(p))
     return sorted(ans)
 
-@contextmanager
-def seterr(*args, **kwargs):
-    """Context-manager version of :py:func:`np.seterr` that restores the
-    previous state on exit from the context.
-    """
-    old = np.seterr(*args, **kwargs)
-    yield
-    np.seterr(**old)
-
 def get_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('input_file', type=str, metavar='INPUT', help='Input measurement set')
@@ -124,15 +115,9 @@ def main():
             if progress is None:
                 progress = make_progressbar("Gridding", max=chunk['total'])
             n = len(uvw)
-            # Transform weights to variance estimates. The abs() is to force
-            # negative zeros to positive zeros, so that the reciprocal
-            # is +inf.
-            with seterr(divide='ignore'):
-                variance = 1.0 / np.abs(weights)
             # Transform the visibilities to the desired polarization
-            vis = polarization.apply_polarization_matrix(vis, polarization_matrix)
-            variance = polarization.apply_polarization_matrix(variance, np.abs(polarization_matrix))
-            weights = 1.0 / variance
+            vis, weights = polarization.apply_polarization_matrix_weighted(
+                vis, weights, polarization_matrix)
             # Pre-weight the visibilities
             vis *= weights
             if args.host:

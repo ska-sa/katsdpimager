@@ -29,6 +29,7 @@ different from those used in FITS:
 """
 
 import numpy as np
+from contextlib import contextmanager
 
 STOKES_I = 1
 STOKES_Q = 2
@@ -62,6 +63,15 @@ STOKES_COEFF = np.array([
     [0, 0, 1, -1j],
     [1, -1, 0, 0]])
 
+
+@contextmanager
+def _np_seterr(*args, **kwargs):
+    """Context-manager version of :py:func:`np.seterr` that restores the
+    previous state on exit from the context.
+    """
+    old = np.seterr(*args, **kwargs)
+    yield
+    np.seterr(**old)
 
 def polarization_matrix(outputs, inputs):
     """Return a matrix that will map the input polarizations to the outputs.
@@ -121,3 +131,34 @@ def apply_polarization_matrix(data, matrix):
             if matrix[i, j]:
                 out[..., i] += matrix[i, j] * data[..., j]
     return out
+
+def apply_polarization_matrix_weighted(data, weights, matrix):
+    """Apply a polarization change to visibilities and weights. It is suitable
+    even when some weights are zero, indicating flagged data.
+
+    Parameters
+    ----------
+    data : array-like
+        Visibility data. The last dimension corresponds to polarization.
+    weights : array-like
+        Real-valued weights, in the same shape as `data`.
+    matrix : array-like
+        Matrix returned by :py:func:`polarization_matrix`, or constructed
+        otherwise.
+
+    Returns
+    -------
+    out_data : array-like
+        Transformed visibilities
+    out_weights : array-like
+        Transformed weights
+    """
+    data = apply_polarization_matrix(data, matrix)
+    # Transform weights to variance estimates. The abs() is to force
+    # negative zeros to positive zeros, so that the reciprocal
+    # is +inf.
+    with _np_seterr(divide='ignore'):
+        variance = 1.0 / np.abs(weights)
+    variance = apply_polarization_matrix(variance, np.abs(matrix))
+    weights = 1.0 / variance
+    return data, weights
