@@ -199,4 +199,10 @@ def polarization_matrix(outputs, inputs):
     # spanned by A.
     if np.linalg.norm(A * X - B, 'fro') > 1e-5:
         raise ValueError('no solution')
+    # In the common cases, the values are all multiples of 0.25, but lstsq
+    # has rounding errors. Try rounding everything off and check that the
+    # relationship still holds
+    Xr = np.round(4 * X) * 0.25
+    if np.linalg.norm(A * Xr - B, 'fro') <= 1e-5:
+        pass#X = Xr
     return X.T

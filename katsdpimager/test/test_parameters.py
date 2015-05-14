@@ -19,7 +19,7 @@ class TestPolarizationMatrix(object):
                                     [0, 1, 1, 0],
                                     [0, -1j, 1j, 0]])
         actual = parameters.polarization_matrix(self.IQUV, self.XY)
-        np.testing.assert_almost_equal(expected, actual)
+        np.testing.assert_array_equal(expected, actual)
 
     def test_stokes_to_rl(self):
         expected = np.matrix([[1, 0, 0, 1],
@@ -27,7 +27,7 @@ class TestPolarizationMatrix(object):
                               [0, 1, -1j, 0],
                               [1, 0, 0, -1]])
         actual = parameters.polarization_matrix(self.RL, self.IQUV)
-        np.testing.assert_almost_equal(expected, actual)
+        np.testing.assert_array_equal(expected, actual)
 
     def test_xy_to_rl(self):
         expected = 0.5 * np.matrix([[1, -1j, 1j, 1],
@@ -35,17 +35,17 @@ class TestPolarizationMatrix(object):
                                     [1, -1j, -1j, -1],
                                     [1, 1j, -1j, 1]])
         actual = parameters.polarization_matrix(self.RL, self.XY)
-        np.testing.assert_almost_equal(expected, actual)
+        np.testing.assert_array_equal(expected, actual)
 
     def test_xy_diag_to_iq(self):
         expected = 0.5 * np.matrix([[1, 1], [1, -1]])
         actual = parameters.polarization_matrix(self.IQ, self.XY_DIAG)
-        np.testing.assert_almost_equal(expected, actual)
+        np.testing.assert_array_equal(expected, actual)
 
     def test_xy_diag_to_i(self):
         expected = 0.5 * np.matrix([[1, 1]])
         actual = parameters.polarization_matrix([parameters.STOKES_I], self.XY_DIAG)
-        np.testing.assert_almost_equal(expected, actual)
+        np.testing.assert_array_equal(expected, actual)
 
     def test_xy_diag_to_iquv(self):
         assert_raises(ValueError, parameters.polarization_matrix, self.IQUV, self.XY_DIAG)
