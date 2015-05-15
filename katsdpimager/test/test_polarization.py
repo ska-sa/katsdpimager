@@ -1,10 +1,14 @@
 """Tests for :py:mod:`katsdpimager.polarization`."""
 
+from __future__ import print_function, division
 import numpy as np
 from nose.tools import *
 import katsdpimager.polarization as polarization
 
 class TestPolarizationMatrix(object):
+    """Tests for :py:func:`katsdpimager.polarization.polarization_matrix`,
+    using standard coordinate systems.
+    """
     def setup(self):
         self.IQUV = [polarization.STOKES_I, polarization.STOKES_Q, polarization.STOKES_U, polarization.STOKES_V]
         self.IQ = [polarization.STOKES_I, polarization.STOKES_Q]
@@ -49,3 +53,46 @@ class TestPolarizationMatrix(object):
 
     def test_xy_diag_to_iquv(self):
         assert_raises(ValueError, polarization.polarization_matrix, self.IQUV, self.XY_DIAG)
+
+
+class TestApplyPolarizationMatrixWeighted(object):
+    def setup(self):
+        self.inputs = [polarization.STOKES_XX, polarization.STOKES_XY, polarization.STOKES_YX, polarization.STOKES_YY]
+        self.outputs = [polarization.STOKES_I, polarization.STOKES_Q, polarization.STOKES_U, polarization.STOKES_V]
+        self.pm = polarization.polarization_matrix(self.outputs, self.inputs)
+
+    def test_unflagged(self):
+        vis = np.array([
+            [2 + 4j, 4 - 2j, 4, 8j],
+            [0, 2 + 2j, 2j, 6 - 2j]], np.complex64)
+        weights = np.array([
+            [4, 2, 1, 4],
+            [2, 8, 1, 4]], np.float32)
+        expected_vis = np.array([
+            [1 + 6j, 1 - 2j, 4 - 1j, -1],
+            [3 - 1j, -3 + 1j, 1 + 2j, -1j]], np.complex64)
+        expected_weights = np.array([
+            [8, 8, 8 / 3, 8 / 3],
+            [16 / 3, 16 / 3, 32 / 9, 32 / 9]], np.float32)
+        actual_vis, actual_weights = polarization.apply_polarization_matrix_weighted(
+            vis, weights, self.pm)
+        np.testing.assert_allclose(actual_vis, expected_vis)
+        np.testing.assert_allclose(actual_weights, expected_weights)
+
+    def test_flagged(self):
+        vis = np.array([
+            [2 + 4j, 4 - 2j, 4, 8j],
+            [0, 2 + 2j, 2j, 6 - 2j]], np.complex64)
+        weights = np.array([
+            [4, 0, 1, 4],
+            [0, 8, 1, 0]], np.float32)
+        expected_vis = np.array([
+            [1 + 6j, 1 - 2j, 4 - 1j, -1],
+            [3 - 1j, -3 + 1j, 1 + 2j, -1j]], np.complex64)
+        expected_weights = np.array([
+            [8, 8, 0, 0],
+            [0, 0, 32 / 9, 32 / 9]], np.float32)
+        actual_vis, actual_weights = polarization.apply_polarization_matrix_weighted(
+            vis, weights, self.pm)
+        np.testing.assert_allclose(actual_vis, expected_vis)
+        np.testing.assert_allclose(actual_weights, expected_weights)
