@@ -9,6 +9,7 @@ import progress.bar
 import katsdpsigproc.accel as accel
 import katsdpimager.loader as loader
 import katsdpimager.parameters as parameters
+import katsdpimager.polarization as polarization
 import katsdpimager.grid as grid
 import katsdpimager.io as io
 import katsdpimager.fft as fft
@@ -39,7 +40,7 @@ def parse_stokes(str_value):
         if cnt > 1:
             raise ValueError('Stokes parameter {} listed multiple times'.format(p))
         elif cnt > 0:
-            ans.append(parameters.STOKES_NAMES.index(p))
+            ans.append(polarization.STOKES_NAMES.index(p))
     return sorted(ans)
 
 def get_parser():
@@ -92,7 +93,7 @@ def main():
     with closing(loader.load(args.input_file, args.input_option)) as dataset:
         input_polarizations = dataset.polarizations()
         output_polarizations = args.stokes
-        polarization_matrix = parameters.polarization_matrix(output_polarizations, input_polarizations)
+        polarization_matrix = polarization.polarization_matrix(output_polarizations, input_polarizations)
         array_p = dataset.array_parameters()
         image_p = parameters.ImageParameters(
             args.q_fov, args.image_oversample,
@@ -116,10 +117,11 @@ def main():
             if progress is None:
                 progress = make_progressbar("Gridding", max=chunk['total'])
             n = len(uvw)
+            # Transform the visibilities to the desired polarization
+            vis, weights = polarization.apply_polarization_matrix_weighted(
+                vis, weights, polarization_matrix)
             # Pre-weight the visibilities
             vis *= weights
-            # Transform the visibilities to the desired polarization
-            vis = np.einsum('ij,...j->...i', polarization_matrix, vis)
             if args.host:
                 gridder.grid(grid_data, uvw, vis)
             else:
