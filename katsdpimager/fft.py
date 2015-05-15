@@ -194,9 +194,15 @@ class Fft(accel.Operation):
 
 
 class GridToImageTemplate(object):
-    def __init__(self, command_queue, shape, padded_shape_src, padded_shape_dest):
-        self.shift_template = FftshiftTemplate(command_queue.context, np.complex64, 'float2')
-        self.fft_template = FftTemplate(command_queue, 2, shape, np.complex64,
+    def __init__(self, command_queue, shape, padded_shape_src, padded_shape_dest, dtype):
+        if dtype == np.complex64:
+            ctype = 'float2'
+        elif dtype == np.complex128:
+            ctype = 'double2'
+        else:
+            raise ValueError('Unhandled data type {}'.format(dtype))
+        self.shift_template = FftshiftTemplate(command_queue.context, dtype, ctype)
+        self.fft_template = FftTemplate(command_queue, 2, shape, dtype,
                                         padded_shape_src, padded_shape_dest)
 
     def instantiate(self, *args, **kwargs):

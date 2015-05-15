@@ -55,12 +55,13 @@ def subpixel_coord(x, oversample):
 
 
 class GridderTemplate(object):
-    def __init__(self, context, grid_parameters, num_polarizations, tuning=None):
+    def __init__(self, context, grid_parameters, num_polarizations, dtype, tuning=None):
         if tuning is None:
             tuning = self.autotune(
                 context, grid_parameters.antialias_size, grid_parameters.oversample,
                 num_polarizations)
         self.grid_parameters = grid_parameters
+        self.dtype = dtype
         convolve_kernel = antialias_kernel(grid_parameters.antialias_size,
                                            grid_parameters.oversample)
         self.convolve_kernel_size = convolve_kernel.shape[2]
@@ -75,12 +76,12 @@ class GridderTemplate(object):
         assert self.convolve_kernel_size <= tile_x
         self.convolve_kernel = accel.SVMArray(context,
             (grid_parameters.oversample, grid_parameters.oversample, tile_y, tile_x),
-            convolve_kernel.dtype)
+            np.complex64)
         self.convolve_kernel.fill(0)
         self.convolve_kernel[:, :, :self.convolve_kernel_size, :self.convolve_kernel_size] = convolve_kernel
         self.program = accel.build(context, "imager_kernels/grid.mako",
             {
-                'real_type': 'float',
+                'real_type': ('float' if dtype == np.complex64 else 'double'),
                 'convolve_kernel_row_stride': self.convolve_kernel.padded_shape[3],
                 'convolve_kernel_slice_stride':
                     self.convolve_kernel.padded_shape[2] * self.convolve_kernel.padded_shape[3],
@@ -108,6 +109,8 @@ class Gridder(accel.Operation):
         super(Gridder, self).__init__(command_queue, allocator)
         if len(image_parameters.polarizations) != template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
+        if image_parameters.dtype_complex != template.dtype:
+            raise ValueError('Mismatch in data type')
         # Check that longest baseline won't cause an out-of-bounds access
         max_uv = float(array_parameters.longest_baseline / image_parameters.cell_size) + template.convolve_kernel_size / 2
         if max_uv >= image_parameters.pixels // 2 - 1 - 1e-3:
@@ -118,7 +121,7 @@ class Gridder(accel.Operation):
         self.slots['grid'] = accel.IOSlot(
             (image_parameters.pixels, image_parameters.pixels,
                 accel.Dimension(template.num_polarizations, exact=True)),
-            np.complex64)
+            template.dtype)
         self.slots['uvw'] = accel.IOSlot(
             (max_vis, accel.Dimension(3, exact=True)), np.float32)
         self.slots['vis'] = accel.IOSlot(
@@ -200,8 +203,8 @@ class GridderHost(object):
         offset = pixels // 2 - (ksize - 1) // 2
         for row in range(uvw.shape[0]):
             # l and m are measured in cells
-            l = float(uvw[row, 0] / self.image_parameters.cell_size) + offset
-            m = float(uvw[row, 1] / self.image_parameters.cell_size) + offset
+            l = np.float32(uvw[row, 0] / self.image_parameters.cell_size) + offset
+            m = np.float32(uvw[row, 1] / self.image_parameters.cell_size) + offset
             sub_l = subpixel_coord(l, self.grid_parameters.oversample)
             sub_m = subpixel_coord(m, self.grid_parameters.oversample)
             l = int(math.floor(l))

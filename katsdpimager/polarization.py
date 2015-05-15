@@ -61,7 +61,7 @@ STOKES_COEFF = np.array([
     [1, 1, 0, 0],
     [0, 0, 1, 1j],
     [0, 0, 1, -1j],
-    [1, -1, 0, 0]])
+    [1, -1, 0, 0]], np.complex64)
 
 
 @contextmanager
@@ -103,8 +103,9 @@ def polarization_matrix(outputs, inputs):
     # rounding errors. Round off anything that is close enough to a multiple.
     # In particular, tiny values will be flushed to zero, which is important
     # to apply_polarization_matrix.
-    Xr = np.round(4 * X) * 0.25
+    Xr = np.round(np.float32(4) * X) * np.float32(0.25)
     np.putmask(X, np.isclose(X, Xr), Xr)
+    assert X.dtype == np.complex64
     return X.T
 
 def apply_polarization_matrix(data, matrix):
@@ -158,8 +159,8 @@ def apply_polarization_matrix_weighted(data, weights, matrix):
     # negative zeros to positive zeros, so that the reciprocal
     # is +inf.
     with _np_seterr(divide='ignore'):
-        variance = 1.0 / np.abs(weights)
+        variance = np.reciprocal(np.abs(weights))
     weight_matrix = np.multiply(matrix, matrix.conj()).real  # Square of abs, element-wise
     variance = apply_polarization_matrix(variance, weight_matrix)
-    weights = 1.0 / variance
+    weights = np.reciprocal(variance)
     return data, weights

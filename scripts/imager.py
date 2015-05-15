@@ -56,6 +56,7 @@ def get_parser():
     group.add_argument('--pixel-size', type=parse_quantity, help='Size of each image pixel [computed from array]')
     group.add_argument('--pixels', type=int, help='Number of pixels in image [computed from array]')
     group.add_argument('--stokes', type=parse_stokes, default='I', help='Stokes parameters to image e.g. IQUV for full-Stokes [%(default)s]')
+    group.add_argument('--precision', choices=['single', 'double'], default='single', help='Internal floating-point precision [%(default)s]')
     group = parser.add_argument_group('Gridding options')
     group.add_argument('--grid-oversample', type=int, default=8, help='Oversampling factor for convolution kernels [%(default)s]')
     group.add_argument('--aa-size', type=int, default=7, help='Support of anti-aliasing kernel [%(default)s]')
@@ -98,13 +99,14 @@ def main():
         image_p = parameters.ImageParameters(
             args.q_fov, args.image_oversample,
             dataset.frequency(args.channel), array_p, output_polarizations,
+            (np.float32 if args.precision == 'single' else np.float64),
             args.pixel_size, args.pixels)
         grid_p = parameters.GridParameters(args.aa_size, args.grid_oversample)
         if args.host:
             gridder = grid.GridderHost(image_p, grid_p)
-            grid_data = np.zeros((image_p.pixels, image_p.pixels, len(output_polarizations)), dtype=np.complex64)
+            grid_data = np.zeros((image_p.pixels, image_p.pixels, len(output_polarizations)), dtype=image_p.dtype_complex)
         else:
-            gridder_template = grid.GridderTemplate(context, grid_p, len(output_polarizations))
+            gridder_template = grid.GridderTemplate(context, grid_p, len(output_polarizations), image_p.dtype_complex)
             gridder = gridder_template.instantiate(queue, image_p, array_p, args.vis_block, accel.SVMAllocator(context))
             gridder.ensure_all_bound()
             grid_data = gridder.buffer('grid')
@@ -137,14 +139,14 @@ def main():
             if args.host:
                 image = np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(grid_data), axes=(0, 1)).real)
             else:
-                image = accel.SVMArray(context, grid_data.shape, np.complex64)
+                image = accel.SVMArray(context, grid_data.shape, image_p.dtype_complex)
                 invert_template = fft.GridToImageTemplate(
-                    queue, grid_data.shape, grid_data.padded_shape, image.shape)
+                    queue, grid_data.shape, grid_data.padded_shape, image.shape, image.dtype)
                 invert = invert_template.instantiate(accel.SVMAllocator(context))
                 invert.bind(grid=grid_data, image=image)
                 invert()
                 queue.finish()
-                image = image.real * (1.0 / (image.shape[0] * image.shape[1]))
+                image = image.real * np.reciprocal(image_p.dtype.type(image.shape[0] * image.shape[1]))
         if args.write_grid is not None:
             with step('Write grid'):
                 io.write_fits_grid(grid_data, image_p, args.write_grid)

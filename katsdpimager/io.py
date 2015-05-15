@@ -169,7 +169,7 @@ def write_fits_grid(grid, image_parameters, filename):
         If the set of `polarizations` cannot be represented as a linear
         transform in the FITS header.
     """
-    grid = _split_array(grid, np.float32)
+    grid = _split_array(grid, image_parameters.dtype)
     grid = grid.transpose(3, 2, 0, 1)
 
     header = fits.Header()

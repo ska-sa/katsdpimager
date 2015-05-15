@@ -18,7 +18,7 @@ typedef atomic_accum_${real_type}2 atomic_accum_Complex;
 #define make_Complex make_${real_type}2
 #define atomic_accum_Complex_add atomic_accum_${real_type}2_add
 
-DEVICE_FN Complex Complex_mad(Complex a, Complex b, Complex c)
+DEVICE_FN Complex Complex_mad(float2 a, float2 b, Complex c)
 {
     Complex out;
     out.x = fma(a.x, b.x, fma(-a.y, b.y, c.x));
@@ -49,8 +49,8 @@ void grid(
     GLOBAL atomic_accum_Complex * RESTRICT out,
     int out_stride,
     const GLOBAL float * RESTRICT uvw,
-    const GLOBAL Complex * RESTRICT vis,
-    const GLOBAL Complex * RESTRICT convolve_kernel,
+    const GLOBAL float2 * RESTRICT vis,
+    const GLOBAL float2 * RESTRICT convolve_kernel,
     float uv_scale,
     float uv_bias,
     int vis_per_workgroup,
@@ -65,7 +65,7 @@ void grid(
     // Index for first grid point to update
     LOCAL_DECL int2 batch_min_uv[BATCH_SIZE];
     // Visibilities multiplied by weights
-    LOCAL_DECL Complex batch_vis[NPOLS][BATCH_SIZE];
+    LOCAL_DECL float2 batch_vis[NPOLS][BATCH_SIZE];
 
     // In-register sums
     Complex sums[NPOLS][MULTI_Y][MULTI_X];
@@ -120,7 +120,7 @@ void grid(
         // Process batch
         for (int vis_id = 0; vis_id < batch_size; vis_id++)
         {
-            Complex sample_vis[NPOLS];
+            float2 sample_vis[NPOLS];
             for (int p = 0; p < NPOLS; p++)
                 sample_vis[p] = batch_vis[p][vis_id];
             int2 min_uv = batch_min_uv[vis_id];
@@ -141,7 +141,7 @@ void grid(
                             sums[y][x][p] = make_Complex(0.0f, 0.0f);
                     }
                     int offset = v * CONVOLVE_KERNEL_ROW_STRIDE + u + base_offset;
-                    Complex weight = convolve_kernel[offset];
+                    float2 weight = convolve_kernel[offset];
                     for (int p = 0; p < NPOLS; p++)
                         sums[y][x][p] = Complex_mad(weight, sample_vis[p], sums[y][x][p]);
                 }

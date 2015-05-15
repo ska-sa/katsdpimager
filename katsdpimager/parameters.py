@@ -50,13 +50,15 @@ class ImageParameters(object):
         `pixels` are specified.
     polarizations : list
         List of polarizations that will appear in the image
+    dtype : {np.float32, np.complex64}
+        Floating-point type for image and grid
     pixel_size : Quantity or float, optional
         Angular size of a single pixel, or dimensionless to specify l or m
         size directly. If specified, `image_oversample` is ignored.
     pixels : int, optional
         Number of pixels in the image. If specified, `q_fov` is ignored.
     """
-    def __init__(self, q_fov, image_oversample, frequency, array, polarizations, pixel_size=None, pixels=None):
+    def __init__(self, q_fov, image_oversample, frequency, array, polarizations, dtype, pixel_size=None, pixels=None):
         self.wavelength = frequency.to(units.m, equivalencies=units.spectral())
         # Compute pixel size
         if pixel_size is None:
@@ -87,6 +89,8 @@ class ImageParameters(object):
                     recommended += 1
                 raise ValueError("Image size {} not supported - try {}".format(pixels, recommended))
         assert pixels % 2 == 0
+        self.dtype = np.dtype(dtype)
+        self.dtype_complex = np.promote_types(dtype, np.complex64)
         self.pixels = pixels
         self.image_size = self.pixel_size * pixels
         self.cell_size = self.wavelength / self.image_size
