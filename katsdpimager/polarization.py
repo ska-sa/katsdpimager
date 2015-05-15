@@ -159,6 +159,7 @@ def apply_polarization_matrix_weighted(data, weights, matrix):
     # is +inf.
     with _np_seterr(divide='ignore'):
         variance = 1.0 / np.abs(weights)
-    variance = apply_polarization_matrix(variance, np.abs(matrix))
+    weight_matrix = np.multiply(matrix, matrix.conj()).real  # Square of abs, element-wise
+    variance = apply_polarization_matrix(variance, weight_matrix)
     weights = 1.0 / variance
     return data, weights
