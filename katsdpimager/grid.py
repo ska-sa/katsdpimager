@@ -140,6 +140,18 @@ class Gridder(accel.Operation):
             raise ValueError('Number of visibilities {} is out of range 0..{}'.format(n, self.max_vis))
         self._num_vis = n
 
+    def clear(self):
+        """TODO: implement on GPU"""
+        self.buffer('grid').fill(0)
+
+    def grid(self, uvw, vis):
+        """Add visibilities to the grid, with convolutional gridding using the
+        anti-aliasing filter."""
+        self.set_num_vis(len(uvw))
+        self.buffer('uvw')[:len(uvw)] = uvw
+        self.buffer('vis')[:len(vis)] = vis
+        self()
+
     def _run(self):
         if self._num_vis == 0:
             return
@@ -176,17 +188,21 @@ class GridderHost(object):
         self.grid_parameters = grid_parameters
         self.kernel = antialias_kernel(grid_parameters.antialias_size,
                                        grid_parameters.oversample)
+        pixels = image_parameters.pixels
+        shape = (pixels, pixels, len(image_parameters.polarizations))
+        self.values = np.empty(shape, image_parameters.dtype_complex)
         # TODO: compute taper function (FT of kernel)
         # See http://www.dsprelated.com/freebooks/sasp/Kaiser_Window.html
 
-    def grid(self, grid, uvw, vis):
-        """Add visibilities to a grid, with convolutional gridding using the
+    def clear(self):
+        self.values.fill(0)
+
+    def grid(self, uvw, vis):
+        """Add visibilities to the grid, with convolutional gridding using the
         anti-aliasing filter.
 
         Parameters
         ----------
-        grid : 3D ndarray of complex
-            Grid, indexed by m, l and polarization. The DC term is at the centre.
         uvw : 2D Quantity array
             UVW coordinates for visibilities, indexed by sample then u/v/w
         vis : 2D ndarray of complex
@@ -196,8 +212,6 @@ class GridderHost(object):
         assert uvw.unit.physical_type == 'length'
         pixels = self.image_parameters.pixels
         ksize = self.kernel.shape[2]
-        assert grid.shape[0] == pixels
-        assert grid.shape[1] == pixels
         # Offset to bias coordinates such that l,m=0 translates to the first
         # pixel to update in the grid.
         offset = pixels // 2 - (ksize - 1) // 2
@@ -211,4 +225,4 @@ class GridderHost(object):
             m = int(math.floor(m))
             sample = vis[row, :]
             sub_kernel = self.kernel[sub_m, sub_l, ..., np.newaxis]
-            grid[m : m+ksize, l : l+ksize, :] += sample * sub_kernel
+            self.values[m : m+ksize, l : l+ksize, :] += sample * sub_kernel

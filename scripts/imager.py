@@ -64,7 +64,9 @@ def get_parser():
     group.add_argument('--vis-block', type=int, default=1048576, help='Number of visibilities to load at a time [%(default)s]')
     group = parser.add_argument_group('Debugging options')
     group.add_argument('--host', action='store_true', help='Perform gridding on the CPU')
+    group.add_argument('--write-psf', metavar='FILE', help='Write image of PSF to FITS file')
     group.add_argument('--write-grid', metavar='FILE', help='Write UV grid to FITS file')
+    group.add_argument('--vis-limit', type=int, metavar='N', help='Use only the first N visibilities')
     return parser
 
 def make_progressbar(name, *args, **kwargs):
@@ -79,11 +81,80 @@ def step(name):
     progress.next()
     progress.finish()
 
+def data_iter(dataset, args):
+    """Wrapper around :py:meth:`katsdpimager.loader_core.LoaderBase.data_iter`
+    that handles truncation to a number of visibilities specified on the
+    command line.
+    """
+    N = args.vis_limit
+    for chunk in dataset.data_iter(args.channel, args.vis_block):
+        if N is not None:
+            if N < len(chunk['uvw']):
+                for key in ['uvw', 'weights', 'vis']:
+                    if key in chunk:
+                        chunk[key] = chunk[key][:N]
+                chunk['progress'] = chunk['total']
+        yield chunk
+        if N is not None:
+            N -= len(chunk['uvw'])
+            if N == 0:
+                return
+
+def make_psf(queue, dataset, args, polarization_matrix, gridder, grid_to_image):
+    progress = None
+    gridder.clear()
+    # TODO: pass a flag to avoid retrieving visibilities
+    for chunk in data_iter(dataset, args):
+        uvw = chunk['uvw']
+        weights = chunk['weights']
+        if progress is None:
+            progress = make_progressbar("Gridding PSF", max=chunk['total'])
+        # Transform the visibilities to the desired polarization
+        weights = polarization.apply_polarization_matrix_weights(weights, polarization_matrix)
+        gridder.grid(uvw, weights)
+        if queue:
+            queue.finish()
+        progress.goto(chunk['progress'])
+    progress.finish()
+
+    with step('FFT PSF'):
+        grid_to_image()
+        if queue:
+            queue.finish()
+
+def make_dirty(queue, dataset, args, polarization_matrix, gridder, grid_to_image):
+    progress = None
+    gridder.clear()
+    for chunk in data_iter(dataset, args):
+        uvw = chunk['uvw']
+        weights = chunk['weights']
+        vis = chunk['vis']
+        if progress is None:
+            progress = make_progressbar("Gridding", max=chunk['total'])
+        # Transform the visibilities to the desired polarization
+        vis = polarization.apply_polarization_matrix(vis, polarization_matrix)
+        weights = polarization.apply_polarization_matrix_weights(weights, polarization_matrix)
+        # Pre-weight the visibilities
+        vis *= weights
+        gridder.grid(uvw, vis)
+        if queue:
+            queue.finish()
+        progress.goto(chunk['progress'])
+    progress.finish()
+
+    with step('FFT'):
+        grid_to_image()
+        if queue:
+            queue.finish()
+
+
 def main():
     parser = get_parser()
     args = parser.parse_args()
     args.input_option = ['--' + opt for opt in args.input_option]
 
+    queue = None
+    context = None
     if not args.host:
         context = accel.create_some_context()
         if not context.device.is_cuda:
@@ -92,6 +163,7 @@ def main():
         queue = context.create_command_queue()
 
     with closing(loader.load(args.input_file, args.input_option)) as dataset:
+        # Determine parameters
         input_polarizations = dataset.polarizations()
         output_polarizations = args.stokes
         polarization_matrix = polarization.polarization_matrix(output_polarizations, input_polarizations)
@@ -102,56 +174,35 @@ def main():
             (np.float32 if args.precision == 'single' else np.float64),
             args.pixel_size, args.pixels)
         grid_p = parameters.GridParameters(args.aa_size, args.grid_oversample)
+        # Create data and operation instances
         if args.host:
             gridder = grid.GridderHost(image_p, grid_p)
-            grid_data = np.zeros((image_p.pixels, image_p.pixels, len(output_polarizations)), dtype=image_p.dtype_complex)
+            grid_data = gridder.values
+            image = np.empty(grid_data.shape, image_p.dtype)
+            grid_to_image = fft.GridToImageHost(grid_data, image)
         else:
+            # Gridder
             gridder_template = grid.GridderTemplate(context, grid_p, len(output_polarizations), image_p.dtype_complex)
             gridder = gridder_template.instantiate(queue, image_p, array_p, args.vis_block, accel.SVMAllocator(context))
             gridder.ensure_all_bound()
             grid_data = gridder.buffer('grid')
-            grid_data.fill(0)
-        progress = None
-        for chunk in dataset.data_iter(args.channel, args.vis_block):
-            uvw = chunk['uvw']
-            weights = chunk['weights']
-            vis = chunk['vis']
-            if progress is None:
-                progress = make_progressbar("Gridding", max=chunk['total'])
-            n = len(uvw)
-            # Transform the visibilities to the desired polarization
-            vis, weights = polarization.apply_polarization_matrix_weighted(
-                vis, weights, polarization_matrix)
-            # Pre-weight the visibilities
-            vis *= weights
-            if args.host:
-                gridder.grid(grid_data, uvw, vis)
-            else:
-                gridder.buffer('uvw')[:n] = uvw.to(units.m).value
-                gridder.buffer('vis')[:n] = vis
-                gridder.set_num_vis(n)
-                gridder()
-                queue.finish()
-            progress.goto(chunk['progress'])
-        progress.finish()
+            # Grid to image
+            image = accel.SVMArray(context, grid_data.shape, image_p.dtype_complex)
+            grid_to_image_template = fft.GridToImageTemplate(
+                queue, grid_data.shape, grid_data.padded_shape, image.shape, image.dtype)
+            grid_to_image = grid_to_image_template.instantiate(accel.SVMAllocator(context))
+            grid_to_image.bind(grid=grid_data, image=image)
 
-        with step('FFT'):
-            if args.host:
-                image = np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(grid_data), axes=(0, 1)).real)
-            else:
-                image = accel.SVMArray(context, grid_data.shape, image_p.dtype_complex)
-                invert_template = fft.GridToImageTemplate(
-                    queue, grid_data.shape, grid_data.padded_shape, image.shape, image.dtype)
-                invert = invert_template.instantiate(accel.SVMAllocator(context))
-                invert.bind(grid=grid_data, image=image)
-                invert()
-                queue.finish()
-                image = image.real * np.reciprocal(image_p.dtype.type(image.shape[0] * image.shape[1]))
+        progress = None
+        make_psf(queue, dataset, args, polarization_matrix, gridder, grid_to_image)
+        if args.write_psf is not None:
+            io.write_fits_image(dataset, image.real, image_p, args.write_psf)
+        make_dirty(queue, dataset, args, polarization_matrix, gridder, grid_to_image)
         if args.write_grid is not None:
             with step('Write grid'):
                 io.write_fits_grid(grid_data, image_p, args.write_grid)
         with step('Write image'):
-            io.write_fits_image(dataset, image, image_p, args.output_file)
+            io.write_fits_image(dataset, image.real, image_p, args.output_file)
 
 if __name__ == '__main__':
     main()

@@ -226,3 +226,13 @@ class GridToImage(accel.OperationSequence):
             'image': ['ifft:dest', 'shift_image:data']
         }
         super(GridToImage, self).__init__(command_queue, operations, compounds)
+
+class GridToImageHost(object):
+    def __init__(self, grid, image):
+        self.grid = grid
+        self.image = image
+
+    def __call__(self):
+        self.image[:] = np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(self.grid), axes=(0, 1)).real)
+        # Scale factor is to match behaviour of CUFFT, which is unnormalized
+        self.image *= self.image.shape[0] * self.image.shape[1]

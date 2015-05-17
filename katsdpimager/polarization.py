@@ -119,8 +119,7 @@ def apply_polarization_matrix(data, matrix):
     Parameters
     ----------
     data : array-like
-        Visibility data, or inverse weights (variances). The last
-        dimension corresponds to polarization.
+        Visibility data. The last dimension corresponds to polarization.
     matrix : array-like
         Matrix returned by :py:func:`polarization_matrix`, or constructed
         otherwise.
@@ -133,28 +132,23 @@ def apply_polarization_matrix(data, matrix):
                 out[..., i] += matrix[i, j] * data[..., j]
     return out
 
-def apply_polarization_matrix_weighted(data, weights, matrix):
-    """Apply a polarization change to visibilities and weights. It is suitable
+def apply_polarization_matrix_weights(weights, matrix):
+    """Apply a polarization change to weights. It is suitable
     even when some weights are zero, indicating flagged data.
 
     Parameters
     ----------
-    data : array-like
-        Visibility data. The last dimension corresponds to polarization.
     weights : array-like
-        Real-valued weights, in the same shape as `data`.
+        Real-valued weights. The last dimension corresponds to polarization.
     matrix : array-like
         Matrix returned by :py:func:`polarization_matrix`, or constructed
         otherwise.
 
     Returns
     -------
-    out_data : array-like
-        Transformed visibilities
-    out_weights : array-like
+    array-like
         Transformed weights
     """
-    data = apply_polarization_matrix(data, matrix)
     # Transform weights to variance estimates. The abs() is to force
     # negative zeros to positive zeros, so that the reciprocal
     # is +inf.
@@ -162,5 +156,4 @@ def apply_polarization_matrix_weighted(data, weights, matrix):
         variance = np.reciprocal(np.abs(weights))
     weight_matrix = np.multiply(matrix, matrix.conj()).real  # Square of abs, element-wise
     variance = apply_polarization_matrix(variance, weight_matrix)
-    weights = np.reciprocal(variance)
-    return data, weights
+    return np.reciprocal(variance)
