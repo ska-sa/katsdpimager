@@ -60,7 +60,7 @@ class CleanHost(object):
         self.model[y, x] += scale
         return (y0, x0, y1, x1)
 
-    def __call__(self):
+    def __call__(self, progress=None):
         tile_size = self.clean_parameters.tile_size
         ntiles = accel.divup(self.image_parameters.pixels, tile_size)
         tile_max = np.zeros((ntiles, ntiles), self.image_parameters.dtype)
@@ -80,3 +80,7 @@ class CleanHost(object):
             for y in range(tile_y0, tile_y1):
                 for x in range(tile_x0, tile_x1):
                     self._update_tile(tile_max, tile_pos, y, x)
+            if progress:
+                progress.next()
+        if progress:
+            progress.finish()

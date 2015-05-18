@@ -62,10 +62,11 @@ def get_parser():
     group.add_argument('--grid-oversample', type=int, default=8, help='Oversampling factor for convolution kernels [%(default)s]')
     group.add_argument('--aa-size', type=int, default=7, help='Support of anti-aliasing kernel [%(default)s]')
     group = parser.add_argument_group('Cleaning options')
-    # TODO: compute if not specified, instead of a hard-coded default
+    # TODO: compute from some heuristic if not specified, instead of a hard-coded default
     group.add_argument('--psf-patch', type=int, default=100, help='Pixels in beam patch for cleaning [%(default)s]')
     group.add_argument('--loop-gain', type=float, default=0.1, help='Loop gain for cleaning [%(default)s]')
     group.add_argument('--minor', type=int, default=1000, help='Minor cycles per major cycle [%(default)s]')
+    group.add_argument('--clean-mode', choices=['I', 'IQUV'], default='IQUV', help='Stokes parameters to consider for peak-finding [%(default)s]')
     group = parser.add_argument_group('Performance tuning options')
     group.add_argument('--vis-block', type=int, default=1048576, help='Number of visibilities to load at a time [%(default)s]')
     group.add_argument('--tile-size', type=int, default=64, help='Tile size for CLEAN optimizations [%(default)s]')
@@ -178,7 +179,7 @@ def main():
         queue = context.create_command_queue()
 
     with closing(loader.load(args.input_file, args.input_option)) as dataset:
-        # Determine parameters
+        #### Determine parameters ####
         input_polarizations = dataset.polarizations()
         output_polarizations = args.stokes
         polarization_matrix = polarization.polarization_matrix(output_polarizations, input_polarizations)
@@ -189,11 +190,17 @@ def main():
             (np.float32 if args.precision == 'single' else np.float64),
             args.pixel_size, args.pixels)
         grid_p = parameters.GridParameters(args.aa_size, args.grid_oversample)
-        # TODO: take mode as a command-line argument
+        if args.clean_mode == 'I':
+            clean_mode = clean.CLEAN_I
+        elif args.clean_mode == 'IQUV':
+            clean_mode = clean.CLEAN_SUMSQ
+        else:
+            raise ValueError('Unhandled --clean-mode {}'.format(args.clean_mode))
         clean_p = parameters.CleanParameters(
-            args.minor, args.loop_gain, clean.CLEAN_SUMSQ,
+            args.minor, args.loop_gain, clean_mode,
             args.psf_patch, args.tile_size)
-        # Create data and operation instances
+
+        #### Create data and operation instances ####
         if args.host:
             gridder = grid.GridderHost(image_p, grid_p)
             grid_data = gridder.values
@@ -212,14 +219,14 @@ def main():
             grid_to_image = grid_to_image_template.instantiate(accel.SVMAllocator(context))
             grid_to_image.bind(grid=grid_data, image=image)
 
-        progress = None
+        #### Create dirty image ####
         make_psf(queue, dataset, args, polarization_matrix, gridder, grid_to_image)
         if args.write_psf is not None:
             io.write_fits_image(dataset, image.real, image_p, args.write_psf)
         psf = extract_psf(image.real, clean_p)
-        scale = np.reciprocal(psf[psf.shape[0] // 2, psf.shape[1] // 2, ...]).copy()
+        scale = np.reciprocal(psf[psf.shape[0] // 2, psf.shape[1] // 2, ...])
         make_dirty(queue, dataset, args, polarization_matrix, gridder, grid_to_image)
-        # TODO: this is a hack. Put it inside make_dirty, combine with tapering correction
+        # TODO: this is a hack. Put it inside make_dirty, combined with tapering correction
         image.real *= scale
         psf *= scale
         if args.write_grid is not None:
@@ -229,12 +236,11 @@ def main():
             with step('Write dirty image'):
                 io.write_fits_image(dataset, image.real, image_p, args.write_dirty)
 
+        #### Deconvolution ####
         image = image.real.copy()
         model = np.empty_like(image)
         cleaner = clean.CleanHost(image_p, clean_p, image, psf, model)
-        with step('CLEAN'):
-            # TODO: make intermediate progress reports
-            cleaner()
+        cleaner(make_progressbar('CLEAN', max=clean_p.minor))
         # TODO: restoring beam?
         # Add residuals back in
         model += image
