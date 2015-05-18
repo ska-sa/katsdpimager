@@ -116,3 +116,11 @@ class GridParameters(object):
     def __init__(self, antialias_size, oversample):
         self.antialias_size = antialias_size
         self.oversample = oversample
+
+class CleanParameters(object):
+    def __init__(self, minor, loop_gain, mode, psf_patch, tile_size):
+        self.minor = minor
+        self.loop_gain = loop_gain
+        self.mode = mode
+        self.psf_patch = psf_patch
+        self.tile_size = tile_size

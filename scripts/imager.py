@@ -13,6 +13,7 @@ import katsdpimager.polarization as polarization
 import katsdpimager.grid as grid
 import katsdpimager.io as io
 import katsdpimager.fft as fft
+import katsdpimager.clean as clean
 from contextlib import closing, contextmanager
 
 def parse_quantity(str_value):
@@ -60,17 +61,24 @@ def get_parser():
     group = parser.add_argument_group('Gridding options')
     group.add_argument('--grid-oversample', type=int, default=8, help='Oversampling factor for convolution kernels [%(default)s]')
     group.add_argument('--aa-size', type=int, default=7, help='Support of anti-aliasing kernel [%(default)s]')
+    group = parser.add_argument_group('Cleaning options')
+    # TODO: compute if not specified, instead of a hard-coded default
+    group.add_argument('--psf-patch', type=int, default=100, help='Pixels in beam patch for cleaning [%(default)s]')
+    group.add_argument('--loop-gain', type=float, default=0.1, help='Loop gain for cleaning [%(default)s]')
+    group.add_argument('--minor', type=int, default=1000, help='Minor cycles per major cycle [%(default)s]')
     group = parser.add_argument_group('Performance tuning options')
     group.add_argument('--vis-block', type=int, default=1048576, help='Number of visibilities to load at a time [%(default)s]')
+    group.add_argument('--tile-size', type=int, default=64, help='Tile size for CLEAN optimizations [%(default)s]')
     group = parser.add_argument_group('Debugging options')
     group.add_argument('--host', action='store_true', help='Perform gridding on the CPU')
     group.add_argument('--write-psf', metavar='FILE', help='Write image of PSF to FITS file')
     group.add_argument('--write-grid', metavar='FILE', help='Write UV grid to FITS file')
+    group.add_argument('--write-dirty', metavar='FILE', help='Write dirty image to FITS file')
     group.add_argument('--vis-limit', type=int, metavar='N', help='Use only the first N visibilities')
     return parser
 
 def make_progressbar(name, *args, **kwargs):
-    bar = progress.bar.Bar("{:16}".format(name), suffix='%(percent)3d%% [%(eta_td)s]', *args, **kwargs)
+    bar = progress.bar.Bar("{:20}".format(name), suffix='%(percent)3d%% [%(eta_td)s]', *args, **kwargs)
     bar.update()
     return bar
 
@@ -148,6 +156,13 @@ def make_dirty(queue, dataset, args, polarization_matrix, gridder, grid_to_image
             queue.finish()
 
 
+def extract_psf(image, clean_parameters):
+    psf_patch = min(image.shape[0], clean_parameters.psf_patch)
+    x0 = (image.shape[0] - psf_patch) // 2
+    x1 = x0 + psf_patch
+    return image[x0:x1, x0:x1, ...].copy()
+
+
 def main():
     parser = get_parser()
     args = parser.parse_args()
@@ -174,6 +189,10 @@ def main():
             (np.float32 if args.precision == 'single' else np.float64),
             args.pixel_size, args.pixels)
         grid_p = parameters.GridParameters(args.aa_size, args.grid_oversample)
+        # TODO: take mode as a command-line argument
+        clean_p = parameters.CleanParameters(
+            args.minor, args.loop_gain, clean.CLEAN_SUMSQ,
+            args.psf_patch, args.tile_size)
         # Create data and operation instances
         if args.host:
             gridder = grid.GridderHost(image_p, grid_p)
@@ -197,12 +216,30 @@ def main():
         make_psf(queue, dataset, args, polarization_matrix, gridder, grid_to_image)
         if args.write_psf is not None:
             io.write_fits_image(dataset, image.real, image_p, args.write_psf)
+        psf = extract_psf(image.real, clean_p)
+        scale = np.reciprocal(psf[psf.shape[0] // 2, psf.shape[1] // 2, ...]).copy()
         make_dirty(queue, dataset, args, polarization_matrix, gridder, grid_to_image)
+        # TODO: this is a hack. Put it inside make_dirty, combine with tapering correction
+        image.real *= scale
+        psf *= scale
         if args.write_grid is not None:
             with step('Write grid'):
                 io.write_fits_grid(grid_data, image_p, args.write_grid)
-        with step('Write image'):
-            io.write_fits_image(dataset, image.real, image_p, args.output_file)
+        if args.write_dirty is not None:
+            with step('Write dirty image'):
+                io.write_fits_image(dataset, image.real, image_p, args.write_dirty)
+
+        image = image.real.copy()
+        model = np.empty_like(image)
+        cleaner = clean.CleanHost(image_p, clean_p, image, psf, model)
+        with step('CLEAN'):
+            # TODO: make intermediate progress reports
+            cleaner()
+        # TODO: restoring beam?
+        # Add residuals back in
+        model += image
+        with step('Write clean image'):
+            io.write_fits_image(dataset, model, image_p, args.output_file)
 
 if __name__ == '__main__':
     main()
