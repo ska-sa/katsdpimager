@@ -3,19 +3,28 @@
 
 #define WGSX ${wgsx}
 #define WGSY ${wgsy}
+#define NPOLS ${num_polarizations}
 typedef ${real_type} T;
+
+typedef struct
+{
+    T v[NPOLS];
+} pixel;
 
 ${sample.define_sample(real_type, wgsx * wgsy)}
 
 KERNEL REQD_WORK_GROUP_SIZE(WGSX, WGSY, 1)
 void find_peak(
+    const GLOBAL pixel * RESTRICT dirty,
+    int image_stride,
     const GLOBAL T * RESTRICT tile_max,
     const GLOBAL int2 * RESTRICT tile_pos,
     int tile_width,
     int tile_height,
     int tile_stride,
     GLOBAL T * RESTRICT peak_value,
-    GLOBAL int2 * RESTRICT peak_pos)
+    GLOBAL int2 * RESTRICT peak_pos,
+    GLOBAL pixel * RESTRICT peak_pixel)
 {
     LOCAL_DECL reduce_sample_max_scratch scratch;
 
@@ -39,5 +48,7 @@ void find_peak(
     {
         *peak_value = best.value;
         *peak_pos = best.pos;
+        // Note: .x here is actually y, since pos is stored as y, x
+        *peak_pixel = dirty[best.pos.x * image_stride + best.pos.y];
     }
 }

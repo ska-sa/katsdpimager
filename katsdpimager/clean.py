@@ -11,6 +11,19 @@ CLEAN_I = 0
 CLEAN_SUMSQ = 1
 
 
+def _dtype_to_ctype(dtype):
+    if dtype == np.float32:
+        return 'float'
+    elif dtype == np.complex64:
+        return 'float2'
+    elif dtype == np.float64:
+        return 'double'
+    elif dtype == np.complex128:
+        return 'double2'
+    else:
+        raise ValueError('Unrecognised dtype {}'.format(dtype))
+
+
 class _UpdateTilesTemplate(object):
     def __init__(self, context, clean_parameters, dtype, num_polarizations, tuning=None):
         # TODO: autotuning
@@ -24,7 +37,7 @@ class _UpdateTilesTemplate(object):
         self.program = accel.build(
             context, "imager_kernels/clean/update_tiles.mako",
             {
-                'real_type': ('float' if dtype == np.float32 else 'double'),
+                'real_type': _dtype_to_ctype(dtype),
                 'wgsx': self.wgsx,
                 'wgsy': self.wgsy,
                 'tilex': self.tilex,
@@ -58,7 +71,9 @@ class _UpdateTiles(accel.Operation):
                 [tiles_height, tiles_width, accel.Dimension(2, exact=True)], np.int32)
         self.kernel = template.program.get_kernel('update_tiles')
 
-    def __call__(self, x0, y0, x1, y1):
+    def __call__(self, x0, y0, x1, y1, **kwargs):
+        self.bind(**kwargs)
+        self.ensure_all_bound()
         tile_max = self.buffer('tile_max')
         tile_pos = self.buffer('tile_pos')
         if x0 < 0 or x1 > tile_max.shape[1] or y0 < 0 or y1 > tile_max.shape[0]:
@@ -82,17 +97,19 @@ class _UpdateTiles(accel.Operation):
 
 
 class _FindPeakTemplate(object):
-    def __init__(self, context, dtype, tuning=None):
+    def __init__(self, context, dtype, num_polarizations, tuning=None):
         # TODO: autotuning
         self.wgsx = 16
         self.wgsy = 16
         self.dtype = dtype
+        self.num_polarizations = num_polarizations
         self.program = accel.build(
             context, "imager_kernels/clean/find_peak.mako",
             {
-                'real_type': ('float' if dtype == np.float32 else 'double'),
+                'real_type': _dtype_to_ctype(dtype),
+                'num_polarizations': self.num_polarizations,
                 'wgsx': self.wgsx,
-                'wgsy': self.wgsy
+                'wgsy': self.wgsy,
             },
             extra_dirs=[pkg_resources.resource_filename(__name__, '')])
 
@@ -101,33 +118,107 @@ class _FindPeakTemplate(object):
 
 
 class _FindPeak(accel.Operation):
-    def __init__(self, template, command_queue, shape, allocator=None):
+    def __init__(self, template, command_queue, image_shape, tile_shape, allocator=None):
+        if image_shape[2] != template.num_polarizations:
+            raise ValueError('Mismatch in number of polarizations')
         super(_FindPeak, self).__init__(command_queue, allocator)
         self.template = template
-        dims = [accel.Dimension(shape[0]), accel.Dimension(shape[1])]
+        image_dims = [accel.Dimension(image_shape[0]), accel.Dimension(image_shape[1]),
+                      accel.Dimension(image_shape[2], exact=True)]
+        tile_dims = [accel.Dimension(tile_shape[0]), accel.Dimension(tile_shape[1])]
         pair = accel.Dimension(2, exact=True)
-        self.slots['tile_max'] = accel.IOSlot(dims, template.dtype)
-        self.slots['tile_pos'] = accel.IOSlot(dims + [pair], np.int32)
+        self.slots['dirty'] = accel.IOSlot(image_dims, template.dtype)
+        self.slots['tile_max'] = accel.IOSlot(tile_dims, template.dtype)
+        self.slots['tile_pos'] = accel.IOSlot(tile_dims + [pair], np.int32)
         self.slots['peak_value'] = accel.IOSlot([1], template.dtype)
-        self.slots['peak_pos'] = accel.IOSlot([pair], np.int32)
+        self.slots['peak_pos'] = accel.IOSlot([2], np.int32)
+        self.slots['peak_pixel'] = accel.IOSlot([template.num_polarizations], template.dtype)
         self.kernel = template.program.get_kernel('find_peak')
 
-    def __call__(self):
+    def _run(self):
+        dirty = self.buffer('dirty')
         tile_max = self.buffer('tile_max')
         tile_pos = self.buffer('tile_pos')
         self.command_queue.enqueue_kernel(
             self.kernel,
             [
+                dirty.buffer,
+                np.int32(dirty.padded_shape[1]),
                 tile_max.buffer,
                 tile_pos.buffer,
                 np.int32(tile_max.shape[1]), np.int32(tile_max.shape[0]),
                 np.int32(tile_max.padded_shape[1]),
                 self.buffer('peak_value').buffer,
-                self.buffer('peak_pos').buffer
+                self.buffer('peak_pos').buffer,
+                self.buffer('peak_pixel').buffer
             ],
             global_size=(accel.roundup(tile_max.shape[0], self.template.wgsx),
                          accel.roundup(tile_max.shape[1], self.template.wgsy)),
             local_size=(self.template.wgsx, self.template.wgsy))
+
+
+class _SubtractPsfTemplate(object):
+    def __init__(self, context, dtype, num_polarizations, tuning=None):
+        # TODO: autotuning
+        self.wgsx = 16
+        self.wgsy = 16
+        self.dtype = dtype
+        self.num_polarizations = num_polarizations
+        self.program = accel.build(
+            context, "imager_kernels/clean/subtract_psf.mako",
+            {
+                'real_type': _dtype_to_ctype(dtype),
+                'num_polarizations': num_polarizations,
+                'wgsx': self.wgsx,
+                'wgsy': self.wgsy
+            },
+            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+
+    def instantiate(self, *args, **kwargs):
+        return _SubtractPsf(self, *args, **kwargs)
+
+
+class _SubtractPsf(accel.Operation):
+    def __init__(self, template, command_queue, loop_gain, image_shape, psf_shape, allocator=None):
+        super(_SubtractPsf, self).__init__(command_queue, allocator)
+        pol_dim = accel.Dimension(template.num_polarizations, exact=True)
+        image_dims = [accel.Dimension(image_shape[0]), accel.Dimension(image_shape[1]), pol_dim]
+        psf_dims = [accel.Dimension(psf_shape[0]), accel.Dimension(psf_shape[1]), pol_dim]
+        self.slots['dirty'] = accel.IOSlot(image_dims, template.dtype)
+        self.slots['model'] = accel.IOSlot(image_dims, template.dtype)
+        self.slots['psf'] = accel.IOSlot(psf_dims, template.dtype)
+        self.slots['peak_pixel'] = accel.IOSlot([pol_dim], template.dtype)
+        self.loop_gain = loop_gain
+        self.template = template
+        self.kernel = template.program.get_kernel('subtract_psf')
+
+    def __call__(self, pos, **kwargs):
+        self.bind(**kwargs)
+        self.ensure_all_bound()
+        dirty = self.buffer('dirty')
+        model = self.buffer('model')
+        psf = self.buffer('psf')
+        self.command_queue.enqueue_kernel(
+            self.kernel,
+            [
+                dirty.buffer,
+                model.buffer,
+                np.int32(dirty.shape[1]),
+                np.int32(dirty.shape[0]),
+                np.int32(dirty.padded_shape[1]),
+                psf.buffer,
+                np.int32(psf.shape[1]),
+                np.int32(psf.shape[0]),
+                np.int32(psf.padded_shape[1]),
+                self.buffer('peak_pixel').buffer,
+                np.int32(pos[1]), np.int32(pos[0]),
+                np.int32(pos[1] - psf.shape[1] // 2),
+                np.int32(pos[0] - psf.shape[0] // 2),
+                np.float32(self.loop_gain)
+            ],
+            global_size = (accel.roundup(psf.shape[1], self.template.wgsx),
+                           accel.roundup(psf.shape[0], self.template.wgsy)),
+            local_size = (self.template.wgsx, self.template.wgsy))
 
 
 class CleanHost(object):

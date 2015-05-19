@@ -1,6 +1,6 @@
 """Tests for :py:mod:`katsdpimager.clean`"""
 
-from __future__ import division
+from __future__ import division, print_function
 import numpy as np
 import scipy.signal
 import katsdpimager.clean as clean
@@ -67,19 +67,53 @@ class TestClean(object):
 
     @device_test
     def test_find_peak(self, context, command_queue):
-        shape = (72, 67)
-        template = clean._FindPeakTemplate(context, np.float32)
-        fn = template.instantiate(command_queue, shape)
+        image_shape = (256, 256, 4)
+        tile_shape = (72, 67)
+        template = clean._FindPeakTemplate(context, np.float32, 4)
+        fn = template.instantiate(command_queue, image_shape, tile_shape)
         fn.ensure_all_bound()
         # TODO: this could lead to ties, which will fail the test
         rs = np.random.RandomState(seed=1)
-        tile_max = rs.uniform(1.0, 2.0, shape).astype(np.float32)
-        tile_pos = np.arange(2 * shape[0] * shape[1]).reshape(shape + (2,)).astype(np.int32)
+        dirty = rs.uniform(1.0, 2.0, image_shape).astype(np.float32)
+        tile_max = rs.uniform(1.0, 2.0, tile_shape).astype(np.float32)
+        # Set tile_pos so that each pos indexes the corresponding position in
+        # the dirty image, to make testing easier.
+        tile_pos = np.array([[[y, x] for x in range(tile_shape[1])] for y in range(tile_shape[0])], np.int32)
         fn.buffer('tile_max').set(command_queue, tile_max)
         fn.buffer('tile_pos').set(command_queue, tile_pos)
+        fn.buffer('dirty').set(command_queue, dirty)
         fn()
         peak_value = fn.buffer('peak_value').get(command_queue)
         peak_pos = fn.buffer('peak_pos').get(command_queue)
+        peak_pixel = fn.buffer('peak_pixel').get(command_queue)
         best = np.unravel_index(np.argmax(tile_max), tile_max.shape)
         assert_equal(tile_max[best], peak_value[0])
         np.testing.assert_array_equal(tile_pos[best], peak_pos)
+        np.testing.assert_array_equal(dirty[peak_pos[0], peak_pos[1], :], peak_pixel)
+
+    @device_test
+    def test_subtract_psf(self, context, command_queue):
+        loop_gain = 0.25
+        image_shape = (200, 345, 4)
+        psf_shape = (72, 131, 4)
+        pos = (170, 59)    # chosen so that the PSF will be clipped to the image
+        rs = np.random.RandomState(seed=1)
+        dirty = rs.standard_normal(image_shape).astype(np.float32)
+        psf = rs.standard_normal(psf_shape).astype(np.float32)
+        expected = dirty.copy()
+        peak_pixel = dirty[pos]
+        print(loop_gain * peak_pixel)
+        expected[134:200, 0:125, :] -= loop_gain * peak_pixel * psf[:66, 6:]
+
+        template = clean._SubtractPsfTemplate(context, np.float32, 4)
+        fn = template.instantiate(command_queue, loop_gain, image_shape, psf_shape)
+        fn.ensure_all_bound()
+        fn.buffer('dirty').set(command_queue, dirty)
+        fn.buffer('psf').set(command_queue, psf)
+        fn.buffer('peak_pixel').set(command_queue, peak_pixel)
+        self._zero_buffer(command_queue, fn.buffer('model'))
+        fn(pos)
+        dirty = fn.buffer('dirty').get(command_queue)
+        model = fn.buffer('model').get(command_queue)
+        np.testing.assert_allclose(expected, dirty, atol=1e-4)
+        np.testing.assert_allclose(loop_gain * peak_pixel, model[pos])
