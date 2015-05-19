@@ -81,6 +81,55 @@ class _UpdateTiles(accel.Operation):
                 local_size=(self.template.wgsx, self.template.wgsy))
 
 
+class _FindPeakTemplate(object):
+    def __init__(self, context, dtype, tuning=None):
+        # TODO: autotuning
+        self.wgsx = 16
+        self.wgsy = 16
+        self.dtype = dtype
+        self.program = accel.build(
+            context, "imager_kernels/clean/find_peak.mako",
+            {
+                'real_type': ('float' if dtype == np.float32 else 'double'),
+                'wgsx': self.wgsx,
+                'wgsy': self.wgsy
+            },
+            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+
+    def instantiate(self, *args, **kwargs):
+        return _FindPeak(self, *args, **kwargs)
+
+
+class _FindPeak(accel.Operation):
+    def __init__(self, template, command_queue, shape, allocator=None):
+        super(_FindPeak, self).__init__(command_queue, allocator)
+        self.template = template
+        dims = [accel.Dimension(shape[0]), accel.Dimension(shape[1])]
+        pair = accel.Dimension(2, exact=True)
+        self.slots['tile_max'] = accel.IOSlot(dims, template.dtype)
+        self.slots['tile_pos'] = accel.IOSlot(dims + [pair], np.int32)
+        self.slots['peak_value'] = accel.IOSlot([1], template.dtype)
+        self.slots['peak_pos'] = accel.IOSlot([pair], np.int32)
+        self.kernel = template.program.get_kernel('find_peak')
+
+    def __call__(self):
+        tile_max = self.buffer('tile_max')
+        tile_pos = self.buffer('tile_pos')
+        self.command_queue.enqueue_kernel(
+            self.kernel,
+            [
+                tile_max.buffer,
+                tile_pos.buffer,
+                np.int32(tile_max.shape[1]), np.int32(tile_max.shape[0]),
+                np.int32(tile_max.padded_shape[1]),
+                self.buffer('peak_value').buffer,
+                self.buffer('peak_pos').buffer
+            ],
+            global_size=(accel.roundup(tile_max.shape[0], self.template.wgsx),
+                         accel.roundup(tile_max.shape[1], self.template.wgsy)),
+            local_size=(self.template.wgsx, self.template.wgsy))
+
+
 class CleanHost(object):
     def __init__(self, image_parameters, clean_parameters, image, psf, model):
         self.clean_parameters = clean_parameters

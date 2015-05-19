@@ -10,7 +10,7 @@ from katsdpsigproc.test.test_accel import device_test, cuda_test
 import mock
 from nose.tools import *
 
-class TestUpdateTiles(object):
+class TestClean(object):
     def setup(self):
         self.clean_parameters = parameters.CleanParameters(
             100, 0.25, clean.CLEAN_I, 45, 0)
@@ -64,3 +64,22 @@ class TestUpdateTiles(object):
                     assert_equal(tile[pos], tile_max[y, x])
                     assert_equal(pos[0] + y0, tile_pos[y, x, 0])
                     assert_equal(pos[1] + x0, tile_pos[y, x, 1])
+
+    @device_test
+    def test_find_peak(self, context, command_queue):
+        shape = (72, 67)
+        template = clean._FindPeakTemplate(context, np.float32)
+        fn = template.instantiate(command_queue, shape)
+        fn.ensure_all_bound()
+        # TODO: this could lead to ties, which will fail the test
+        rs = np.random.RandomState(seed=1)
+        tile_max = rs.uniform(1.0, 2.0, shape).astype(np.float32)
+        tile_pos = np.arange(2 * shape[0] * shape[1]).reshape(shape + (2,)).astype(np.int32)
+        fn.buffer('tile_max').set(command_queue, tile_max)
+        fn.buffer('tile_pos').set(command_queue, tile_pos)
+        fn()
+        peak_value = fn.buffer('peak_value').get(command_queue)
+        peak_pos = fn.buffer('peak_pos').get(command_queue)
+        best = np.unravel_index(np.argmax(tile_max), tile_max.shape)
+        assert_equal(tile_max[best], peak_value[0])
+        np.testing.assert_array_equal(tile_pos[best], peak_pos)
