@@ -9,6 +9,7 @@ from __future__ import division
 import astropy.units as units
 import math
 import numpy as np
+import katsdpimager.types
 
 def is_smooth(x):
     """Whether x is a good candidate for FFT. We heuristically require
@@ -90,7 +91,7 @@ class ImageParameters(object):
                 raise ValueError("Image size {} not supported - try {}".format(pixels, recommended))
         assert pixels % 2 == 0
         self.dtype = np.dtype(dtype)
-        self.dtype_complex = np.promote_types(dtype, np.complex64)
+        self.dtype_complex = katsdpimager.types.real_to_complex(dtype)
         self.pixels = pixels
         self.image_size = self.pixel_size * pixels
         self.cell_size = self.wavelength / self.image_size

@@ -156,13 +156,16 @@ def make_dirty(queue, dataset, args, polarization_matrix, gridder, grid_to_image
         if queue:
             queue.finish()
 
+def psf_shape(image_parameters, clean_parameters):
+    psf_patch = min(image_parameters.pixels, clean_parameters.psf_patch)
+    return (psf_patch, psf_patch, len(image_parameters.polarizations))
 
-def extract_psf(image, clean_parameters):
-    psf_patch = min(image.shape[0], clean_parameters.psf_patch)
-    x0 = (image.shape[0] - psf_patch) // 2
-    x1 = x0 + psf_patch
-    return image[x0:x1, x0:x1, ...].copy()
-
+def extract_psf(image, psf):
+    y0 = (image.shape[0] - psf.shape[0]) // 2
+    y1 = y0 + psf.shape[0]
+    x0 = (image.shape[1] - psf.shape[1]) // 2
+    x1 = y0 + psf.shape[1]
+    psf[...] = image[y0:y1, x0:x1, ...]
 
 def main():
     parser = get_parser()
@@ -204,43 +207,63 @@ def main():
         if args.host:
             gridder = grid.GridderHost(image_p, grid_p)
             grid_data = gridder.values
+            layer = np.empty(grid_data.shape, image_p.dtype_complex)
             image = np.empty(grid_data.shape, image_p.dtype)
-            grid_to_image = fft.GridToImageHost(grid_data, image)
+            model = np.empty(grid_data.shape, image_p.dtype)
+            psf = np.empty(psf_shape(image_p, clean_p), image_p.dtype)
+            grid_to_image = fft.GridToImageHost(grid_data, layer, image)
+            cleaner = clean.CleanHost(image_p, clean_p, image, psf, model)
         else:
+            allocator = accel.SVMAllocator(context)
             # Gridder
             gridder_template = grid.GridderTemplate(context, grid_p, len(output_polarizations), image_p.dtype_complex)
-            gridder = gridder_template.instantiate(queue, image_p, array_p, args.vis_block, accel.SVMAllocator(context))
+            gridder = gridder_template.instantiate(queue, image_p, array_p, args.vis_block, allocator)
             gridder.ensure_all_bound()
             grid_data = gridder.buffer('grid')
             # Grid to image
-            image = accel.SVMArray(context, grid_data.shape, image_p.dtype_complex)
+            layer = accel.SVMArray(context, grid_data.shape, image_p.dtype_complex)
+            image = accel.SVMArray(context, grid_data.shape, image_p.dtype)
             grid_to_image_template = fft.GridToImageTemplate(
                 queue, grid_data.shape, grid_data.padded_shape, image.shape, image.dtype)
-            grid_to_image = grid_to_image_template.instantiate(accel.SVMAllocator(context))
-            grid_to_image.bind(grid=grid_data, image=image)
+            grid_to_image = grid_to_image_template.instantiate(allocator)
+            grid_to_image.bind(grid=grid_data, layer=layer, image=image)
+            # CLEAN
+            psf = accel.SVMArray(context, psf_shape(image_p, clean_p), image_p.dtype)
+            model = accel.SVMArray(context, image.shape, image.dtype)
+            model[:] = 0
+            cleaner_template = clean.CleanTemplate(
+                context, clean_p, image_p.dtype, len(output_polarizations))
+            cleaner = cleaner_template.instantiate(queue, image_p, allocator)
+            cleaner.bind(dirty=image, model=model, psf=psf)
+            cleaner.ensure_all_bound()
 
         #### Create dirty image ####
         make_psf(queue, dataset, args, polarization_matrix, gridder, grid_to_image)
         if args.write_psf is not None:
-            io.write_fits_image(dataset, image.real, image_p, args.write_psf)
-        psf = extract_psf(image.real, clean_p)
+            with step('Write PSF'):
+                io.write_fits_image(dataset, image, image_p, args.write_psf)
+        extract_psf(image, psf)
         scale = np.reciprocal(psf[psf.shape[0] // 2, psf.shape[1] // 2, ...])
         make_dirty(queue, dataset, args, polarization_matrix, gridder, grid_to_image)
         # TODO: this is a hack. Put it inside make_dirty, combined with tapering correction
-        image.real *= scale
+        image *= scale
         psf *= scale
         if args.write_grid is not None:
             with step('Write grid'):
                 io.write_fits_grid(grid_data, image_p, args.write_grid)
         if args.write_dirty is not None:
             with step('Write dirty image'):
-                io.write_fits_image(dataset, image.real, image_p, args.write_dirty)
+                io.write_fits_image(dataset, image, image_p, args.write_dirty)
 
         #### Deconvolution ####
-        image = image.real.copy()
-        model = np.empty_like(image)
-        cleaner = clean.CleanHost(image_p, clean_p, image, psf, model)
-        cleaner(make_progressbar('CLEAN', max=clean_p.minor))
+        progress = make_progressbar('CLEAN', max=clean_p.minor)
+        cleaner.reset()
+        for i in range(clean_p.minor):
+            cleaner()
+            progress.next()
+        progress.finish()
+        if queue:
+            queue.finish()
         # TODO: restoring beam?
         # Add residuals back in
         model += image

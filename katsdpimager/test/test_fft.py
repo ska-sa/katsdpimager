@@ -15,7 +15,7 @@ class TestFftshift(object):
 
     @device_test
     def test_2d(self, context, command_queue):
-        template = fft.FftshiftTemplate(context, np.int32, 'int')
+        template = fft.FftshiftTemplate(context, np.int32)
         fn = template.instantiate(command_queue, (10, 6))
         fn.ensure_all_bound()
         data = fn.buffer('data')
@@ -28,7 +28,7 @@ class TestFftshift(object):
 
     @device_test
     def test_3d(self, context, command_queue):
-        template = fft.FftshiftTemplate(context, np.int32, 'int')
+        template = fft.FftshiftTemplate(context, np.int32)
         fn = template.instantiate(command_queue, (10, 6, 3))
         # Uses padded data to detect padding bugs
         self.pad_dimension(fn.slots['data'].dimensions[0], 3)

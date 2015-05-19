@@ -5,6 +5,7 @@ import numpy as np
 import pkg_resources
 import scikits.cuda.fft
 from katsdpsigproc import accel
+import katsdpimager.types
 
 #: Forward FFT
 FFT_FORWARD = 0
@@ -60,10 +61,8 @@ class FftshiftTemplate(object):
         Context for which kernels will be compiled
     dtype : numpy dtype
         Data type being stored
-    ctype : str
-        OpenCL/CUDA C name for the type
     """
-    def __init__(self, context, dtype, ctype, tuning=None):
+    def __init__(self, context, dtype, tuning=None):
         self.context = context
         self.dtype = np.dtype(dtype)
         # TODO: autotune
@@ -71,7 +70,7 @@ class FftshiftTemplate(object):
         self.wgsy = 8
         self.program = accel.build(context, "imager_kernels/fftshift.mako",
             {
-                'ctype': ctype,
+                'ctype': katsdpimager.types.dtype_to_ctype(dtype),
                 'wgsx': self.wgsx,
                 'wgsy': self.wgsy
             },
@@ -193,46 +192,90 @@ class Fft(accel.Operation):
                                       self.template.plan)
 
 
+class ComplexToRealTemplate(object):
+    """Extracts just the real part of a complex array. This could probably be
+    done more efficiently using rectangle copy operations, but this class will
+    form the basis for more complicated transformations in w stacking.
+    """
+    def __init__(self, context, real_dtype, tuning=None):
+        self.real_dtype = real_dtype
+        self.wgs = 256  # TODO: autotuning
+        self.program = accel.build(context, "imager_kernels/complex_to_real.mako",
+            {
+                'real_type': katsdpimager.types.dtype_to_ctype(real_dtype),
+                'wgs': self.wgs,
+            },
+            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+
+    def instantiate(self, *args, **kwargs):
+        return ComplexToReal(self, *args, **kwargs)
+
+
+class ComplexToReal(accel.Operation):
+    def __init__(self, template, command_queue, shape, allocator=None):
+        super(ComplexToReal, self).__init__(command_queue, allocator)
+        self.template = template
+        dims = [accel.Dimension(size) for size in shape]
+        complex_dtype = katsdpimager.types.real_to_complex(template.real_dtype)
+        self.slots['src'] = accel.IOSlot(dims, complex_dtype)
+        self.slots['dest'] = accel.IOSlot(dims, template.real_dtype)
+        self.kernel = template.program.get_kernel('complex_to_real')
+
+    def _run(self):
+        src = self.buffer('src')
+        dest = self.buffer('dest')
+        elements = int(np.product(src.padded_shape))
+        self.command_queue.enqueue_kernel(
+            self.kernel,
+            [dest.buffer, src.buffer, np.int32(elements)],
+            global_size=(accel.roundup(elements, self.template.wgs),),
+            local_size=(self.template.wgs,))
+
+
 class GridToImageTemplate(object):
-    def __init__(self, command_queue, shape, padded_shape_src, padded_shape_dest, dtype):
-        if dtype == np.complex64:
-            ctype = 'float2'
-        elif dtype == np.complex128:
-            ctype = 'double2'
-        else:
-            raise ValueError('Unhandled data type {}'.format(dtype))
-        self.shift_template = FftshiftTemplate(command_queue.context, dtype, ctype)
-        self.fft_template = FftTemplate(command_queue, 2, shape, dtype,
-                                        padded_shape_src, padded_shape_dest)
+    def __init__(self, command_queue, shape, padded_shape_src, padded_shape_dest, real_dtype):
+        complex_dtype = katsdpimager.types.real_to_complex(real_dtype)
+        self.shift_real = FftshiftTemplate(command_queue.context, real_dtype)
+        self.shift_complex = FftshiftTemplate(command_queue.context, complex_dtype)
+        self.fft = FftTemplate(command_queue, 2, shape, complex_dtype,
+                               padded_shape_src, padded_shape_dest)
+        self.complex_to_real = ComplexToRealTemplate(command_queue.context, real_dtype)
 
     def instantiate(self, *args, **kwargs):
         return GridToImage(self, *args, **kwargs)
 
+
 class GridToImage(accel.OperationSequence):
     def __init__(self, template, allocator=None):
-        command_queue = template.fft_template.command_queue
-        self.shift_grid = template.shift_template.instantiate(
-            command_queue, template.fft_template.shape, allocator)
-        self.ifft = template.fft_template.instantiate(FFT_INVERSE, allocator)
-        self.shift_image = template.shift_template.instantiate(
-            command_queue, template.fft_template.shape, allocator)
+        command_queue = template.fft.command_queue
+        self._shift_grid = template.shift_complex.instantiate(
+            command_queue, template.fft.shape, allocator)
+        self._ifft = template.fft.instantiate(FFT_INVERSE, allocator)
+        self._complex_to_real = template.complex_to_real.instantiate(
+            command_queue, template.fft.shape, allocator)
+        self._shift_image = template.shift_real.instantiate(
+            command_queue, template.fft.shape, allocator)
         operations = [
-            ('shift_grid', self.shift_grid),
-            ('ifft', self.ifft),
-            ('shift_image', self.shift_image)
+            ('shift_grid', self._shift_grid),
+            ('ifft', self._ifft),
+            ('complex_to_real', self._complex_to_real),
+            ('shift_image', self._shift_image),
         ]
         compounds = {
             'grid': ['shift_grid:data', 'ifft:src'],
-            'image': ['ifft:dest', 'shift_image:data']
+            'layer': ['ifft:dest', 'complex_to_real:src'],
+            'image': ['complex_to_real:dest', 'shift_image:data']
         }
-        super(GridToImage, self).__init__(command_queue, operations, compounds)
+        super(GridToImage, self).__init__(command_queue, operations, compounds, allocator=allocator)
+
 
 class GridToImageHost(object):
-    def __init__(self, grid, image):
+    def __init__(self, grid, layer, image):
         self.grid = grid
+        self.layer = layer
         self.image = image
 
     def __call__(self):
-        self.image[:] = np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(self.grid), axes=(0, 1)).real)
+        self.layer[:] = np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(self.grid), axes=(0, 1)).real)
         # Scale factor is to match behaviour of CUFFT, which is unnormalized
-        self.image *= self.image.shape[0] * self.image.shape[1]
+        self.image[:] = self.layer.real * (self.layer.shape[0] * self.layer.shape[1])

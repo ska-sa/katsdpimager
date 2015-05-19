@@ -11,10 +11,6 @@ import mock
 from nose.tools import *
 
 class TestClean(object):
-    def setup(self):
-        self.clean_parameters = parameters.CleanParameters(
-            100, 0.25, clean.CLEAN_I, 45, 0)
-
     @classmethod
     def _make_psf(cls, size):
         """Creates a dummy PSF as a Gaussian plus random noise"""
@@ -30,23 +26,23 @@ class TestClean(object):
 
     @device_test
     def test_update_tiles(self, context, command_queue):
-        pixels = 567
+        image_shape = (567, 456, 4)
         rs = np.random.RandomState(seed=1)
-        template = clean._UpdateTilesTemplate(context, self.clean_parameters, np.float32, 4)
-        fn = template.instantiate(command_queue, pixels)
+        template = clean._UpdateTilesTemplate(context, np.float32, 4, clean.CLEAN_I)
+        fn = template.instantiate(command_queue, image_shape)
         fn.ensure_all_bound()
         # TODO: this could lead to ties, which will fail the test
-        dirty = rs.standard_normal((pixels, pixels, 4)).astype(np.float32)
+        dirty = rs.standard_normal(image_shape).astype(np.float32)
         fn.buffer('dirty').set(command_queue, dirty)
         self._zero_buffer(command_queue, fn.buffer('tile_max'))
         self._zero_buffer(command_queue, fn.buffer('tile_pos'))
-        fn(2, 3, 10, 13)
+        fn(70, 96, 320, 385)
         tile_max = fn.buffer('tile_max').get(command_queue)
         tile_pos = fn.buffer('tile_pos').get(command_queue)
 
         num_tiles_y, num_tiles_x = tile_max.shape
         assert_equal(18, num_tiles_y)
-        assert_equal(18, num_tiles_x)
+        assert_equal(15, num_tiles_x)
         for y in range(num_tiles_y):
             for x in range(num_tiles_x):
                 # Make sure updates don't happen where they are not meant to
