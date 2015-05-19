@@ -44,6 +44,8 @@ STOKES_XY = 10
 STOKES_YX = 11
 STOKES_YY = 12
 
+STOKES_IQUV = [STOKES_I, STOKES_Q, STOKES_U, STOKES_V]
+
 #: Names for polarizations used in display and command line
 STOKES_NAMES = [None, 'I', 'Q', 'U', 'V', 'RR', 'RL', 'LR', 'LL', 'XX', 'XY', 'YX', 'YY']
 

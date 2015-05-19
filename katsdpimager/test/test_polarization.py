@@ -10,7 +10,7 @@ class TestPolarizationMatrix(object):
     using standard coordinate systems.
     """
     def setup(self):
-        self.IQUV = [polarization.STOKES_I, polarization.STOKES_Q, polarization.STOKES_U, polarization.STOKES_V]
+        self.IQUV = polarization.STOKES_IQUV
         self.IQ = [polarization.STOKES_I, polarization.STOKES_Q]
         self.XY = [polarization.STOKES_XX, polarization.STOKES_XY, polarization.STOKES_YX, polarization.STOKES_YY]
         self.XY_DIAG = [polarization.STOKES_XX, polarization.STOKES_YY]
@@ -74,8 +74,9 @@ class TestApplyPolarizationMatrixWeighted(object):
         expected_weights = np.array([
             [8, 8, 8 / 3, 8 / 3],
             [16 / 3, 16 / 3, 32 / 9, 32 / 9]], np.float32)
-        actual_vis, actual_weights = polarization.apply_polarization_matrix_weighted(
-            vis, weights, self.pm)
+        actual_vis = polarization.apply_polarization_matrix(vis, self.pm)
+        actual_weights = polarization.apply_polarization_matrix_weights(
+            weights, self.pm)
         np.testing.assert_allclose(actual_vis, expected_vis)
         np.testing.assert_allclose(actual_weights, expected_weights)
 
@@ -92,7 +93,8 @@ class TestApplyPolarizationMatrixWeighted(object):
         expected_weights = np.array([
             [8, 8, 0, 0],
             [0, 0, 32 / 9, 32 / 9]], np.float32)
-        actual_vis, actual_weights = polarization.apply_polarization_matrix_weighted(
-            vis, weights, self.pm)
+        actual_vis = polarization.apply_polarization_matrix(vis, self.pm)
+        actual_weights = polarization.apply_polarization_matrix_weights(
+            weights, self.pm)
         np.testing.assert_allclose(actual_vis, expected_vis)
         np.testing.assert_allclose(actual_weights, expected_weights)

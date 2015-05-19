@@ -3,11 +3,86 @@
 from __future__ import division, print_function
 import numpy as np
 import katsdpsigproc.accel as accel
+import pkg_resources
 
 #: Use only Stokes I to find peaks
 CLEAN_I = 0
 #: Use the sum of squares of available Stokes components to find peaks
 CLEAN_SUMSQ = 1
+
+
+class CleanTemplate(object):
+    def __init__(self, context, clean_parameters, dtype, num_polarizations, tuning=None):
+        # TODO: autotuning
+        self.num_polarizations = num_polarizations
+        self.clean_parameters = clean_parameters
+        self.dtype = dtype
+        self.wgsx = 32
+        self.wgsy = 8
+        self.tilex = 32
+        self.tiley = 32
+        self.program = accel.build(context, "imager_kernels/clean.mako",
+            {
+                'real_type': ('float' if dtype == np.float32 else 'double'),
+                'wgsx': self.wgsx,
+                'wgsy': self.wgsy,
+                'tilex': self.tilex,
+                'tiley': self.tiley,
+                'num_polarizations': num_polarizations,
+                'clean_sumsq': (clean_parameters.mode == CLEAN_SUMSQ)
+            },
+            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+
+    def instantiate(self, *args, **kwargs):
+        return Clean(self, *args, **kwargs)
+
+
+class Clean(accel.Operation):
+    def __init__(self, template, command_queue, image_parameters, allocator=None):
+        super(Clean, self).__init__(command_queue, allocator)
+        if len(image_parameters.polarizations) != template.num_polarizations:
+            raise ValueError('Mismatch in number of polarizations')
+        if image_parameters.dtype != template.dtype:
+            raise ValueError('Mismatch in dtype')
+        psf_patch = min(image_parameters.pixels, template.clean_parameters.psf_patch)
+        num_tiles_x = accel.divup(image_parameters.pixels, template.tilex)
+        num_tiles_y = accel.divup(image_parameters.pixels, template.tiley)
+        image_width = accel.Dimension(image_parameters.pixels)
+        image_height = accel.Dimension(image_parameters.pixels)
+        image_pols = accel.Dimension(template.num_polarizations, exact=True)
+        tiles_width = accel.Dimension(num_tiles_x)
+        tiles_height = accel.Dimension(num_tiles_y)
+        self.template = template
+        self.slots['dirty'] = accel.IOSlot([image_height, image_width, image_pols], template.dtype)
+        self.slots['model'] = accel.IOSlot([image_height, image_width, image_pols], template.dtype)
+        self.slots['psf'] = accel.IOSlot([psf_patch, psf_patch, image_pols], template.dtype)
+        self.slots['tile_max'] = accel.IOSlot([tiles_height, tiles_width], template.dtype)
+        self.slots['tile_pos'] = accel.IOSlot(
+                [tiles_height, tiles_width, accel.Dimension(2, exact=True)], np.int32)
+        self._update_tiles_kernel = template.program.get_kernel('update_tiles')
+
+    def _update_tiles(self, x0, y0, x1, y1):
+        tile_max = self.buffer('tile_max')
+        tile_pos = self.buffer('tile_pos')
+        if x0 < 0 or x1 > tile_max.shape[1] or y0 < 0 or y1 > tile_max.shape[0]:
+            raise IndexError('Tile range is out of bounds')
+        if x0 < x1 and y0 < y1:
+            dirty = self.buffer('dirty')
+            self.command_queue.enqueue_kernel(
+                self._update_tiles_kernel,
+                [
+                    dirty.buffer,
+                    np.int32(dirty.padded_shape[1]),
+                    np.int32(dirty.shape[0]),
+                    np.int32(dirty.shape[1]),
+                    tile_max.buffer,
+                    tile_pos.buffer,
+                    np.int32(tile_max.padded_shape[1]),
+                    np.int32(x0), np.int32(y0)
+                ],
+                global_size=((x1 - x0) * self.template.wgsx, (y1 - y0) * self.template.wgsy),
+                local_size=(self.template.wgsx, self.template.wgsy))
+
 
 class CleanHost(object):
     def __init__(self, image_parameters, clean_parameters, image, psf, model):
