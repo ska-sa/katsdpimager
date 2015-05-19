@@ -10,12 +10,8 @@ from katsdpsigproc.test.test_accel import device_test, cuda_test
 import mock
 from nose.tools import *
 
-class TestClean(object):
+class TestUpdateTiles(object):
     def setup(self):
-        self.image_parameters = mock.Mock(spec=parameters.ImageParameters)
-        self.image_parameters.dtype = np.dtype(np.float32)
-        self.image_parameters.pixels = 567
-        self.image_parameters.polarizations = polarization.STOKES_IQUV
         self.clean_parameters = parameters.CleanParameters(
             100, 0.25, clean.CLEAN_I, 45, 0)
 
@@ -34,17 +30,17 @@ class TestClean(object):
 
     @device_test
     def test_update_tiles(self, context, command_queue):
+        pixels = 567
         rs = np.random.RandomState(seed=1)
-        template = clean.CleanTemplate(context, self.clean_parameters, np.float32, 4)
-        fn = template.instantiate(command_queue, self.image_parameters)
+        template = clean._UpdateTilesTemplate(context, self.clean_parameters, np.float32, 4)
+        fn = template.instantiate(command_queue, pixels)
         fn.ensure_all_bound()
         # TODO: this could lead to ties, which will fail the test
-        pixels = self.image_parameters.pixels
         dirty = rs.standard_normal((pixels, pixels, 4)).astype(np.float32)
         fn.buffer('dirty').set(command_queue, dirty)
         self._zero_buffer(command_queue, fn.buffer('tile_max'))
         self._zero_buffer(command_queue, fn.buffer('tile_pos'))
-        fn._update_tiles(2, 3, 10, 13)
+        fn(2, 3, 10, 13)
         tile_max = fn.buffer('tile_max').get(command_queue)
         tile_pos = fn.buffer('tile_pos').get(command_queue)
 

@@ -11,7 +11,7 @@ CLEAN_I = 0
 CLEAN_SUMSQ = 1
 
 
-class CleanTemplate(object):
+class _UpdateTilesTemplate(object):
     def __init__(self, context, clean_parameters, dtype, num_polarizations, tuning=None):
         # TODO: autotuning
         self.num_polarizations = num_polarizations
@@ -21,7 +21,8 @@ class CleanTemplate(object):
         self.wgsy = 8
         self.tilex = 32
         self.tiley = 32
-        self.program = accel.build(context, "imager_kernels/clean.mako",
+        self.program = accel.build(
+            context, "imager_kernels/clean/update_tiles.mako",
             {
                 'real_type': ('float' if dtype == np.float32 else 'double'),
                 'wgsx': self.wgsx,
@@ -34,21 +35,17 @@ class CleanTemplate(object):
             extra_dirs=[pkg_resources.resource_filename(__name__, '')])
 
     def instantiate(self, *args, **kwargs):
-        return Clean(self, *args, **kwargs)
+        return _UpdateTiles(self, *args, **kwargs)
 
 
-class Clean(accel.Operation):
-    def __init__(self, template, command_queue, image_parameters, allocator=None):
-        super(Clean, self).__init__(command_queue, allocator)
-        if len(image_parameters.polarizations) != template.num_polarizations:
-            raise ValueError('Mismatch in number of polarizations')
-        if image_parameters.dtype != template.dtype:
-            raise ValueError('Mismatch in dtype')
-        psf_patch = min(image_parameters.pixels, template.clean_parameters.psf_patch)
-        num_tiles_x = accel.divup(image_parameters.pixels, template.tilex)
-        num_tiles_y = accel.divup(image_parameters.pixels, template.tiley)
-        image_width = accel.Dimension(image_parameters.pixels)
-        image_height = accel.Dimension(image_parameters.pixels)
+class _UpdateTiles(accel.Operation):
+    def __init__(self, template, command_queue, pixels, allocator=None):
+        super(_UpdateTiles, self).__init__(command_queue, allocator)
+        psf_patch = min(pixels, template.clean_parameters.psf_patch)
+        num_tiles_x = accel.divup(pixels, template.tilex)
+        num_tiles_y = accel.divup(pixels, template.tiley)
+        image_width = accel.Dimension(pixels)
+        image_height = accel.Dimension(pixels)
         image_pols = accel.Dimension(template.num_polarizations, exact=True)
         tiles_width = accel.Dimension(num_tiles_x)
         tiles_height = accel.Dimension(num_tiles_y)
@@ -59,9 +56,9 @@ class Clean(accel.Operation):
         self.slots['tile_max'] = accel.IOSlot([tiles_height, tiles_width], template.dtype)
         self.slots['tile_pos'] = accel.IOSlot(
                 [tiles_height, tiles_width, accel.Dimension(2, exact=True)], np.int32)
-        self._update_tiles_kernel = template.program.get_kernel('update_tiles')
+        self.kernel = template.program.get_kernel('update_tiles')
 
-    def _update_tiles(self, x0, y0, x1, y1):
+    def __call__(self, x0, y0, x1, y1):
         tile_max = self.buffer('tile_max')
         tile_pos = self.buffer('tile_pos')
         if x0 < 0 or x1 > tile_max.shape[1] or y0 < 0 or y1 > tile_max.shape[0]:
@@ -69,7 +66,7 @@ class Clean(accel.Operation):
         if x0 < x1 and y0 < y1:
             dirty = self.buffer('dirty')
             self.command_queue.enqueue_kernel(
-                self._update_tiles_kernel,
+                self.kernel,
                 [
                     dirty.buffer,
                     np.int32(dirty.padded_shape[1]),
@@ -137,7 +134,7 @@ class CleanHost(object):
 
     def __call__(self, progress=None):
         tile_size = self.clean_parameters.tile_size
-        ntiles = accel.divup(self.image_parameters.pixels, tile_size)
+        ntiles = accel.divup(self.pixels, tile_size)
         tile_max = np.zeros((ntiles, ntiles), self.image_parameters.dtype)
         tile_pos = np.empty((ntiles, ntiles, 2), np.int32)
         for y in range(ntiles):

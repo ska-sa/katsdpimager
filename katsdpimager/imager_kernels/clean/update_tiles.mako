@@ -1,5 +1,5 @@
 <%include file="/port.mako"/>
-<%namespace name="wg_reduce" file="/wg_reduce.mako"/>
+<%namespace name="sample" file="sample.mako"/>
 
 #define WGSX ${wgsx}
 #define WGSY ${wgsy}
@@ -13,20 +13,7 @@ typedef struct
     T v[NPOLS];
 } pixel;
 
-typedef struct
-{
-    T value;
-    int2 pos;
-} sample;
-
-DEVICE_FN sample sample_max(sample a, sample b)
-{
-    return a.value > b.value ? a : b;
-}
-
-<%def name="sample_max(a, b, type)">sample_max((${a}), (${b}))</%def>
-${wg_reduce.define_scratch('sample', wgsx * wgsy, 'reduce_sample_max_scratch')}
-${wg_reduce.define_function('sample', wgsx * wgsy, 'reduce_sample_max', 'reduce_sample_max_scratch', sample_max)}
+${sample.define_sample(real_type, wgsx * wgsy)}
 
 KERNEL REQD_WORK_GROUP_SIZE(WGSX, WGSY, 1)
 void update_tiles(
