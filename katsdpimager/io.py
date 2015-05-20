@@ -22,6 +22,7 @@ _FITS_POLARIZATIONS = {
     polarization.STOKES_YX: -8
 }
 
+
 def _fits_polarizations(header, axis, polarizations):
     """Add keywords to a FITS header describing the polarization axis.
 
@@ -115,7 +116,7 @@ def write_fits_image(dataset, image, image_parameters, filename):
     # TODO: get equinox from input
     phase_centre = dataset.phase_centre()
     header['EQUINOX'] = 2000.0
-    header['RADESYS'] = 'FK5' # Julian equinox
+    header['RADESYS'] = 'FK5'   # Julian equinox
     header['CUNIT1'] = 'deg'
     header['CUNIT2'] = 'deg'
     header['CTYPE1'] = 'RA---SIN'
@@ -129,6 +130,7 @@ def write_fits_image(dataset, image, image_parameters, filename):
     # correctly handle the file otherwise.
     hdu = fits.PrimaryHDU(np.rollaxis(image[:, ::-1, pol_permute], 2), header)
     hdu.writeto(filename, clobber=True)
+
 
 def _split_array(x, dtype):
     """Return a view of x which has one extra dimension. Each element is x is
@@ -150,6 +152,7 @@ def _split_array(x, dtype):
     interface['typestr'] = out_dtype.str
     interface['descr'] = out_dtype.descr
     return np.asarray(np.lib.stride_tricks.DummyArray(interface, base=x))
+
 
 def write_fits_grid(grid, image_parameters, filename):
     """Writes a UV grid to a FITS file.

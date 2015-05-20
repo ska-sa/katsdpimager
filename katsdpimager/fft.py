@@ -12,6 +12,7 @@ FFT_FORWARD = 0
 #: Inverse FFT, without normalization factor of 1/N
 FFT_INVERSE = 1
 
+
 class _Gpudata(object):
     """Adapter to allow scikits.cuda.fft to work with managed memory
     allocations. Add it as a `gpudata` member on an arbitrary object, to allow
@@ -68,7 +69,8 @@ class FftshiftTemplate(object):
         # TODO: autotune
         self.wgsx = 16
         self.wgsy = 8
-        self.program = accel.build(context, "imager_kernels/fftshift.mako",
+        self.program = accel.build(
+            context, "imager_kernels/fftshift.mako",
             {
                 'ctype': katsdpimager.types.dtype_to_ctype(dtype),
                 'wgsx': self.wgsx,
@@ -157,7 +159,8 @@ class FftTemplate(object):
     tuning : dict, optional
         Tuning parameters (currently unused)
     """
-    def __init__(self, command_queue, N, shape, dtype, padded_shape_src, padded_shape_dest, tuning=None):
+    def __init__(self, command_queue, N, shape, dtype,
+                 padded_shape_src, padded_shape_dest, tuning=None):
         if padded_shape_src[N:] != padded_shape_dest[N:]:
             raise ValueError('Source and destination padding does not match on batch dimensions')
         self.command_queue = command_queue
@@ -240,7 +243,8 @@ class ComplexToRealTemplate(object):
     def __init__(self, context, real_dtype, tuning=None):
         self.real_dtype = real_dtype
         self.wgs = 256  # TODO: autotuning
-        self.program = accel.build(context, "imager_kernels/complex_to_real.mako",
+        self.program = accel.build(
+            context, "imager_kernels/complex_to_real.mako",
             {
                 'real_type': katsdpimager.types.dtype_to_ctype(real_dtype),
                 'wgs': self.wgs,
@@ -383,4 +387,5 @@ class GridToImageHost(object):
     def __call__(self):
         self.layer[:] = np.fft.ifft2(np.fft.fftshift(self.grid), axes=(0, 1))
         # Scale factor is to match behaviour of CUFFT, which is unnormalized
-        self.image[:] = np.fft.fftshift(self.layer.real * (self.layer.shape[0] * self.layer.shape[1]))
+        scale = self.layer.shape[0] * self.layer.shape[1]
+        self.image[:] = np.fft.fftshift(self.layer.real * scale)

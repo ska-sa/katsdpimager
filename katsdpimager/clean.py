@@ -205,9 +205,9 @@ class _SubtractPsf(accel.Operation):
                 np.int32(pos[0] - psf.shape[0] // 2),
                 np.float32(self.loop_gain)
             ],
-            global_size = (accel.roundup(psf.shape[1], self.template.wgsx),
-                           accel.roundup(psf.shape[0], self.template.wgsy)),
-            local_size = (self.template.wgsx, self.template.wgsy))
+            global_size=(accel.roundup(psf.shape[1], self.template.wgsx),
+                         accel.roundup(psf.shape[0], self.template.wgsy)),
+            local_size=(self.template.wgsx, self.template.wgsy))
 
 
 class CleanTemplate(object):

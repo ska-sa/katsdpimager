@@ -9,8 +9,10 @@ import astropy.units as units
 import katsdpsigproc.accel as accel
 import katsdpsigproc.tune as tune
 
+
 def kaiser_bessel(x, width, beta):
     return np.i0(beta * np.sqrt(np.maximum(0.0, 1 - (2.0 * x / width)**2))) / np.i0(beta)
+
 
 def antialias_kernel(width, oversample, beta=None):
     r"""Generate anti-aliasing kernel. The return value is 4-dimensional.
@@ -49,6 +51,7 @@ def antialias_kernel(width, oversample, beta=None):
             kernel[s, t, ...] = np.outer(x_kernel, y_kernel)
     return kernel
 
+
 def subpixel_coord(x, oversample):
     x0 = np.floor(x)
     return np.floor((x - x0) * oversample)
@@ -65,6 +68,7 @@ class GridderTemplate(object):
         convolve_kernel = antialias_kernel(grid_parameters.antialias_size,
                                            grid_parameters.oversample)
         self.convolve_kernel_size = convolve_kernel.shape[2]
+        ksize = self.convolve_kernel_size
         self.wgs_x = 8
         self.wgs_y = 8
         self.multi_x = 1
@@ -72,14 +76,16 @@ class GridderTemplate(object):
         self.num_polarizations = num_polarizations
         tile_x = self.wgs_x * self.multi_x
         tile_y = self.wgs_y * self.multi_y
-        assert self.convolve_kernel_size <= tile_y
-        assert self.convolve_kernel_size <= tile_x
-        self.convolve_kernel = accel.SVMArray(context,
+        assert ksize <= tile_y
+        assert ksize <= tile_x
+        self.convolve_kernel = accel.SVMArray(
+            context,
             (grid_parameters.oversample, grid_parameters.oversample, tile_y, tile_x),
             np.complex64)
         self.convolve_kernel.fill(0)
-        self.convolve_kernel[:, :, :self.convolve_kernel_size, :self.convolve_kernel_size] = convolve_kernel
-        self.program = accel.build(context, "imager_kernels/grid.mako",
+        self.convolve_kernel[:, :, :ksize, :ksize] = convolve_kernel
+        self.program = accel.build(
+            context, "imager_kernels/grid.mako",
             {
                 'real_type': ('float' if dtype == np.complex64 else 'double'),
                 'convolve_kernel_row_stride': self.convolve_kernel.padded_shape[3],
@@ -105,14 +111,16 @@ class GridderTemplate(object):
 
 
 class Gridder(accel.Operation):
-    def __init__(self, template, command_queue, image_parameters, array_parameters, max_vis, allocator=None):
+    def __init__(self, template, command_queue, image_parameters, array_parameters,
+                 max_vis, allocator=None):
         super(Gridder, self).__init__(command_queue, allocator)
         if len(image_parameters.polarizations) != template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
         if image_parameters.dtype_complex != template.dtype:
             raise ValueError('Mismatch in data type')
         # Check that longest baseline won't cause an out-of-bounds access
-        max_uv = float(array_parameters.longest_baseline / image_parameters.cell_size) + template.convolve_kernel_size / 2
+        max_uv_src = float(array_parameters.longest_baseline / image_parameters.cell_size)
+        max_uv = max_uv_src + template.convolve_kernel_size / 2
         if max_uv >= image_parameters.pixels // 2 - 1 - 1e-3:
             raise ValueError('image_oversample is too small to capture all visibilities in the UV plane')
         self.template = template
@@ -137,7 +145,8 @@ class Gridder(accel.Operation):
 
     def set_num_vis(self, n):
         if n < 0 or n > self.max_vis:
-            raise ValueError('Number of visibilities {} is out of range 0..{}'.format(n, self.max_vis))
+            raise ValueError('Number of visibilities {} is out of range 0..{}'.format(
+                n, self.max_vis))
         self._num_vis = n
 
     def clear(self):

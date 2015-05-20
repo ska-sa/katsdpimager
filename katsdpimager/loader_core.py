@@ -3,6 +3,7 @@ import numpy as np
 import astropy.units as units
 from . import parameters
 
+
 class LoaderBase(object):
     def __init__(self, filename, options):
         """Open the file"""

@@ -5,6 +5,7 @@ import numpy as np
 from nose.tools import *
 import katsdpimager.polarization as polarization
 
+
 class TestPolarizationMatrix(object):
     """Tests for :py:func:`katsdpimager.polarization.polarization_matrix`,
     using standard coordinate systems.
@@ -12,9 +13,15 @@ class TestPolarizationMatrix(object):
     def setup(self):
         self.IQUV = polarization.STOKES_IQUV
         self.IQ = [polarization.STOKES_I, polarization.STOKES_Q]
-        self.XY = [polarization.STOKES_XX, polarization.STOKES_XY, polarization.STOKES_YX, polarization.STOKES_YY]
+        self.XY = [polarization.STOKES_XX,
+                   polarization.STOKES_XY,
+                   polarization.STOKES_YX,
+                   polarization.STOKES_YY]
         self.XY_DIAG = [polarization.STOKES_XX, polarization.STOKES_YY]
-        self.RL = [polarization.STOKES_RR, polarization.STOKES_RL, polarization.STOKES_LR, polarization.STOKES_LL]
+        self.RL = [polarization.STOKES_RR,
+                   polarization.STOKES_RL,
+                   polarization.STOKES_LR,
+                   polarization.STOKES_LL]
         self.RL_DIAG = [polarization.STOKES_RR, polarization.STOKES_LL]
 
     def test_xy_to_iquv(self):
@@ -57,8 +64,16 @@ class TestPolarizationMatrix(object):
 
 class TestApplyPolarizationMatrixWeighted(object):
     def setup(self):
-        self.inputs = [polarization.STOKES_XX, polarization.STOKES_XY, polarization.STOKES_YX, polarization.STOKES_YY]
-        self.outputs = [polarization.STOKES_I, polarization.STOKES_Q, polarization.STOKES_U, polarization.STOKES_V]
+        self.inputs = [
+            polarization.STOKES_XX,
+            polarization.STOKES_XY,
+            polarization.STOKES_YX,
+            polarization.STOKES_YY]
+        self.outputs = [
+            polarization.STOKES_I,
+            polarization.STOKES_Q,
+            polarization.STOKES_U,
+            polarization.STOKES_V]
         self.pm = polarization.polarization_matrix(self.outputs, self.inputs)
 
     def test_unflagged(self):

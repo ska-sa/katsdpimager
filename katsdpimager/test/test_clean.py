@@ -10,6 +10,7 @@ from katsdpsigproc.test.test_accel import device_test, cuda_test
 import mock
 from nose.tools import *
 
+
 class TestClean(object):
     @classmethod
     def _make_psf(cls, size):
@@ -74,7 +75,8 @@ class TestClean(object):
         tile_max = rs.uniform(1.0, 2.0, tile_shape).astype(np.float32)
         # Set tile_pos so that each pos indexes the corresponding position in
         # the dirty image, to make testing easier.
-        tile_pos = np.array([[[y, x] for x in range(tile_shape[1])] for y in range(tile_shape[0])], np.int32)
+        tile_pos = np.array(
+            [[[y, x] for x in range(tile_shape[1])] for y in range(tile_shape[0])], np.int32)
         fn.buffer('tile_max').set(command_queue, tile_max)
         fn.buffer('tile_pos').set(command_queue, tile_pos)
         fn.buffer('dirty').set(command_queue, dirty)

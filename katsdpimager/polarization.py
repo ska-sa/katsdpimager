@@ -75,6 +75,7 @@ def _np_seterr(*args, **kwargs):
     yield
     np.seterr(**old)
 
+
 def polarization_matrix(outputs, inputs):
     """Return a matrix that will map the input polarizations to the outputs.
 
@@ -110,6 +111,7 @@ def polarization_matrix(outputs, inputs):
     assert X.dtype == np.complex64
     return X.T
 
+
 def apply_polarization_matrix(data, matrix):
     """Convert polarization basis in data using a matrix computed by
     :py:func:`polarization_matrix`. Rather than using a straight
@@ -133,6 +135,7 @@ def apply_polarization_matrix(data, matrix):
             if matrix[i, j]:
                 out[..., i] += matrix[i, j] * data[..., j]
     return out
+
 
 def apply_polarization_matrix_weights(weights, matrix):
     """Apply a polarization change to weights. It is suitable

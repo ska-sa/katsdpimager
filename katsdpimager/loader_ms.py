@@ -6,11 +6,13 @@ import numpy as np
 import argparse
 import astropy.units as units
 
+
 class LoaderMS(katsdpimager.loader_core.LoaderBase):
     def __init__(self, filename, options):
         super(LoaderMS, self).__init__(filename, options)
-        parser = argparse.ArgumentParser(prog='Measurement set options', usage=
-            '''Measurement set options: [-i data=COLUMN] [-i field=FIELD]''')
+        parser = argparse.ArgumentParser(
+            prog='Measurement set options',
+            usage='Measurement set options: [-i data=COLUMN] [-i field=FIELD]')
         parser.add_argument('--data', type=str, metavar='COLUMN', default='DATA', help='Column containing visibilities to image [%(default)s]')
         parser.add_argument('--data-desc', type=int, default=0, help='Data description ID to image [%(default)s]')
         parser.add_argument('--field', type=int, default=0, help='Field to image [%(default)s]')
@@ -31,8 +33,10 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             raise ValueError('Field {} is out of range'.format(args.field))
         if args.data_desc < 0 or args.data_desc >= self._data_description.nrows():
             raise ValueError('Data description {} is out of range'.format(args.data_desc))
-        self._polarization_id = self._data_description.getcell('POLARIZATION_ID', args.data_desc)
-        self._spectral_window_id = self._data_description.getcell('SPECTRAL_WINDOW_ID', args.data_desc)
+        self._polarization_id = self._data_description.getcell(
+            'POLARIZATION_ID', args.data_desc)
+        self._spectral_window_id = self._data_description.getcell(
+            'SPECTRAL_WINDOW_ID', args.data_desc)
 
     @classmethod
     def match(cls, filename):
@@ -66,7 +70,8 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         quantum_units = keywords.get('QuantumUnits')
         if quantum_units is not None and quantum_units != ['Hz']:
             raise ValueError('Unsupported QuantumUnits for CHAN_FREQ: {}'.format(quantum_units))
-        return self._spectral_window.getcell('CHAN_FREQ', self._spectral_window_id)[channel] * units.Hz
+        return self._spectral_window.getcell(
+            'CHAN_FREQ', self._spectral_window_id)[channel] * units.Hz
 
     def polarizations(self):
         return list(self._polarization.getcell('CORR_TYPE', self._polarization_id))
@@ -87,7 +92,8 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             uvw = -self._main.getcol('UVW', start, end - start)[valid, ...]
             uvw = units.Quantity(uvw, units.m, copy=False)
             if 'WEIGHT_SPECTRUM' in self._main.colnames():
-                weight = self._main.getcol('WEIGHT_SPECTRUM', start, end - start)[valid, channel, ...]
+                weight = self._main.getcol('WEIGHT_SPECTRUM', start, end - start)[
+                    valid, channel, ...]
             else:
                 weight = self._main.getcol('WEIGHT', start, end - start)[valid, ...]
             flag = self._main.getcol('FLAG', start, end - start)[valid, ...]

@@ -10,6 +10,7 @@ _loader_classes = []
 def _register_loader(loader_class):
     _loader_classes.append(loader_class)
 
+
 def load(filename, options):
     for cls in _loader_classes:
         if cls.match(filename):

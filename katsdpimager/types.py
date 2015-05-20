@@ -3,6 +3,7 @@
 from __future__ import division, print_function
 import numpy as np
 
+
 def dtype_to_ctype(dtype):
     """Convert a numpy dtype to a C type suitable for CUDA or OpenCL.
 
@@ -23,6 +24,7 @@ def dtype_to_ctype(dtype):
     else:
         raise ValueError('Unrecognised dtype {}'.format(dtype))
 
+
 def real_to_complex(dtype):
     """Convert a real type to its complex equivalent"""
     if dtype == np.float32:
@@ -31,6 +33,7 @@ def real_to_complex(dtype):
         return np.complex128
     else:
         raise ValueError('Unrecognised dtype {}'.format(dtype))
+
 
 def complex_to_real(dtype):
     """Convert a complex type to its real equivalent"""
