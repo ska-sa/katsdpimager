@@ -44,6 +44,22 @@ class TestFftshift(object):
         np.testing.assert_equal(expected, actual)
 
 
+class TestComplexToReal(object):
+    @device_test
+    def test_complex_to_real(self, context, command_queue):
+        shape = (69, 123)
+        rs = np.random.RandomState(1)
+        template = fft.ComplexToRealTemplate(context, np.float32)
+        fn = template.instantiate(command_queue, shape)
+        fn.ensure_all_bound()
+        src = (rs.standard_normal(shape) + 1j * rs.standard_normal(shape)).astype(np.complex64)
+        fn.buffer('src').set(command_queue, src)
+        fn.buffer('dest').set(command_queue, np.zeros(shape, np.float32))
+        fn()
+        dest = fn.buffer('dest').get(command_queue)
+        np.testing.assert_array_equal(src.real, dest)
+
+
 class TestFft(object):
     @device_test
     @cuda_test
