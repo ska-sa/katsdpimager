@@ -51,6 +51,9 @@ help:
 clean:
 	rm -rf $(BUILDDIR)/*
 
+apidoc:
+	sphinx-apidoc -f -o . .. -e ../setup.py
+
 html:
 	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(BUILDDIR)/html
 	@echo

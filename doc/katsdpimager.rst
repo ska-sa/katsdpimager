@@ -1,57 +1,28 @@
 katsdpimager package
 ====================
 
+Subpackages
+-----------
+
+.. toctree::
+
+    katsdpimager.test
+
 Submodules
 ----------
 
-katsdpimager.grid module
-------------------------
+.. toctree::
 
-.. automodule:: katsdpimager.grid
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-katsdpimager.io module
-----------------------
-
-.. automodule:: katsdpimager.io
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-katsdpimager.loader module
---------------------------
-
-.. automodule:: katsdpimager.loader
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-katsdpimager.loader_core module
--------------------------------
-
-.. automodule:: katsdpimager.loader_core
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-katsdpimager.loader_ms module
------------------------------
-
-.. automodule:: katsdpimager.loader_ms
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-katsdpimager.parameters module
-------------------------------
-
-.. automodule:: katsdpimager.parameters
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
+   katsdpimager.clean
+   katsdpimager.fft
+   katsdpimager.grid
+   katsdpimager.io
+   katsdpimager.loader
+   katsdpimager.loader_core
+   katsdpimager.loader_ms
+   katsdpimager.parameters
+   katsdpimager.polarization
+   katsdpimager.types
 
 Module contents
 ---------------
