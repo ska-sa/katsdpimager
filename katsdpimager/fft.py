@@ -315,7 +315,7 @@ class GridToImageTemplate(object):
         Padded shape of the grid
     padded_shape_dest : tuple of int
         Padded shape of the image
-    real_dtype : {`np.float32`, `np.complex64`}
+    real_dtype : {`np.float32`, `np.float64`}
         Precision
     """
 
