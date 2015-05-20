@@ -175,10 +175,7 @@ def main():
     queue = None
     context = None
     if not args.host:
-        context = accel.create_some_context()
-        if not context.device.is_cuda:
-            print("Only CUDA is supported at present. Please select a CUDA device or use --host.", file=sys.stderr)
-            sys.exit(1)
+        context = accel.create_some_context(device_filter=lambda x: x.is_cuda)
         queue = context.create_command_queue()
 
     with closing(loader.load(args.input_file, args.input_option)) as dataset:
