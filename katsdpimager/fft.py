@@ -276,6 +276,6 @@ class GridToImageHost(object):
         self.image = image
 
     def __call__(self):
-        self.layer[:] = np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(self.grid), axes=(0, 1)).real)
+        self.layer[:] = np.fft.ifft2(np.fft.fftshift(self.grid), axes=(0, 1))
         # Scale factor is to match behaviour of CUFFT, which is unnormalized
-        self.image[:] = self.layer.real * (self.layer.shape[0] * self.layer.shape[1])
+        self.image[:] = np.fft.fftshift(self.layer.real * (self.layer.shape[0] * self.layer.shape[1]))
