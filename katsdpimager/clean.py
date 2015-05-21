@@ -505,6 +505,23 @@ class Clean(accel.OperationSequence):
 
 
 class CleanHost(object):
+    """CPU-only equivalent to :class:`Clean`. The class keeps references to
+    the provided arrays, and only examines modifies them when :meth:`reset`
+    or :meth:`__call__` is invoked.
+
+    Parameters
+    ----------
+    image_parameters : :class:`katsdpimager.parameters.ImageParameters`
+        Command-line parameters with image properties
+    clean_parameters : :class:`katsdpimager.parameters.CleanParameters`
+        Command-line parameters for CLEAN
+    image : ndarray, (height, width, num_polarizations)
+        Dirty image, modified as cleaning proceeds
+    psf : ndarray, (height, width, num_polarizations), real
+        Point spread function (may be smaller than `image`)
+    model : ndarray, (height, width, num_polarizations), real
+        Model image, which is updated with found CLEAN components
+    """
     def __init__(self, image_parameters, clean_parameters, image, psf, model):
         self.clean_parameters = clean_parameters
         self.image_parameters = image_parameters
