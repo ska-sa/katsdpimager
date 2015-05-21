@@ -15,6 +15,12 @@ typedef struct
 
 ${sample.define_sample(real_type, wgsx * wgsy)}
 
+/**
+ * Find peak within each tile. One workgroup is launched for each tile. The
+ * workgroup may be smaller than the tile (but exactly divide into it), in
+ * which case each workitem reduces multiple elements before the
+ * workgroup-wide reduction.
+ */
 KERNEL REQD_WORK_GROUP_SIZE(WGSX, WGSY, 1)
 void update_tiles(
     const GLOBAL pixel * RESTRICT image,

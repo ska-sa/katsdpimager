@@ -13,6 +13,9 @@ typedef struct
 
 ${sample.define_sample(real_type, wgsx * wgsy)}
 
+/**
+ * Find the global peak from per-tile peaks. Only a single workgroup is used.
+ */
 KERNEL REQD_WORK_GROUP_SIZE(WGSX, WGSY, 1)
 void find_peak(
     const GLOBAL pixel * RESTRICT dirty,

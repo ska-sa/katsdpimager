@@ -62,6 +62,8 @@ class FftshiftTemplate(object):
         Context for which kernels will be compiled
     dtype : numpy dtype
         Data type being stored
+    tuning : dict, optional
+        Tuning parameters (currently unused)
     """
     def __init__(self, context, dtype, tuning=None):
         self.context = context
@@ -98,6 +100,8 @@ class Fftshift(accel.Operation):
         Command queue for the operation
     shape : tuple of int
         Shape of the data.
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
 
     Raises
     ------

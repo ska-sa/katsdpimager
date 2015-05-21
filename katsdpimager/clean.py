@@ -1,4 +1,17 @@
-"""Deconvolution routines based on CLEAN"""
+"""Deconvolution routines based on CLEAN.
+
+Both the CPU and GPU versions use an acceleration structure to speed up
+peak-finding when the point spread function (PSF) patch in use is
+significantly smaller than the image. The image is divided into tiles. For
+each tile, the peak value and the position of that value are maintained.
+Finding the global peak requires only finding the best tile peak. Subtracting
+the PSF requires only updating those tiles intersected by the shifted PSF.
+
+The GPU implementation currently round-trips to the CPU on each minor cycle.
+It could be done entirely on the GPU, but round-tripping will make it easier
+to put in a threshold later. It should still be possible to do batches of
+minor cycles if the launch overheads become an issue.
+"""
 
 from __future__ import division, print_function
 import numpy as np
@@ -13,6 +26,22 @@ CLEAN_SUMSQ = 1
 
 
 class _UpdateTilesTemplate(object):
+    """Operation template to compute the peak (including location) for each
+    tile intersecting a window.
+
+    Parameters
+    ----------
+    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+        Context for which kernels will be compiled
+    dtype : {`np.float32`, `np.float64`}
+        Precision of image
+    num_polarizations : int
+        Number of polarizations stored in the dirty image
+    mode : {:data:`CLEAN_I`, :data:`CLEAN_SUMSQ`}
+        Function determining peak
+    tuning : dict, optional
+        Tuning parameters (unused for now)
+    """
     def __init__(self, context, dtype, num_polarizations, mode, tuning=None):
         # TODO: autotuning
         self.num_polarizations = num_polarizations
@@ -39,6 +68,30 @@ class _UpdateTilesTemplate(object):
 
 
 class _UpdateTiles(accel.Operation):
+    """Instantiation of :class:`_UpdateTileTemplate`
+
+    .. rubric:: Slots
+
+    **dirty** : array of shape (height, width, num_polarizations), real
+        Dirty image
+    **tile_max** : array of shape (height, width)
+        Internal storage of maximum score for each tile
+    **tile_pos** : array of shape (height, width, 2)
+        Internal storage of best position for each tile, with each position
+        stored as (row, col).
+
+    Parameters
+    ----------
+    template : :class:`_UpdateTilesTemplate`
+        Operation template
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+        Command queue for the operation
+    image_shape : tuple of ints
+        Shape for the dirty image
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
+    """
+
     def __init__(self, template, command_queue, image_shape, allocator=None):
         if image_shape[2] != template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
@@ -63,6 +116,7 @@ class _UpdateTiles(accel.Operation):
         self.ensure_all_bound()
         tile_max = self.buffer('tile_max')
         tile_pos = self.buffer('tile_pos')
+        # Map pixel range to a tile range
         x0 = max(x0 // self.template.tilex, 0)
         y0 = max(y0 // self.template.tiley, 0)
         x1 = min(accel.divup(x1, self.template.tilex), tile_max.shape[1])
@@ -86,6 +140,18 @@ class _UpdateTiles(accel.Operation):
 
 
 class _FindPeakTemplate(object):
+    """Find the global peak from per-tile peaks.
+
+    Parameters
+    ----------
+    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+        Context for which kernels will be compiled
+    dtype : {`np.float32`, `np.float64`}
+        Image precision
+    tuning : dict, optional
+        Tuning parameters (currently unused)
+    """
+
     def __init__(self, context, dtype, num_polarizations, tuning=None):
         # TODO: autotuning
         self.wgsx = 16
@@ -107,6 +173,37 @@ class _FindPeakTemplate(object):
 
 
 class _FindPeak(accel.Operation):
+    """Instantiation of :class:`_FindPeak`.
+
+    .. rubric:: Slots
+
+    **dirty** : array of shape (height, width, num_polarizations), real
+        Dirty image, used to return the original values at the peak
+    **tile_max** : array of shape (height, width)
+        Internal storage of maximum score for each tile
+    **tile_pos** : array of shape (height, width, 2)
+        Internal storage of best position for each tile, with each position
+        stored as (row, col).
+    **peak_value** : array of shape (1,), real
+        Score for the peak position (output)
+    **peak_pos** : array of shape (2,), int32
+        Row and column of the peak position (output)
+    **peak_pixel** : array of shape (num_polarizations,), real
+        Dirty image sampled at the peak (output)
+
+    Parameters
+    ----------
+    template : :class:`_FindPeakTemplate`
+        Operation template
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+        Command queue for the operation
+    image_shape : tuple of int
+        Shape of the dirty image, as (height, width, num_polarizations)
+    tile_shape : tuple of int
+        Shape of the tile array, as (height, width)
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
+    """
     def __init__(self, template, command_queue, image_shape, tile_shape, allocator=None):
         if image_shape[2] != template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
@@ -147,6 +244,20 @@ class _FindPeak(accel.Operation):
 
 
 class _SubtractPsfTemplate(object):
+    """Subtract a multiple of the point spread function from the dirty image,
+    and add a corresponding single pixel to the model image.
+
+    Parameters
+    ----------
+    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+        Context for which kernels will be compiled
+    dtype : {`np.float32`, `np.float64`}
+        Image precision
+    num_polarizations : int
+        number of polarizations stored in the dirty image and PSF
+    tuning : dict, optional
+        Tuning parameters (unused for now)
+    """
     def __init__(self, context, dtype, num_polarizations, tuning=None):
         # TODO: autotuning
         self.wgsx = 16
@@ -168,9 +279,49 @@ class _SubtractPsfTemplate(object):
 
 
 class _SubtractPsf(accel.Operation):
+    """Instantiation of :class:`_SubtractPsfTemplate`. The dirty and model
+    image have the same shape and padding, while the PSF may be smaller.
+
+    .. rubric:: Slots
+
+    **dirty** : array of shape (height, width, num_polarizations), real
+        Dirty image
+    **model** : array of shape (height, width, num_polarizations), real
+        Model image
+    **psf** : array of shape (height, width, num_polarizations), real
+        Point spread function, with center at (height // 2, width // 2)
+    **peak_pixel** : array of shape (num_polarizations,), real
+        Current dirty image value at the position where subtract is happening
+
+    Parameters
+    ----------
+    template : :class:`_SubtractPsfTemplate`
+        Operation template
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+        Command queue for the operation
+    loop_gain : float
+        Scale factor for subtraction. The PSF is scaled by both `loop_gain` and
+        the per-polarization value in the **peak_pixel** slot before subtraction.
+    image_shape : tuple of int
+        Shape for the dirty and model images, as (height, width, num_polarizations)
+    psf_shape : tuple of int
+        Shape for the point spread function, as (height, width, num_polarizations)
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
+
+    Raises
+    ------
+    ValueError
+        if the number of polarizations in `image_shape` or `psf_shape` does not
+        match `template`
+    """
     def __init__(self, template, command_queue, loop_gain, image_shape, psf_shape, allocator=None):
         super(_SubtractPsf, self).__init__(command_queue, allocator)
         pol_dim = accel.Dimension(template.num_polarizations, exact=True)
+        if image_shape[2] != template.num_polarizations:
+            raise ValueError('Mismatch in number of polarizations')
+        if psf_shape[2] != template.num_polarizations:
+            raise ValueError('Mismatch in number of polarizations')
         image_dims = [accel.Dimension(image_shape[0]), accel.Dimension(image_shape[1]), pol_dim]
         psf_dims = [accel.Dimension(psf_shape[0]), accel.Dimension(psf_shape[1]), pol_dim]
         self.slots['dirty'] = accel.IOSlot(image_dims, template.dtype)
@@ -182,6 +333,9 @@ class _SubtractPsf(accel.Operation):
         self.kernel = template.program.get_kernel('subtract_psf')
 
     def __call__(self, pos, **kwargs):
+        """Execute the operation, centering the PSF at `pos` in the image. Note
+        that `pos` is specified as (row, col).
+        """
         self.bind(**kwargs)
         self.ensure_all_bound()
         dirty = self.buffer('dirty')
@@ -211,6 +365,19 @@ class _SubtractPsf(accel.Operation):
 
 
 class CleanTemplate(object):
+    """Composite template for the CLEAN minor cycles.
+
+    Parameters
+    ----------
+    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+        Context for which kernels will be compiled
+    clean_parameters : :class:`katsdpimager.parameters.CleanParameters`
+        Command-line parameters for CLEAN
+    dtype : {`np.float32`, `np.float64`}
+        Image precision
+    num_polarizations : int
+        Number of polarizations stored in the image
+    """
     def __init__(self, context, clean_parameters, dtype, num_polarizations):
         self.clean_parameters = clean_parameters
         self.dtype = dtype
@@ -225,6 +392,48 @@ class CleanTemplate(object):
 
 
 class Clean(accel.OperationSequence):
+    """Instantiation of :class:`CleanTemplate`.
+
+    .. rubric:: Slots
+
+    **dirty** : array of shape (height, width, num_polarizations), real
+        Dirty image
+    **model** : array of shape (height, width, num_polarizations), real
+        Model image
+    **psf** : array of shape (height, width, num_polarizations), real
+        Point spread function, with center at (height // 2, width // 2)
+    **tile_max** : array of shape (height, width)
+        Internal storage of maximum score for each tile
+    **tile_pos** : array of shape (height, width, 2)
+        Internal storage of best position for each tile, with each position
+        stored as (row, col).
+    **peak_value** : array of shape (1,), real
+        Score for the peak position (output)
+    **peak_pos** : array of shape (2,), int32
+        Row and column of the peak position (output)
+    **peak_pixel** : array of shape (num_polarizations,), real
+        Dirty image sampled at the peak (output)
+
+    The external interface consists of **dirty**, **model** and **psf**. The
+    others are exposed only so that the memory can be reused for other
+    purposes.
+
+    Parameters
+    ----------
+    template : :class:`_UpdateTilesTemplate`
+        Operation template
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+        Command queue for the operation
+    image_parameters : :class:`katsdpimager.parameters.ImageParameters`
+        Command-line parameters with image properties
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
+
+    Raises
+    ------
+    ValueError
+        if `image_parameters` is inconsistent with the template
+    """
     def __init__(self, template, command_queue, image_parameters, allocator=None):
         if image_parameters.dtype != template.dtype:
             raise ValueError('dtype mismatch')
