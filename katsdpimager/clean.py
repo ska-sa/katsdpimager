@@ -511,18 +511,17 @@ class CleanHost(object):
         self.image = image
         self.model = model
         self.psf = psf
-        tile_size = self.clean_parameters.tile_size
-        tiles_x = accel.divup(image.shape[1], tile_size)
-        tiles_y = accel.divup(image.shape[0], tile_size)
+        self.tile_size = 32
+        tiles_x = accel.divup(image.shape[1], self.tile_size)
+        tiles_y = accel.divup(image.shape[0], self.tile_size)
         self._tile_max = np.zeros((tiles_y, tiles_x), self.image_parameters.dtype)
         self._tile_pos = np.empty((tiles_y, tiles_x, 2), np.int32)
 
     def _update_tile(self, y, x):
-        tile_size = self.clean_parameters.tile_size
-        x0 = x * tile_size
-        y0 = y * tile_size
-        x1 = min(x0 + tile_size, self.image.shape[1])
-        y1 = min(y0 + tile_size, self.image.shape[0])
+        x0 = x * self.tile_size
+        y0 = y * self.tile_size
+        x1 = min(x0 + self.tile_size, self.image.shape[1])
+        y1 = min(y0 + self.tile_size, self.image.shape[0])
         tile = self.image[y0:y1, x0:x1, ...]
         if self.clean_parameters.mode == CLEAN_I:
             tile_fn = np.abs(tile[..., 0])
@@ -561,20 +560,25 @@ class CleanHost(object):
         return (y0, x0, y1, x1)
 
     def reset(self):
+        """Call when the dirty image has changed (including before the first
+        use) to recompute the internal caches. Note that this does *not* clear
+        the model image: the caller is responsible for setting the initial
+        values.
+        """
         for y in range(self._tile_max.shape[0]):
             for x in range(self._tile_max.shape[1]):
                 self._update_tile(y, x)
 
     def __call__(self):
-        tile_size = self.clean_parameters.tile_size
+        """Execute a single CLEAN minor cycle."""
         peak_tile = np.unravel_index(np.argmax(self._tile_max), self._tile_max.shape)
         peak = self._tile_max[peak_tile]
         peak_pos = self._tile_pos[peak_tile]
         (y0, x0, y1, x1) = self._subtract_psf(peak_pos[0], peak_pos[1])
-        tile_y0 = y0 // tile_size
-        tile_x0 = x0 // tile_size
-        tile_y1 = accel.divup(y1, tile_size)
-        tile_x1 = accel.divup(x1, tile_size)
+        tile_y0 = y0 // self.tile_size
+        tile_x0 = x0 // self.tile_size
+        tile_y1 = accel.divup(y1, self.tile_size)
+        tile_x1 = accel.divup(x1, self.tile_size)
         for y in range(tile_y0, tile_y1):
             for x in range(tile_x0, tile_x1):
                 self._update_tile(y, x)

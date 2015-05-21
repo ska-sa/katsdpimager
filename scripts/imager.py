@@ -69,7 +69,6 @@ def get_parser():
     group.add_argument('--clean-mode', choices=['I', 'IQUV'], default='IQUV', help='Stokes parameters to consider for peak-finding [%(default)s]')
     group = parser.add_argument_group('Performance tuning options')
     group.add_argument('--vis-block', type=int, default=1048576, help='Number of visibilities to load at a time [%(default)s]')
-    group.add_argument('--tile-size', type=int, default=64, help='Tile size for CLEAN optimizations [%(default)s]')
     group = parser.add_argument_group('Debugging options')
     group.add_argument('--host', action='store_true', help='Perform gridding on the CPU')
     group.add_argument('--write-psf', metavar='FILE', help='Write image of PSF to FITS file')
@@ -198,7 +197,7 @@ def main():
             raise ValueError('Unhandled --clean-mode {}'.format(args.clean_mode))
         clean_p = parameters.CleanParameters(
             args.minor, args.loop_gain, clean_mode,
-            args.psf_patch, args.tile_size)
+            args.psf_patch)
 
         #### Create data and operation instances ####
         if args.host:
