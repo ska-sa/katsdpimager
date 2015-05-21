@@ -116,7 +116,7 @@ class Gridder(accel.Operation):
         super(Gridder, self).__init__(command_queue, allocator)
         if len(image_parameters.polarizations) != template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
-        if image_parameters.dtype_complex != template.dtype:
+        if image_parameters.complex_dtype != template.dtype:
             raise ValueError('Mismatch in data type')
         # Check that longest baseline won't cause an out-of-bounds access
         max_uv_src = float(array_parameters.longest_baseline / image_parameters.cell_size)
@@ -199,7 +199,7 @@ class GridderHost(object):
                                        grid_parameters.oversample)
         pixels = image_parameters.pixels
         shape = (pixels, pixels, len(image_parameters.polarizations))
-        self.values = np.empty(shape, image_parameters.dtype_complex)
+        self.values = np.empty(shape, image_parameters.complex_dtype)
         # TODO: compute taper function (FT of kernel)
         # See http://www.dsprelated.com/freebooks/sasp/Kaiser_Window.html
 

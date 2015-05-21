@@ -203,32 +203,32 @@ def main():
         if args.host:
             gridder = grid.GridderHost(image_p, grid_p)
             grid_data = gridder.values
-            layer = np.empty(grid_data.shape, image_p.dtype_complex)
-            image = np.empty(grid_data.shape, image_p.dtype)
-            model = np.empty(grid_data.shape, image_p.dtype)
-            psf = np.empty(psf_shape(image_p, clean_p), image_p.dtype)
+            layer = np.empty(grid_data.shape, image_p.complex_dtype)
+            image = np.empty(grid_data.shape, image_p.real_dtype)
+            model = np.empty(grid_data.shape, image_p.real_dtype)
+            psf = np.empty(psf_shape(image_p, clean_p), image_p.real_dtype)
             grid_to_image = fft.GridToImageHost(grid_data, layer, image)
             cleaner = clean.CleanHost(image_p, clean_p, image, psf, model)
         else:
             allocator = accel.SVMAllocator(context)
             # Gridder
-            gridder_template = grid.GridderTemplate(context, grid_p, len(output_polarizations), image_p.dtype_complex)
+            gridder_template = grid.GridderTemplate(context, grid_p, len(output_polarizations), image_p.complex_dtype)
             gridder = gridder_template.instantiate(queue, image_p, array_p, args.vis_block, allocator)
             gridder.ensure_all_bound()
             grid_data = gridder.buffer('grid')
             # Grid to image
-            layer = accel.SVMArray(context, grid_data.shape, image_p.dtype_complex)
-            image = accel.SVMArray(context, grid_data.shape, image_p.dtype)
+            layer = accel.SVMArray(context, grid_data.shape, image_p.complex_dtype)
+            image = accel.SVMArray(context, grid_data.shape, image_p.real_dtype)
             grid_to_image_template = fft.GridToImageTemplate(
                 queue, grid_data.shape, grid_data.padded_shape, image.shape, image.dtype)
             grid_to_image = grid_to_image_template.instantiate(allocator)
             grid_to_image.bind(grid=grid_data, layer=layer, image=image)
             # CLEAN
-            psf = accel.SVMArray(context, psf_shape(image_p, clean_p), image_p.dtype)
+            psf = accel.SVMArray(context, psf_shape(image_p, clean_p), image_p.real_dtype)
             model = accel.SVMArray(context, image.shape, image.dtype)
             model[:] = 0
             cleaner_template = clean.CleanTemplate(
-                context, clean_p, image_p.dtype, len(output_polarizations))
+                context, clean_p, image_p.real_dtype, len(output_polarizations))
             cleaner = cleaner_template.instantiate(queue, image_p, allocator)
             cleaner.bind(dirty=image, model=model, psf=psf)
             cleaner.ensure_all_bound()

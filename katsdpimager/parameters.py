@@ -92,8 +92,8 @@ class ImageParameters(object):
                     recommended += 1
                 raise ValueError("Image size {} not supported - try {}".format(pixels, recommended))
         assert pixels % 2 == 0
-        self.dtype = np.dtype(dtype)
-        self.dtype_complex = katsdpimager.types.real_to_complex(dtype)
+        self.real_dtype = np.dtype(dtype)
+        self.complex_dtype = katsdpimager.types.real_to_complex(dtype)
         self.pixels = pixels
         self.image_size = self.pixel_size * pixels
         self.cell_size = self.wavelength / self.image_size
