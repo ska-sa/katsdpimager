@@ -52,6 +52,60 @@ def antialias_kernel(width, oversample, beta=None):
     return kernel
 
 
+def fourier_kernel(kernel, N):
+    r"""Compute the Fourier transform of an antialiasing kernel, in the form
+    returned by :func:`antialias_kernel`. The kernel is assumed to be used in
+    gridding, and hence is treated as a sum of box functions rather than a sum
+    of delta functions.
+
+    The code implements this in 2D, but for explanation we consider a 1D
+    version. Consider the grid to have sample points at :math:`0, 1, ...,
+    N-1`. Let the oversampling factor be M, and let B be one less than half
+    the kernel size. A kernel sample subpixel index :math:`s`, pixel index
+    :math:`u` (see :func:`antialias_kernel`), and value :math:`A` corresponds
+    to a box function with height :math:`h` and support
+    :math:`[u - B - \frac{s+1}{M}, u - B - \frac{s}{M}]`. The inverse Fourier
+    transform of a box function on the interval :math:`[a, b]` is
+
+    .. math::
+
+       (b-a)\sinc (b-a)x e^{2\pi i \frac{a+b}{2}x}
+
+    Since the kernel is symmetric, we need only consider the real part of the
+    Fourier transform, which is
+
+    .. math::
+
+       (b-a)\sinc (b-a)x \cos{\pi(a+b)x}
+
+    We also need to sample it appropriately. Since the grid
+    has a spacing of 1 in the frequency domain, the image has size 1, and the
+    pixel spacing is :math:`\frac{1}{N}`.
+
+    Parameters
+    ----------
+    kernel : array-like, 4D
+        Sampled kernel, in the format returned by :func:`antialias_kernel`
+    """
+    image = np.zeros((N, N), np.float32)
+    B = kernel.shape[2] / 2 - 1
+    M = kernel.shape[0]
+    xs = np.arange(-N // 2, N // 2) / N
+    ys = xs
+    for s in range(kernel.shape[0]):
+        for t in range(kernel.shape[1]):
+            for u in range(kernel.shape[2]):
+                for v in range(kernel.shape[3]):
+                    h = kernel[s, t, u, v]
+                    u0 = u - B - (s + 1) / M
+                    u1 = u - B - s / M
+                    v0 = v - B - (t + 1) / M
+                    v1 = v - B - t / M
+                    fx = (u1 - u0) * np.sinc((u1 - u0) * xs) * np.cos(math.pi * (u0 + u1) * xs)
+                    fy = (v1 - v0) * np.sinc((v1 - v0) * ys) * np.cos(math.pi * (v0 + v1) * ys)
+                    image[:] += h.real * np.outer(fx, fy)
+    return image
+
 def subpixel_coord(x, oversample):
     x0 = np.floor(x)
     return np.floor((x - x0) * oversample)
