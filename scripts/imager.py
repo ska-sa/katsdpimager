@@ -209,6 +209,8 @@ def main():
             psf = np.empty(psf_shape(image_p, clean_p), image_p.real_dtype)
             grid_to_image = fft.GridToImageHost(grid_data, layer, image)
             cleaner = clean.CleanHost(image_p, clean_p, image, psf, model)
+            image_scale = np.reciprocal(gridder.taper(image_p.pixels,
+                np.empty((image_p.pixels, image_p.pixels), image_p.real_dtype)))
         else:
             allocator = accel.SVMAllocator(context)
             # Gridder
@@ -217,6 +219,8 @@ def main():
             gridder.ensure_all_bound()
             grid_data = gridder.buffer('grid')
             # Grid to image
+            image_scale = np.reciprocal(gridder_template.taper(image_p.pixels,
+                accel.SVMArray(context, (image_p.pixels, image_p.pixels), image_p.real_dtype)))
             layer = accel.SVMArray(context, grid_data.shape, image_p.complex_dtype)
             image = accel.SVMArray(context, grid_data.shape, image_p.real_dtype)
             grid_to_image_template = fft.GridToImageTemplate(
@@ -235,15 +239,17 @@ def main():
 
         #### Create dirty image ####
         make_psf(queue, dataset, args, polarization_matrix, gridder, grid_to_image)
+        # TODO: all this scaling is hacky. Move it into subroutines somewhere
+        image *= image_scale[..., np.newaxis]
+        scale = np.reciprocal(image[image.shape[0] // 2, image.shape[1] // 2, ...])
+        image *= scale
         if args.write_psf is not None:
             with step('Write PSF'):
                 io.write_fits_image(dataset, image, image_p, args.write_psf)
         extract_psf(image, psf)
-        scale = np.reciprocal(psf[psf.shape[0] // 2, psf.shape[1] // 2, ...])
         make_dirty(queue, dataset, args, polarization_matrix, gridder, grid_to_image)
-        # TODO: this is a hack. Put it inside make_dirty, combined with tapering correction
+        image *= image_scale[..., np.newaxis]
         image *= scale
-        psf *= scale
         if args.write_grid is not None:
             with step('Write grid'):
                 io.write_fits_grid(grid_data, image_p, args.write_grid)

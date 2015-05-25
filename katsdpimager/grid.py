@@ -15,9 +15,9 @@ def kaiser_bessel(x, width, beta):
 
 
 def antialias_kernel(width, oversample, beta=None):
-    r"""Generate anti-aliasing kernel. The return value is 4-dimensional.
-    The first two dimensions select the subpixel position, the second two
-    select the pixel position.
+    r"""Generate 1D anti-aliasing kernel. The return value is 2-dimensional.
+    The first dimension selects the subpixel position, the second
+    selects the pixel position.
 
     The returned kernels all have the same size, but it is not necessarily
     the same size as `width` (in fact, `width` may be non-integer). Given
@@ -33,6 +33,15 @@ def antialias_kernel(width, oversample, beta=None):
     Then `s` is the subpixel index and `u` is the pixel index.
 
     TODO: normalisation so that integral is 1?
+
+    Parameters
+    ----------
+    width : float
+        Kernel support
+    oversample : int
+        Number of samples per unit step
+    beta : float
+        Shape parameter for Kaiser-Bessel window
     """
     if beta is None:
         # Puts the first null of the taper function at the edge of the image
@@ -41,26 +50,27 @@ def antialias_kernel(width, oversample, beta=None):
     size = 2 * hsize
     # The kernel only contains real values, but we store complex so that we
     # are ready for W projection.
-    kernel = np.empty((oversample, oversample, size, size), np.complex64)
+    kernel = np.empty((oversample, size), np.complex64)
     for s in range(oversample):
-        for t in range(oversample):
-            x_bias = (s + 0.5) / oversample + hsize - 1
-            y_bias = (t + 0.5) / oversample + hsize - 1
-            x_kernel = kaiser_bessel(np.arange(size) - x_bias, width, beta)
-            y_kernel = kaiser_bessel(np.arange(size) - y_bias, width, beta)
-            kernel[s, t, ...] = np.outer(x_kernel, y_kernel)
+        bias = (s + 0.5) / oversample + hsize - 1
+        kernel[s, :] = kaiser_bessel(np.arange(size) - bias, width, beta)
     return kernel
 
 
-def fourier_kernel(kernel, N):
+def kernel_outer(a, b, out=None):
+    """Take the outer product of two 1D kernels"""
+    return np.multiply(a[:, np.newaxis, :, np.newaxis],
+                       b[np.newaxis, :, np.newaxis, :], out)
+
+
+def fourier_kernel(kernel, N, out=None):
     r"""Compute the Fourier transform of an antialiasing kernel, in the form
     returned by :func:`antialias_kernel`. The kernel is assumed to be used in
     gridding, and hence is treated as a sum of box functions rather than a sum
     of delta functions.
 
-    The code implements this in 2D, but for explanation we consider a 1D
-    version. Consider the grid to have sample points at :math:`0, 1, ...,
-    N-1`. Let the oversampling factor be M, and let B be one less than half
+    Consider the grid to have sample points at :math:`0, 1, ..., N-1`. Let the
+    oversampling factor be M, and let B be one less than half
     the kernel size. A kernel sample subpixel index :math:`s`, pixel index
     :math:`u` (see :func:`antialias_kernel`), and value :math:`A` corresponds
     to a box function with height :math:`h` and support
@@ -84,27 +94,31 @@ def fourier_kernel(kernel, N):
 
     Parameters
     ----------
-    kernel : array-like, 4D
+    kernel : array-like, 2D
         Sampled kernel, in the format returned by :func:`antialias_kernel`
+    N : int
+        Image size
+    out : array-like, optional
+        If specified the result is written to this array
     """
-    image = np.zeros((N, N), np.float32)
-    B = kernel.shape[2] / 2 - 1
+    if out is None:
+        out = np.zeros((N,), np.float32)
+    else:
+        out.fill(0)
+    B = kernel.shape[1] / 2 - 1
     M = kernel.shape[0]
     xs = np.arange(-N // 2, N // 2) / N
     ys = xs
+    du = 1 / M
+    sinc = du * np.sinc(du * xs)
     for s in range(kernel.shape[0]):
-        for t in range(kernel.shape[1]):
-            for u in range(kernel.shape[2]):
-                for v in range(kernel.shape[3]):
-                    h = kernel[s, t, u, v]
-                    u0 = u - B - (s + 1) / M
-                    u1 = u - B - s / M
-                    v0 = v - B - (t + 1) / M
-                    v1 = v - B - t / M
-                    fx = (u1 - u0) * np.sinc((u1 - u0) * xs) * np.cos(math.pi * (u0 + u1) * xs)
-                    fy = (v1 - v0) * np.sinc((v1 - v0) * ys) * np.cos(math.pi * (v0 + v1) * ys)
-                    image[:] += h.real * np.outer(fx, fy)
-    return image
+        for u in range(kernel.shape[1]):
+            h = kernel[s, u]
+            u0 = u - B - (s + 1) / M
+            u1 = u - B - s / M
+            fx = sinc * np.cos(math.pi * (u0 + u1) * xs)
+            out[:] += h.real * fx
+    return out
 
 def subpixel_coord(x, oversample):
     x0 = np.floor(x)
@@ -119,10 +133,6 @@ class GridderTemplate(object):
                 num_polarizations)
         self.grid_parameters = grid_parameters
         self.dtype = dtype
-        convolve_kernel = antialias_kernel(grid_parameters.antialias_size,
-                                           grid_parameters.oversample)
-        self.convolve_kernel_size = convolve_kernel.shape[2]
-        ksize = self.convolve_kernel_size
         self.wgs_x = 8
         self.wgs_y = 8
         self.multi_x = 1
@@ -130,6 +140,11 @@ class GridderTemplate(object):
         self.num_polarizations = num_polarizations
         tile_x = self.wgs_x * self.multi_x
         tile_y = self.wgs_y * self.multi_y
+        # Antialiasing kernel
+        self.convolve_kernel1d = antialias_kernel(grid_parameters.antialias_size,
+                                                  grid_parameters.oversample)
+        self.convolve_kernel_size = self.convolve_kernel1d.shape[1]
+        ksize = self.convolve_kernel_size
         assert ksize <= tile_y
         assert ksize <= tile_x
         self.convolve_kernel = accel.SVMArray(
@@ -137,7 +152,8 @@ class GridderTemplate(object):
             (grid_parameters.oversample, grid_parameters.oversample, tile_y, tile_x),
             np.complex64)
         self.convolve_kernel.fill(0)
-        self.convolve_kernel[:, :, :ksize, :ksize] = convolve_kernel
+        self.convolve_kernel[:, :, :ksize, :ksize] = \
+            kernel_outer(self.convolve_kernel1d, self.convolve_kernel1d)
         self.program = accel.build(
             context, "imager_kernels/grid.mako",
             {
@@ -162,6 +178,13 @@ class GridderTemplate(object):
 
     def instantiate(self, *args, **kwargs):
         return Gridder(self, *args, **kwargs)
+
+    def taper(self, N, out=None):
+        """Return the Fourier transform of the 1D convolution kernel.
+        See :func:`fourier_kernel` for details.
+        """
+        taper1d = fourier_kernel(self.convolve_kernel1d, N)
+        return np.outer(taper1d, taper1d, out)
 
 
 class Gridder(accel.Operation):
@@ -249,16 +272,22 @@ class GridderHost(object):
     def __init__(self, image_parameters, grid_parameters):
         self.image_parameters = image_parameters
         self.grid_parameters = grid_parameters
-        self.kernel = antialias_kernel(grid_parameters.antialias_size,
-                                       grid_parameters.oversample)
+        self.kernel1d = antialias_kernel(grid_parameters.antialias_size,
+                                         grid_parameters.oversample)
+        self.kernel = kernel_outer(self.kernel1d, self.kernel1d)
         pixels = image_parameters.pixels
         shape = (pixels, pixels, len(image_parameters.polarizations))
         self.values = np.empty(shape, image_parameters.complex_dtype)
-        # TODO: compute taper function (FT of kernel)
-        # See http://www.dsprelated.com/freebooks/sasp/Kaiser_Window.html
 
     def clear(self):
         self.values.fill(0)
+
+    def taper(self, N, out=None):
+        """Return the Fourier transform of the convolution kernel.
+        See :func:`fourier_kernel` for details.
+        """
+        taper1d = fourier_kernel(self.kernel1d, N)
+        return np.outer(taper1d, taper1d, out)
 
     def grid(self, uvw, vis):
         """Add visibilities to the grid, with convolutional gridding using the
