@@ -40,12 +40,16 @@ def antialias_kernel(width, oversample, beta=None):
         Kernel support
     oversample : int
         Number of samples per unit step
-    beta : float
+    beta : float, optional
         Shape parameter for Kaiser-Bessel window
     """
     if beta is None:
         # Puts the first null of the taper function at the edge of the image
         beta = math.pi * math.sqrt(0.25 * width**2 - 1.0)
+        # Move the null outside the image, to avoid numerical instabilities.
+        # This will cause a small amount of aliasing at the edges, which
+        # ideally should be handled by clipping the image.
+        beta *= 1.2
     hsize = int(math.ceil(0.5 * width))
     size = 2 * hsize
     # The kernel only contains real values, but we store complex so that we
