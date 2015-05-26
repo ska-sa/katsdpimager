@@ -172,6 +172,10 @@ class FftTemplate(object):
         self.dtype = dtype
         self.padded_shape_src = padded_shape_src
         self.padded_shape_dest = padded_shape_dest
+        # CUDA 7.0 CUFFT has a bug where kernels are run in the default
+        # stream instead of the requested one, if dimensions are up to
+        # 1920.
+        self.needs_synchronize_workaround = any(x <= 1920 for x in shape[:N])
         batches = int(np.product(padded_shape_src[N:]))
         with command_queue.context:
             self.plan = scikits.cuda.fft.Plan(
@@ -221,13 +225,16 @@ class Fft(accel.Operation):
     def _run(self):
         src_buffer = self.buffer('src')
         dest_buffer = self.buffer('dest')
-        with self.template.command_queue.context:
+        context = self.template.command_queue.context
+        with context:
             if self.mode == FFT_FORWARD:
                 scikits.cuda.fft.fft(_GpudataWrapper(src_buffer), _GpudataWrapper(dest_buffer),
                                      self.template.plan)
             else:
                 scikits.cuda.fft.ifft(_GpudataWrapper(src_buffer), _GpudataWrapper(dest_buffer),
                                       self.template.plan)
+            if self.template.needs_synchronize_workaround:
+                context._pycuda_context.synchronize()
 
 
 class ComplexToRealTemplate(object):
