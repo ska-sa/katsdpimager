@@ -11,7 +11,12 @@ import katsdpsigproc.tune as tune
 
 
 def kaiser_bessel(x, width, beta):
-    return np.i0(beta * np.sqrt(np.maximum(0.0, 1 - (2.0 * x / width)**2))) / np.i0(beta)
+    param = 1 - (2 * x / width)**2
+    # The np.maximum is to protect against runtime warnings for taking
+    # sqrt of negative values. The actual values in this situation are
+    # irrelvent due to the np.select call.
+    values = np.i0(beta * np.sqrt(np.maximum(0, param))) / np.i0(beta)
+    return np.select([param >= 0], [values])
 
 
 def antialias_kernel(width, oversample, beta=None):
