@@ -130,8 +130,9 @@ def fourier_kernel(kernel, N, out=None):
     return out
 
 def subpixel_coord(x, oversample):
+    """Return pixel and subpixel index, as described in :func:`antialias_kernel`"""
     x0 = np.floor(x)
-    return np.floor((x - x0) * oversample)
+    return int(x0), int(np.floor((x - x0) * oversample))
 
 
 class GridderTemplate(object):
@@ -320,10 +321,8 @@ class GridderHost(object):
             # l and m are measured in cells
             l = np.float32(uvw[row, 0] / self.image_parameters.cell_size) + offset
             m = np.float32(uvw[row, 1] / self.image_parameters.cell_size) + offset
-            sub_l = subpixel_coord(l, self.grid_parameters.oversample)
-            sub_m = subpixel_coord(m, self.grid_parameters.oversample)
-            l = int(math.floor(l))
-            m = int(math.floor(m))
+            l, sub_l = subpixel_coord(l, self.grid_parameters.oversample)
+            m, sub_m = subpixel_coord(m, self.grid_parameters.oversample)
             sample = vis[row, :]
             sub_kernel = self.kernel[sub_m, sub_l, ..., np.newaxis]
             self.values[m : m+ksize, l : l+ksize, :] += sample * sub_kernel
