@@ -55,7 +55,7 @@ def main():
     images = [
         Image('WSClean', 'wsclean', 'wsclean-{stokes}-image.fits'),
         Image('katsdpimager (GPU)', 'katsdpimager-gpu', 'image-gpu.fits'),
-        Image('katsdpimager (CPU)', 'katsdpimager-cpu', 'image-cpu.fits')
+        # Image('katsdpimager (CPU)', 'katsdpimager-cpu', 'image-cpu.fits')
     ]
     try:
         os.makedirs(args.output_dir)
