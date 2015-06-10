@@ -12,6 +12,7 @@ if [ "$1" = "" ]; then
            -e 's!filename="katsdpimager/!filename="katsdpimager/katsdpimager/!g' \
            coverage.xml
 elif [ "$1" = "images" ]; then
+    env
     pip install -e .
     cd tests
     rm -rf -- simple.ms simple.ms_p0 *.fits simple.lsm.html
