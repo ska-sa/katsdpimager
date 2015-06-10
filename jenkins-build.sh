@@ -26,7 +26,7 @@ elif [ "$1" = "images" ]; then
     # packages. We strip the virtualenv off PATH.
     PATH=${PATH#*:} meqtree-pipeliner.py -c batch.tdlconf '[turbo-sim]' ms_sel.msname=simple.ms /usr/lib/python2.7/dist-packages/Cattery/Siamese/turbo-sim.py =_tdl_job_1_simulate_MS
     ARGS=(--stokes IQUV)
-    imager.py "${ARGS[*]}" simple.ms image-gpu.fits
-    imager.py "${ARGS[*]}" --host simple.ms --host image-cpu.fits
+    imager.py "${ARGS[@]}" simple.ms image-gpu.fits
+    imager.py "${ARGS[@]}" --host simple.ms --host image-cpu.fits
     wsclean -mgain 0.85 -niter 1000 -threshold 0.01 -size 4608 4608 -scale 1asec -pol i,q,u,v simple.ms
 fi
