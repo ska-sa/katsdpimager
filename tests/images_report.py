@@ -10,7 +10,6 @@ import aplpy
 from astropy.io import fits
 from mako.template import Template
 import argparse
-import shutil
 import os
 import os.path
 import errno

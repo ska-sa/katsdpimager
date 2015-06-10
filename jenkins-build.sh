@@ -12,7 +12,7 @@ if [ "$1" = "" ]; then
            -e 's!filename="katsdpimager/!filename="katsdpimager/katsdpimager/!g' \
            coverage.xml
 elif [ "$1" = "images" ]; then
-    pip install aplpy mako astropy
+    pip install astropy aplpy mako matplotlib
     pip install -e .
     cd tests
     rm -rf -- simple.ms simple.ms_p0 *.fits simple.lsm.html
