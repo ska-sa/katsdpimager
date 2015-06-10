@@ -27,6 +27,6 @@ elif [ "$1" = "images" ]; then
     PATH=${PATH#*:} meqtree-pipeliner.py -c batch.tdlconf '[turbo-sim]' ms_sel.msname=simple.ms /usr/lib/python2.7/dist-packages/Cattery/Siamese/turbo-sim.py =_tdl_job_1_simulate_MS
     wsclean -mgain 0.85 -niter 1000 -threshold 0.01 -size 4608 4608 -scale 1asec -pol i,q,u,v simple.ms
     ARGS=(--stokes IQUV)
-    images.py "${ARGS[0]}" simple.ms image-gpu.fits
-    images.py "${ARGS[0]}" --host simple.ms --host image-cpu.fits
+    imager.py "${ARGS[0]}" simple.ms image-gpu.fits
+    imager.py "${ARGS[0]}" --host simple.ms --host image-cpu.fits
 fi
