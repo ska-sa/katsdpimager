@@ -39,11 +39,11 @@ class Image(object):
                     # TODO: should use the WCS transformation
                     slices[i - 3] = 'IQUV'.find(stokes)
         f = aplpy.FITSFigure(filename, slices=slices, figsize=(4, 4))
-        f.show_colorscale()
+        f.show_colorscale(vmin=-0.01, vmax=2.0, vmid=-0.012, stretch='log')
         f.add_colorbar()
         f.add_grid()
         f.colorbar.set_font(size='x-small')
-        f.tick_labels.set_font(size='x-small')
+        f.tick_labels.set_font(size='xx-small')
         f.save(os.path.join(output_dir, self.output_filename(stokes)))
 
 
