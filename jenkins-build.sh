@@ -29,4 +29,5 @@ elif [ "$1" = "images" ]; then
     imager.py "${ARGS[@]}" simple.ms image-gpu.fits
     imager.py "${ARGS[@]}" --host simple.ms --host image-cpu.fits
     wsclean -mgain 0.85 -niter 1000 -threshold 0.01 -size 4608 4608 -scale 1asec -pol i,q,u,v simple.ms
+    tests/images_report.py report
 fi
