@@ -100,6 +100,7 @@ class ImageParameters(object):
         self.polarizations = polarizations
 
     def __str__(self):
+        import polarization
         return """\
 Pixel size: {:.3f}
 Pixels: {}
@@ -112,7 +113,7 @@ Polarizations: {}
             self.pixels,
             np.arcsin(self.pixel_size * self.pixels).to(units.deg),
             self.cell_size, self.wavelength,
-            ','.join([STOKES_NAMES[i] for i in self.polarizations]))
+            ','.join([polarization.STOKES_NAMES[i] for i in self.polarizations]))
 
 
 class GridParameters(object):
