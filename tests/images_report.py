@@ -18,6 +18,7 @@ import subprocess
 import logging
 import timeit
 import io
+import glob
 from contextlib import closing
 
 class BuildInfo(object):
@@ -36,11 +37,12 @@ class BuildInfo(object):
         self.output = self.output.decode('utf-8')
 
 class Image(object):
-    def __init__(self, name, filebase, fits_pattern, cmd_pattern):
+    def __init__(self, name, filebase, fits_pattern, cmd_pattern, clean_globs=[]):
         self.name = name
         self.filebase = filebase
         self.fits_pattern = fits_pattern
         self.cmd_pattern = cmd_pattern
+        self.clean_globs = list(clean_globs)
 
     def fits_filename(self, stokes):
         return self.fits_pattern.format(stokes=stokes)
@@ -57,7 +59,15 @@ class Image(object):
     def build(self, ms, output_dir, stokes):
         cmd = [Template(x).render_unicode(ms=ms, output_dir=output_dir, stokes=stokes)
                for x in self.cmd_pattern]
-        return BuildInfo(cmd)
+        build_info = BuildInfo(cmd)
+        # Clean up unwanted files, making sure not to delete any files we
+        # actually wanted.
+        keep = set(os.path.join(output_dir, self.fits_filename(s)) for s in stokes)
+        for clean_glob in self.clean_globs:
+            for filename in glob.iglob(os.path.join(output_dir, clean_glob)):
+                if filename not in keep:
+                    os.remove(filename)
+        return build_info
 
     def _render_common(self, figure, colorscale_args={}):
         figure.show_colorscale(vmin=-0.01, vmax=2.0, vmid=-0.015, stretch='log', **colorscale_args)
@@ -143,7 +153,8 @@ def main():
         Image('WSClean', 'wsclean', 'wsclean-{stokes}-image.fits',
               ['wsclean', '-mgain', '0.85', '-niter', '1000', '-threshold', '0.01',
                '-size', '4608', '4608', '-scale', '1asec', '-pol', '${",".join(stokes.lower())}',
-               '-name', '${output_dir}/wsclean', '${ms}']),
+               '-name', '${output_dir}/wsclean', '${ms}'],
+              clean_globs=['wsclean-*.fits']),
         Image('katsdpimager (GPU)', 'katsdpimager-gpu', 'image-gpu.fits',
               katsdpimager_common + ['${output_dir}/image-gpu.fits']),
         # Image('katsdpimager (CPU)', 'katsdpimager-cpu', 'image-cpu.fits',
