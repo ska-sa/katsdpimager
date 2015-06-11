@@ -96,7 +96,7 @@ class Image(object):
 def write_index(args, images, build_info):
     template_filename = os.path.join(os.path.dirname(__file__), 'report.html.mako')
     template = Template(filename=template_filename)
-    with io.open(os.path.join(args.output_dir, 'index.html'), 'w') as f:
+    with io.open(os.path.join(args.output_dir, 'index.html'), 'w', encoding='utf-8') as f:
         f.write(template.render_unicode(
             revision=os.environ.get('GIT_COMMIT', 'Unknown'),
             stokes=args.stokes,
@@ -106,8 +106,8 @@ def write_index(args, images, build_info):
 def write_build_log(args, image, build_info):
     template_filename = os.path.join(os.path.dirname(__file__), 'build_log.html.mako')
     template = Template(filename=template_filename)
-    with io.open(os.path.join(args.output_dir, image.build_info_filename()), 'w') as f:
-        f.write(template.render(image=image, build_info=build_info, stokes=args.stokes))
+    with io.open(os.path.join(args.output_dir, image.build_info_filename()), 'w', encoding='utf-8') as f:
+        f.write(template.render_unicode(image=image, build_info=build_info, stokes=args.stokes))
 
 def run(args, images):
     try:
