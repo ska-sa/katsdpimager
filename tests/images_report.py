@@ -138,7 +138,7 @@ def main():
     parser.add_argument('output_dir', help='Output directory')
     parser.add_argument('--stokes', default='IQUV', help='Stokes parameters to show')
     args = parser.parse_args()
-    katsdpimager_common = ['--stokes=${stokes}', '--input-option', 'data=CORRECTED_DATA', '${ms}']
+    katsdpimager_common = ['imager.py', '--stokes=${stokes}', '--input-option', 'data=CORRECTED_DATA', '${ms}']
     images = [
         Image('WSClean', 'wsclean', 'wsclean-{stokes}-image.fits',
               ['wsclean', '-mgain', '0.85', '-niter', '1000', '-threshold', '0.01',

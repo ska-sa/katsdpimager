@@ -15,7 +15,7 @@ elif [ "$1" = "images" ]; then
     pip install astropy aplpy mako matplotlib
     pip install -e .
     cd tests
-    rm -rf -- simple.ms simple.ms_p0 *.fits simple.lsm.html
+    rm -rf simple.ms simple.ms_p0 simple.lsm.html report
     makems
     mv simple.ms_p0 simple.ms
     # makems hard-codes LOFAR antenna information; replace with MeerKAT
@@ -26,6 +26,6 @@ elif [ "$1" = "images" ]; then
     # Meqtrees won't run against our virtualenv, since it uses system Python
     # packages. We strip the virtualenv off PATH.
     PATH=${PATH#*:} meqtree-pipeliner.py -c batch.tdlconf '[turbo-sim]' ms_sel.msname=simple.ms /usr/lib/python2.7/dist-packages/Cattery/Siamese/turbo-sim.py =_tdl_job_1_simulate_MS
-    ARGS=(--stokes IQUV --input-option data=CORRECTED_DATA)
     ./images_report.py simple.ms report
+    cp simple.lsm.txt simple.lsm.html makems.cfg batch.tdlconf report/
 fi
