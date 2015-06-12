@@ -11,12 +11,46 @@ import katsdpsigproc.tune as tune
 
 
 def kaiser_bessel(x, width, beta):
+    r"""Evaluate Kaiser-Bessel window function. Refer to
+    http://www.dsprelated.com/freebooks/sasp/Kaiser_Window.html
+    for details.
+
+    Parameters
+    ----------
+    x : array-like, float
+        Sample positions
+    width : float
+        The kernel has support :math:`[-\frac{1}{2}W, \frac{1}{2}W]`
+    beta : float
+        Shape parameter
+    """
     param = 1 - (2 * x / width)**2
     # The np.maximum is to protect against runtime warnings for taking
     # sqrt of negative values. The actual values in this situation are
     # irrelvent due to the np.select call.
     values = np.i0(beta * np.sqrt(np.maximum(0, param))) / np.i0(beta)
     return np.select([param >= 0], [values])
+
+
+def kaiser_bessel_fourier(f, width, beta):
+    """
+    Evaluate the continuous Fourier transform of :func:`kaiser_bessel`.
+    Note that since the function is even and real, this is also the inverse
+    Fourier transform.
+
+    Parameters
+    ----------
+    f : array-like, float
+        Sample positions (frequency)
+    width : float
+        The kernel has support :math:`[-\frac{1}{2}W, \frac{1}{2}W]`
+    beta : float
+        Shape parameter
+    """
+    alpha = beta / math.pi
+    # np.lib.scimath.sqrt returns complex values for negative inputs,
+    # whereas np.sqrt returns NaN.
+    return width / np.i0(beta) * np.sinc(np.lib.scimath.sqrt((width * f)**2 - alpha * alpha))
 
 
 def antialias_kernel(width, oversample, beta=None):
@@ -128,6 +162,90 @@ def fourier_kernel(kernel, N, out=None):
             fx = sinc * np.cos(math.pi * (u0 + u1) * xs)
             out[:] += h.real * fx
     return out
+
+
+def antialias_w_kernel(cell_wavelengths, w, width, oversample, antialias_width=7, image_oversample=4, beta=None):
+    r"""Computes a combined anti-aliasing and W-projection kernel.
+
+    The format of the returned kernel is similar to :func:`antialias_kernel`.
+    In particular, only a 1D kernel is returned.  Note that while the W kernel
+    is not truly separable, the small-angle approximation
+    :math:`\sqrt{1-l^2-m^2}-1 \approx (\sqrt{1-l^2}-1) + (\sqrt{1-m^2}-1)`
+    makes it makes it very close to separable [#]_.
+
+    .. [#] The error in the approximation above is on the order of :math:10^{-8}
+       for a 1 degree field of view.
+
+    We multiply the inverse Fourier transform of the (idealised) antialiasing
+    kernel with the W correction in image space, to obtain a closed-form
+    function we can evaluate in image space. This is then Fourier-transformed
+    to UV space. To reduce aliasing, the image-space function is oversampled by
+    a factor of `uv_oversample`, and the transform result is then truncated.
+
+    The output kernel is sampled at the centres of bins, which are at
+    half-subpixel offsets. To create this shift in UV space, we multiply by the
+    appropriate complex exponential in image space.
+
+    Parameters
+    ----------
+    cell_wavelengths : float
+        Size of a UV cell in wavelengths
+    w : float
+        w component of baseline, in wavelengths
+    width : int
+        Support of combined kernel, in cells
+    oversample : int
+        Number of samples per unit step in UV space
+    antialias_width : float
+        Support for anti-alias kernel, in cells
+    image_oversample : int
+        Oversampling factor in image space. Larger values reduce aliasing in
+        the output and increase time and memory required for computation, but
+        do not affect the size of the resulting kernel.
+    beta : float, optional
+        Shape parameter for Kaiser-Bessel window
+    """
+    if beta is None:
+        # Puts the first null of the taper function at the edge of the image
+        beta = math.pi * math.sqrt(0.25 * antialias_width**2 - 1.0)
+        # Move the null outside the image, to avoid numerical instabilities.
+        # This will cause a small amount of aliasing at the edges, which
+        # ideally should be handled by clipping the image.
+        beta *= 1.2
+    shift_by = -0.5 / oversample
+
+    def image_func(l):
+        aa_factor = kaiser_bessel_fourier(l, antialias_width, beta)
+        shift_arg = shift_by * l
+        w_arg = -w * (np.sqrt(1 - l*l) - 1)
+        return aa_factor * np.exp(2j * math.pi * (w_arg + shift_arg))
+
+    out_pixels = oversample * width
+    assert out_pixels % 2 == 0, "Odd number of pixels is not tested"
+    pixels = out_pixels * image_oversample
+    # Convert uv-space width to wavelengths
+    uv_width = width * cell_wavelengths
+    # Compute other support and step sizes
+    image_step = 1 / uv_width
+    uv_step = uv_width / pixels
+    image_width = image_step * pixels
+    # Determine sample points in image space
+    l = (np.arange(pixels) - (pixels // 2)) * image_step
+    # Evaluate function in image space
+    image_values = image_func(l)
+    # Convert to UV space. The multiplication is because we're using a DFT to
+    # approximate a continuous FFT. At this point the DC term is at index 0
+    # (i.e., no fftshift), and we crop out the pieces we want next
+    uv_values = np.fft.fft(np.fft.ifftshift(image_values))
+    # Crop to area of interest, and swap halves to put DC in the middle
+    uv_values = np.concatenate((uv_values[-(out_pixels // 2):], uv_values[:(out_pixels // 2)]))
+    # Split up into subkernels. Since the subpixel index indicates the subpixel
+    # position of the visibility, rather than the kernel tap, it runs backwards
+    # in the kernel indexing.
+    kernel = np.reshape(uv_values, (oversample, width), order='F')[::-1, :]
+    # Convert to C memory layout
+    return np.copy(kernel)
+
 
 def subpixel_coord(x, oversample):
     """Return pixel and subpixel index, as described in :func:`antialias_kernel`"""
