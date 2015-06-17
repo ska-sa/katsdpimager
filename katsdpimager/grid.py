@@ -182,6 +182,9 @@ def antialias_w_kernel(cell_wavelengths, w, width, oversample, antialias_width=7
     to UV space. To reduce aliasing, the image-space function is oversampled by
     a factor of `uv_oversample`, and the transform result is then truncated.
 
+    All the continuous functions that we are approximating in UV space are
+    expressed as functions of the number of wavelengths.
+
     The output kernel is sampled at the centres of bins, which are at
     half-subpixel offsets. To create this shift in UV space, we multiply by the
     appropriate complex exponential in image space.
@@ -212,10 +215,12 @@ def antialias_w_kernel(cell_wavelengths, w, width, oversample, antialias_width=7
         # This will cause a small amount of aliasing at the edges, which
         # ideally should be handled by clipping the image.
         beta *= 1.2
-    shift_by = -0.5 / oversample
 
     def image_func(l):
-        aa_factor = kaiser_bessel_fourier(l, antialias_width, beta)
+        # The kaiser_bessel function is designed around units of cells rather
+        # than wavelengths. We thus want the Fourier transform of
+        # kaiser_bessel(u / cell_wavelengths).
+        aa_factor = cell_wavelengths * kaiser_bessel_fourier(l * cell_wavelengths, antialias_width, beta)
         shift_arg = shift_by * l
         w_arg = -w * (np.sqrt(1 - l*l) - 1)
         return aa_factor * np.exp(2j * math.pi * (w_arg + shift_arg))
@@ -224,7 +229,7 @@ def antialias_w_kernel(cell_wavelengths, w, width, oversample, antialias_width=7
     assert out_pixels % 2 == 0, "Odd number of pixels is not tested"
     pixels = out_pixels * image_oversample
     # Convert uv-space width to wavelengths
-    uv_width = width * cell_wavelengths
+    uv_width = width * cell_wavelengths * image_oversample
     # Compute other support and step sizes
     image_step = 1 / uv_width
     uv_step = uv_width / pixels
@@ -232,11 +237,11 @@ def antialias_w_kernel(cell_wavelengths, w, width, oversample, antialias_width=7
     # Determine sample points in image space
     l = (np.arange(pixels) - (pixels // 2)) * image_step
     # Evaluate function in image space
+    shift_by = -0.5 * cell_wavelengths / oversample
     image_values = image_func(l)
     # Convert to UV space. The multiplication is because we're using a DFT to
-    # approximate a continuous FFT. At this point the DC term is at index 0
-    # (i.e., no fftshift), and we crop out the pieces we want next
-    uv_values = np.fft.fft(np.fft.ifftshift(image_values))
+    # approximate a continuous FFT.
+    uv_values = np.fft.fft(np.fft.ifftshift(image_values)) * image_step
     # Crop to area of interest, and swap halves to put DC in the middle
     uv_values = np.concatenate((uv_values[-(out_pixels // 2):], uv_values[:(out_pixels // 2)]))
     # Split up into subkernels. Since the subpixel index indicates the subpixel
