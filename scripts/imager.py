@@ -60,7 +60,10 @@ def get_parser():
     group.add_argument('--precision', choices=['single', 'double'], default='single', help='Internal floating-point precision [%(default)s]')
     group = parser.add_argument_group('Gridding options')
     group.add_argument('--grid-oversample', type=int, default=8, help='Oversampling factor for convolution kernels [%(default)s]')
-    group.add_argument('--aa-size', type=int, default=7, help='Support of anti-aliasing kernel [%(default)s]')
+    group.add_argument('--kernel-image-oversample', type=int, default=4, help='Oversampling factor for kernel generation [%(default)s]')
+    group.add_argument('--w-planes', type=int, default=32, help='Number of W planes [%(default)s]'),
+    group.add_argument('--max-w', type=parse_quantity, help='Largest w, as either distance or wavelengths [longest baseline]')
+    group.add_argument('--aa-size', type=float, default=7, help='Support of anti-aliasing kernel [%(default)s]')
     group = parser.add_argument_group('Cleaning options')
     # TODO: compute from some heuristic if not specified, instead of a hard-coded default
     group.add_argument('--psf-patch', type=int, default=100, help='Pixels in beam patch for cleaning [%(default)s]')
@@ -188,7 +191,13 @@ def main():
             dataset.frequency(args.channel), array_p, output_polarizations,
             (np.float32 if args.precision == 'single' else np.float64),
             args.pixel_size, args.pixels)
-        grid_p = parameters.GridParameters(args.aa_size, args.grid_oversample)
+        if args.max_w is None:
+            args.max_w = array_p.longest_baseline
+        elif args.max_w.unit.physical_type == 'dimensionless':
+            args.max_w = args.max_w * image_p.wavelength
+        grid_p = parameters.GridParameters(
+            args.aa_size, args.grid_oversample, args.kernel_image_oversample,
+            args.w_planes, args.max_w)
         if args.clean_mode == 'I':
             clean_mode = clean.CLEAN_I
         elif args.clean_mode == 'IQUV':
@@ -214,8 +223,8 @@ def main():
         else:
             allocator = accel.SVMAllocator(context)
             # Gridder
-            gridder_template = grid.GridderTemplate(context, grid_p, len(output_polarizations), image_p.complex_dtype)
-            gridder = gridder_template.instantiate(queue, image_p, array_p, args.vis_block, allocator)
+            gridder_template = grid.GridderTemplate(context, image_p, grid_p)
+            gridder = gridder_template.instantiate(queue, array_p, args.vis_block, allocator)
             gridder.ensure_all_bound()
             grid_data = gridder.buffer('grid')
             # Grid to image

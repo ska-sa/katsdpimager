@@ -15,6 +15,9 @@ typedef atomic_accum_${real_type}2 atomic_accum_Complex;
 #define CONVOLVE_KERNEL_OVERSAMPLE_SHIFT ${int.bit_length(convolve_kernel_oversample) - 1}
 #define CONVOLVE_KERNEL_SLICE_STRIDE ${convolve_kernel_slice_stride}
 #define CONVOLVE_KERNEL_ROW_STRIDE ${convolve_kernel_row_stride}
+#define CONVOLVE_KERNEL_W_STRIDE ${convolve_kernel_w_stride}
+#define CONVOLVE_KERNEL_W_SCALE ${convolve_kernel_w_scale}
+#define CONVOLVE_KERNEL_MAX_W ${convolve_kernel_max_w}
 #define make_Complex make_${real_type}2
 #define atomic_accum_Complex_add atomic_accum_${real_type}2_add
 
@@ -93,6 +96,15 @@ void grid(
             int vis_id = batch_start + lid;
             float sample_u = uvw[vis_id * 3];
             float sample_v = uvw[vis_id * 3 + 1];
+            float sample_w = uvw[vis_id * 3 + 2];
+            bool flipped = false;
+            if (sample_w < 0) // TODO: eliminate this once uvw are preprocessed
+            {
+                sample_u = -sample_u;
+                sample_v = -sample_v;
+                sample_w = -sample_w;
+                flipped = true;
+            }
             // TODO: make portable __float2int_rd
             int fine_u = __float2int_rd(sample_u * uv_scale + uv_bias);
             int fine_v = __float2int_rd(sample_v * uv_scale + uv_bias);
@@ -108,10 +120,14 @@ void grid(
                 // TODO: could improve this using float4s where appropriate
                 int idx = vis_id * NPOLS + p;
                 batch_vis[p][lid] = vis[idx];
+                if (flipped)
+                    batch_vis[p][lid].y = -batch_vis[p][lid].y;
             }
             batch_min_uv[lid] = make_int2(min_u, min_v);
             int slice = sub_v * CONVOLVE_KERNEL_OVERSAMPLE + sub_u;
-            batch_offset[lid] = slice * CONVOLVE_KERNEL_SLICE_STRIDE
+            int w_plane = __float2int_rn(min(sample_w, CONVOLVE_KERNEL_MAX_W) * CONVOLVE_KERNEL_W_SCALE);
+            batch_offset[lid] = w_plane * CONVOLVE_KERNEL_W_STRIDE
+                + slice * CONVOLVE_KERNEL_SLICE_STRIDE
                 - (min_v * CONVOLVE_KERNEL_ROW_STRIDE + min_u);
         }
 

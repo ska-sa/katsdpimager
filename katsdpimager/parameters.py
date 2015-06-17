@@ -117,9 +117,29 @@ Polarizations: {}
 
 
 class GridParameters(object):
-    def __init__(self, antialias_size, oversample):
+    """Parameters affecting gridding algorithm.
+
+    Parameters
+    ----------
+    antialias_size : float
+        Support of the antialiasing kernel
+    oversample : int
+        Number of UV sub-cells per cell, for sampling kernels
+    image_oversample : int
+        Oversampling in image plane during kernel generation
+    w_planes : int
+        Number of samples to take in w
+    max_w : Quantity
+        Maximum absolute w value, as a distance quantity
+    """
+    def __init__(self, antialias_size, oversample, image_oversample, w_planes, max_w):
+        assert w_planes >= 2, 'At least 2 W planes are required'
+        assert max_w.unit.physical_type == 'length'
         self.antialias_size = antialias_size
         self.oversample = oversample
+        self.image_oversample = image_oversample
+        self.w_planes = w_planes
+        self.max_w = max_w
 
 
 class CleanParameters(object):
