@@ -21,11 +21,12 @@ typedef atomic_accum_${real_type}2 atomic_accum_Complex;
 #define make_Complex make_${real_type}2
 #define atomic_accum_Complex_add atomic_accum_${real_type}2_add
 
-DEVICE_FN Complex Complex_mad(float2 a, float2 b, Complex c)
+/// Computes a * conj(b) + c
+DEVICE_FN Complex Complex_madc(float2 a, float2 b, Complex c)
 {
     Complex out;
-    out.x = fma(a.x, b.x, fma(-a.y, b.y, c.x));
-    out.y = fma(a.x, b.y, fma(a.y, b.x, c.y));
+    out.x = fma(a.x, b.x, fma(a.y, b.y, c.x));
+    out.y = fma(a.x, -b.y, fma(a.y, b.x, c.y));
     return out;
 }
 
@@ -159,7 +160,11 @@ void grid(
                     int offset = v * CONVOLVE_KERNEL_ROW_STRIDE + u + base_offset;
                     float2 weight = convolve_kernel[offset];
                     for (int p = 0; p < NPOLS; p++)
-                        sums[y][x][p] = Complex_mad(weight, sample_vis[p], sums[y][x][p]);
+                    {
+                        // The weight is conjugated because the w kernel is
+                        // for prediction rather than imaging.
+                        sums[y][x][p] = Complex_madc(sample_vis[p], weight, sums[y][x][p]);
+                    }
                 }
         }
 
