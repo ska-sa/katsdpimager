@@ -157,8 +157,8 @@ def main():
               clean_globs=['wsclean-*.fits']),
         Image('katsdpimager (GPU)', 'katsdpimager-gpu', 'image-gpu.fits',
               katsdpimager_common + ['${output_dir}/image-gpu.fits']),
-        # Image('katsdpimager (CPU)', 'katsdpimager-cpu', 'image-cpu.fits',
-        #       katsdpimager_common + ['--host', '${output_dir}/image-cpu.fits'])
+        Image('katsdpimager (CPU)', 'katsdpimager-cpu', 'image-cpu.fits',
+              katsdpimager_common + ['--host', '${output_dir}/image-cpu.fits'])
     ]
     return run(args, images)
 
