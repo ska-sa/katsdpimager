@@ -8,6 +8,7 @@ import pkg_resources
 import astropy.units as units
 import katsdpsigproc.accel as accel
 import katsdpsigproc.tune as tune
+import numba
 
 
 def kaiser_bessel(x, width, beta):
@@ -251,6 +252,7 @@ def antialias_w_kernel(cell_wavelengths, w, width, oversample, antialias_width=7
     return np.copy(kernel)
 
 
+@numba.jit(nopython=True)
 def subpixel_coord(x, oversample):
     """Return pixel and subpixel index, as described in :func:`antialias_kernel`"""
     x0 = np.floor(x)
@@ -411,6 +413,29 @@ class Gridder(accel.Operation):
         }
 
 
+@numba.jit(nopython=True)
+def _grid(kernel, values, uvw, vis, pixels, cell_size, oversample):
+    """Internal implementation of :meth:`GridderHost.grid`, split out so that
+    Numba can JIT it.
+    """
+    ksize = kernel.shape[2]
+    # Offset to bias coordinates such that l,m=0 translates to the first
+    # pixel to update in the grid.
+    offset = pixels // 2 - (ksize - 1) // 2
+    for row in range(uvw.shape[0]):
+        # l and m are measured in cells
+        l = np.float32(uvw[row, 0] / cell_size) + offset
+        m = np.float32(uvw[row, 1] / cell_size) + offset
+        l0, sub_l = subpixel_coord(l, oversample)
+        m0, sub_m = subpixel_coord(m, oversample)
+        sample = vis[row, :]
+        sub_kernel = kernel[sub_m, sub_l, :, :]
+        for j in range(ksize):
+            for k in range(ksize):
+                for pol in range(values.shape[2]):
+                    values[int(m0 + j), int(l0 + k), pol] += sample[pol] * sub_kernel[j, k]
+
+
 class GridderHost(object):
     def __init__(self, image_parameters, grid_parameters):
         self.image_parameters = image_parameters
@@ -446,16 +471,8 @@ class GridderHost(object):
         """
         assert uvw.unit.physical_type == 'length'
         pixels = self.image_parameters.pixels
-        ksize = self.kernel.shape[2]
-        # Offset to bias coordinates such that l,m=0 translates to the first
-        # pixel to update in the grid.
-        offset = pixels // 2 - (ksize - 1) // 2
-        for row in range(uvw.shape[0]):
-            # l and m are measured in cells
-            l = np.float32(uvw[row, 0] / self.image_parameters.cell_size) + offset
-            m = np.float32(uvw[row, 1] / self.image_parameters.cell_size) + offset
-            l, sub_l = subpixel_coord(l, self.grid_parameters.oversample)
-            m, sub_m = subpixel_coord(m, self.grid_parameters.oversample)
-            sample = vis[row, :]
-            sub_kernel = self.kernel[sub_m, sub_l, ..., np.newaxis]
-            self.values[m : m+ksize, l : l+ksize, :] += sample * sub_kernel
+        _grid(self.kernel, self.values,
+              uvw.to(units.m).value, vis,
+              self.image_parameters.pixels,
+              self.image_parameters.cell_size.to(units.m).value,
+              self.grid_parameters.oversample)

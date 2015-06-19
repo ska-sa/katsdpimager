@@ -5,6 +5,7 @@ progress
 nose
 unittest2
 mock
+numba
 pycuda
 scikits.cuda==0.5.0b2
 git+ssh://git@github.com/ska-sa/katsdpsigproc@imager-support#egg=katsdpsigproc
