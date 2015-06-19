@@ -2,7 +2,7 @@
 set -e -x
 
 pip install -U pip setuptools wheel
-pip install numpy  # Some requirements need it already installed
+pip install numpy enum34  # Some requirements need these already installed
 pip install -r requirements.txt
 if [ "$1" = "" ]; then
     pip install coverage
