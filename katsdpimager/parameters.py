@@ -121,7 +121,7 @@ class GridParameters(object):
 
     Parameters
     ----------
-    antialias_size : float
+    antialias_width : float
         Support of the antialiasing kernel
     oversample : int
         Number of UV sub-cells per cell, for sampling kernels
@@ -132,10 +132,10 @@ class GridParameters(object):
     max_w : Quantity
         Maximum absolute w value, as a distance quantity
     """
-    def __init__(self, antialias_size, oversample, image_oversample, w_planes, max_w):
+    def __init__(self, antialias_width, oversample, image_oversample, w_planes, max_w):
         assert w_planes >= 2, 'At least 2 W planes are required'
         assert max_w.unit.physical_type == 'length'
-        self.antialias_size = antialias_size
+        self.antialias_width = antialias_width
         self.oversample = oversample
         self.image_oversample = image_oversample
         self.w_planes = w_planes

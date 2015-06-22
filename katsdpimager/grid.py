@@ -197,35 +197,71 @@ def subpixel_coord(x, oversample):
     return int(x0), int(np.floor((x - x0) * oversample))
 
 
-class GridderTemplate(object):
-    def generate_convolve_kernel(
-            self, context, image_parameters, grid_parameters, width):
-        cell_wavelengths = float(image_parameters.cell_size / image_parameters.wavelength)
-        max_w_wavelengths = float(grid_parameters.max_w / image_parameters.wavelength)
-        self.convolve_kernel = accel.SVMArray(
-            context,
-            (grid_parameters.w_planes, grid_parameters.oversample, grid_parameters.oversample, width, width),
+def _generate_convolve_kernel(image_parameters, grid_parameters, width, out=None):
+    """Generate combined kernels for W-projection and antialiasing."""
+    if out is None:
+        out = np.empty(
+            (
+                grid_parameters.w_planes,
+                grid_parameters.oversample, grid_parameters.oversample,
+                width, width
+            ),
             np.complex64)
-        # Puts the first null of the taper function at the edge of the image
-        self.beta = math.pi * math.sqrt(0.25 * grid_parameters.antialias_size**2 - 1.0)
-        # Move the null outside the image, to avoid numerical instabilities.
-        # This will cause a small amount of aliasing at the edges, which
-        # ideally should be handled by clipping the image.
-        self.beta *= 1.2
-        # TODO: use sqrt(w) scaling as in Cornwell, Golap and Bhatnagar (2008)?
-        for i, w in enumerate(np.linspace(0.0, max_w_wavelengths, grid_parameters.w_planes)):
-            kernel1d = antialias_w_kernel(
-                cell_wavelengths, w, width,
-                grid_parameters.oversample,
-                grid_parameters.antialias_size,
-                grid_parameters.image_oversample,
-                self.beta)
-            self.convolve_kernel[i, ...] = kernel_outer(kernel1d, kernel1d)
+    cell_wavelengths = float(image_parameters.cell_size / image_parameters.wavelength)
+    max_w_wavelengths = float(grid_parameters.max_w / image_parameters.wavelength)
+    # Puts the first null of the taper function at the edge of the image
+    beta = math.pi * math.sqrt(0.25 * grid_parameters.antialias_width**2 - 1.0)
+    # Move the null outside the image, to avoid numerical instabilities.
+    # This will cause a small amount of aliasing at the edges, which
+    # ideally should be handled by clipping the image.
+    beta *= 1.2
+    # TODO: use sqrt(w) scaling as in Cornwell, Golap and Bhatnagar (2008)?
+    for i, w in enumerate(np.linspace(0.0, max_w_wavelengths, grid_parameters.w_planes)):
+        kernel1d = antialias_w_kernel(
+            cell_wavelengths, w, width,
+            grid_parameters.oversample,
+            grid_parameters.antialias_width,
+            grid_parameters.image_oversample,
+            beta)
+        out[i, ...] = kernel_outer(kernel1d, kernel1d)
+    return out, beta
+
+
+def _taper(N, pixel_size, antialias_width, beta, out=None):
+    """Return the Fourier transform of the antialiasing kernel for
+    an N×N image.
+
+    Parameters
+    ----------
+    N : int
+        Number of pixels in the image
+    pixel_size : float
+        Size of pixels in the image (l/m coordinate system)
+    antialias_width : float
+        Support of the antialiasing kernel
+    beta : float
+        Shape parameter for the antialiasing kernel
+    out : array-like, optional
+        If provided, is used to store the result
+    """
+    x = np.arange(N) / N - 0.5
+    taper1d = kaiser_bessel_fourier(x, antialias_width, beta)
+    out = np.outer(taper1d, taper1d, out)
+    # We image T.I/n, so we need to correct for the division by n
+    lm = (np.arange(N) - (N // 2)) * float(pixel_size)
+    l = lm[:, np.newaxis]
+    m = lm[np.newaxis, :]
+    out /= np.sqrt(1.0 - (l * l + m * m))
+    return out
+
+
+class GridderTemplate(object):
+    autotune_version = 1
 
     def __init__(self, context, image_parameters, grid_parameters, tuning=None):
         if tuning is None:
             tuning = self.autotune(
-                context, grid_parameters.antialias_size, grid_parameters.oversample,
+                context, grid_parameters.antialias_width, grid_parameters.oversample,
                 len(image_parameters.polarizations))
         self.grid_parameters = grid_parameters
         self.image_parameters = image_parameters
@@ -238,7 +274,12 @@ class GridderTemplate(object):
         tile_x = self.wgs_x * self.multi_x
         tile_y = self.wgs_y * self.multi_y
         assert tile_x == tile_y
-        self.generate_convolve_kernel(context, image_parameters, grid_parameters, tile_x)
+        self.convolve_kernel, self.beta = _generate_convolve_kernel(
+            image_parameters, grid_parameters, tile_x,
+            accel.SVMArray(
+                context,
+                (grid_parameters.w_planes, grid_parameters.oversample, grid_parameters.oversample, tile_x, tile_x),
+                np.complex64))
         w_scale = float(units.m / grid_parameters.max_w) * (grid_parameters.w_planes - 1)
         self.program = accel.build(
             context, "imager_kernels/grid.mako",
@@ -261,7 +302,7 @@ class GridderTemplate(object):
 
     @classmethod
     @tune.autotuner(test={})
-    def autotune(cls, context, antialias_size, oversample, num_polarizations):
+    def autotune(cls, context, antialias_width, oversample, num_polarizations):
         # Nothing to autotune yet
         return {}
 
@@ -279,15 +320,9 @@ class GridderTemplate(object):
         out : array-like, optional
             If provided, is used to store the result
         """
-        x = np.arange(N) / N - 0.5
-        taper1d = kaiser_bessel_fourier(x, self.grid_parameters.antialias_size, self.beta)
-        out = np.outer(taper1d, taper1d, out)
-        lm = (np.arange(N) - (N // 2)) * float(self.image_parameters.pixel_size)
-        # We image T.I/n, so we need to correct for the division by n
-        l = lm[:, np.newaxis]
-        m = lm[np.newaxis, :]
-        out /= np.sqrt(1.0 - (l * l + m * m))
-        return out
+        return _taper(
+            N, self.image_parameters.pixel_size,
+            self.grid_parameters.antialias_width, self.beta, out)
 
 
 class Gridder(accel.Operation):
@@ -368,35 +403,45 @@ class Gridder(accel.Operation):
 
 
 @numba.jit(nopython=True)
-def _grid(kernel, values, uvw, vis, pixels, cell_size, oversample):
+def _grid(kernel, values, uvw, vis, pixels, cell_size, oversample, w_scale, sample):
     """Internal implementation of :meth:`GridderHost.grid`, split out so that
     Numba can JIT it.
     """
-    ksize = kernel.shape[2]
+    max_w = kernel.shape[0] - 1
+    ksize = kernel.shape[4]
     # Offset to bias coordinates such that l,m=0 translates to the first
     # pixel to update in the grid.
     offset = pixels // 2 - (ksize - 1) // 2
     for row in range(uvw.shape[0]):
-        # l and m are measured in cells
-        l = np.float32(uvw[row, 0] / cell_size) + offset
-        m = np.float32(uvw[row, 1] / cell_size) + offset
-        l0, sub_l = subpixel_coord(l, oversample)
-        m0, sub_m = subpixel_coord(m, oversample)
-        sample = vis[row, :]
-        sub_kernel = kernel[sub_m, sub_l, :, :]
+        u, v, w = uvw[row]
+        for i in range(vis.shape[1]):
+            sample[i] = vis[row, i]
+        if w < 0:
+            u = -u
+            v = -v
+            w = -w
+            np.conj(sample, sample)
+        # u and v are converted to cells, w to planes
+        u = u / cell_size + offset
+        v = v / cell_size + offset
+        w = np.rint(w * w_scale)
+        w_plane = int(min(w, max_w))
+        u0, sub_u = subpixel_coord(u, oversample)
+        v0, sub_v = subpixel_coord(v, oversample)
         for j in range(ksize):
             for k in range(ksize):
+                weight = np.conj(kernel[w_plane, sub_v, sub_u, j, k])
                 for pol in range(values.shape[2]):
-                    values[int(m0 + j), int(l0 + k), pol] += sample[pol] * sub_kernel[j, k]
+                    values[int(v0 + j), int(u0 + k), pol] += sample[pol] * weight
 
 
 class GridderHost(object):
     def __init__(self, image_parameters, grid_parameters):
         self.image_parameters = image_parameters
         self.grid_parameters = grid_parameters
-        self.kernel1d = antialias_kernel(grid_parameters.antialias_size,
-                                         grid_parameters.oversample)
-        self.kernel = kernel_outer(self.kernel1d, self.kernel1d)
+        kernel_size = 16  # TODO: take as a parameter
+        self.kernel, self.beta = _generate_convolve_kernel(
+            image_parameters, grid_parameters, kernel_size)
         pixels = image_parameters.pixels
         shape = (pixels, pixels, len(image_parameters.polarizations))
         self.values = np.empty(shape, image_parameters.complex_dtype)
@@ -405,15 +450,22 @@ class GridderHost(object):
         self.values.fill(0)
 
     def taper(self, N, out=None):
-        """Return the Fourier transform of the convolution kernel.
-        See :func:`fourier_kernel` for details.
+        """Return the Fourier transform of the antialiasing kernel for
+        an N×N image.
+
+        Parameters
+        ----------
+        N : int
+            Number of pixels in the image
+        out : array-like, optional
+            If provided, is used to store the result
         """
-        taper1d = fourier_kernel(self.kernel1d, N)
-        return np.outer(taper1d, taper1d, out)
+        return _taper(
+            N, self.image_parameters.pixel_size,
+            self.grid_parameters.antialias_width, self.beta, out)
 
     def grid(self, uvw, vis):
-        """Add visibilities to the grid, with convolutional gridding using the
-        anti-aliasing filter.
+        """Add visibilities to the grid, with convolutional gridding.
 
         Parameters
         ----------
@@ -425,8 +477,10 @@ class GridderHost(object):
         """
         assert uvw.unit.physical_type == 'length'
         pixels = self.image_parameters.pixels
+        w_scale = float(units.m / self.grid_parameters.max_w) * (self.grid_parameters.w_planes - 1)
         _grid(self.kernel, self.values,
               uvw.to(units.m).value, vis,
               self.image_parameters.pixels,
               self.image_parameters.cell_size.to(units.m).value,
-              self.grid_parameters.oversample)
+              self.grid_parameters.oversample,
+              np.float32(w_scale), np.empty((vis.shape[1],), vis.dtype))

@@ -61,7 +61,7 @@ def get_parser():
     group = parser.add_argument_group('Gridding options')
     group.add_argument('--grid-oversample', type=int, default=8, help='Oversampling factor for convolution kernels [%(default)s]')
     group.add_argument('--kernel-image-oversample', type=int, default=4, help='Oversampling factor for kernel generation [%(default)s]')
-    group.add_argument('--w-planes', type=int, default=32, help='Number of W planes [%(default)s]'),
+    group.add_argument('--w-planes', type=int, default=128, help='Number of W planes [%(default)s]'),
     group.add_argument('--max-w', type=parse_quantity, help='Largest w, as either distance or wavelengths [longest baseline]')
     group.add_argument('--aa-size', type=float, default=7, help='Support of anti-aliasing kernel [%(default)s]')
     group = parser.add_argument_group('Cleaning options')
@@ -263,7 +263,10 @@ def main():
         image *= scale
         if args.write_grid is not None:
             with step('Write grid'):
-                io.write_fits_grid(grid_data, image_p, args.write_grid)
+                if args.host:
+                    io.write_fits_grid(grid_data, image_p, args.write_grid)
+                else:
+                    io.write_fits_grid(np.fft.fftshift(grid_data), image_p, args.write_grid)
         if args.write_dirty is not None:
             with step('Write dirty image'):
                 io.write_fits_image(dataset, image, image_p, args.write_dirty)
