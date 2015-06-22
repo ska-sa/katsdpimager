@@ -152,6 +152,7 @@ def main():
     images = [
         Image('WSClean', 'wsclean', 'wsclean-{stokes}-image.fits',
               ['wsclean', '-mgain', '0.85', '-niter', '1000', '-threshold', '0.01',
+               '-weight', 'natural',
                '-size', '4608', '4608', '-scale', '1.747asec', '-pol', '${",".join(stokes.lower())}',
                '-name', '${output_dir}/wsclean', '${ms}'],
               clean_globs=['wsclean-*.fits']),
