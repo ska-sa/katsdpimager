@@ -91,7 +91,7 @@ void grid(
     for (; batch_start < batch_end; batch_start += BATCH_SIZE)
     {
         // Load batch
-        int batch_size = min(nvis - batch_end, BATCH_SIZE);
+        int batch_size = min(batch_end - batch_start, BATCH_SIZE);
         if (lid < batch_size)
         {
             int vis_id = batch_start + lid;
