@@ -172,4 +172,9 @@ void grid(
         // one while still in progress
         BARRIER();
     }
+
+    // Write back final internal values
+    for (int y = 0; y < MULTI_Y; y++)
+        for (int x = 0; x < MULTI_X; x++)
+            writeback(out, out_stride, cur_uv[y][x].x, cur_uv[y][x].y, sums[y][x]);
 }
