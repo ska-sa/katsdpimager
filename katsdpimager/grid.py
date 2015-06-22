@@ -281,7 +281,13 @@ class GridderTemplate(object):
         """
         x = np.arange(N) / N - 0.5
         taper1d = kaiser_bessel_fourier(x, self.grid_parameters.antialias_size, self.beta)
-        return np.outer(taper1d, taper1d, out)
+        out = np.outer(taper1d, taper1d, out)
+        lm = (np.arange(N) - (N // 2)) * float(self.image_parameters.pixel_size)
+        # We image T.I/n, so we need to correct for the division by n
+        l = lm[:, np.newaxis]
+        m = lm[np.newaxis, :]
+        out /= np.sqrt(1.0 - (l * l + m * m))
+        return out
 
 
 class Gridder(accel.Operation):
