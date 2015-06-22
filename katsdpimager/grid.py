@@ -193,8 +193,8 @@ def antialias_w_kernel(cell_wavelengths, w, width, oversample, antialias_width, 
 @numba.jit(nopython=True)
 def subpixel_coord(x, oversample):
     """Return pixel and subpixel index, as described in :func:`antialias_kernel`"""
-    x0 = np.floor(x)
-    return int(x0), int(np.floor((x - x0) * oversample))
+    xs = int(np.floor(x * oversample))
+    return xs // oversample, xs % oversample
 
 
 def _generate_convolve_kernel(image_parameters, grid_parameters, width, out=None):
@@ -479,7 +479,7 @@ class GridderHost(object):
         pixels = self.image_parameters.pixels
         w_scale = float(units.m / self.grid_parameters.max_w) * (self.grid_parameters.w_planes - 1)
         _grid(self.kernel, self.values,
-              uvw.to(units.m).value, vis,
+              uvw.to(units.m).value.astype(np.float32), vis,
               self.image_parameters.pixels,
               self.image_parameters.cell_size.to(units.m).value,
               self.grid_parameters.oversample,

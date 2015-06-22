@@ -16,8 +16,8 @@ typedef atomic_accum_${real_type}2 atomic_accum_Complex;
 #define CONVOLVE_KERNEL_SLICE_STRIDE ${convolve_kernel_slice_stride}
 #define CONVOLVE_KERNEL_ROW_STRIDE ${convolve_kernel_row_stride}
 #define CONVOLVE_KERNEL_W_STRIDE ${convolve_kernel_w_stride}
-#define CONVOLVE_KERNEL_W_SCALE ${convolve_kernel_w_scale}
-#define CONVOLVE_KERNEL_MAX_W ${convolve_kernel_max_w}
+#define CONVOLVE_KERNEL_W_SCALE ${convolve_kernel_w_scale}f
+#define CONVOLVE_KERNEL_MAX_W ${convolve_kernel_max_w}f
 #define make_Complex make_${real_type}2
 #define atomic_accum_Complex_add atomic_accum_${real_type}2_add
 
