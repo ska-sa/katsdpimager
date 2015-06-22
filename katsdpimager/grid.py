@@ -483,4 +483,4 @@ class GridderHost(object):
               self.image_parameters.pixels,
               self.image_parameters.cell_size.to(units.m).value,
               self.grid_parameters.oversample,
-              np.float32(w_scale), np.empty((vis.shape[1],), vis.dtype))
+              np.float32(w_scale), np.empty((vis.shape[1],), self.values.dtype))
