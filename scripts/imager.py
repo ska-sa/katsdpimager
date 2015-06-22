@@ -77,6 +77,8 @@ def get_parser():
     group.add_argument('--write-psf', metavar='FILE', help='Write image of PSF to FITS file')
     group.add_argument('--write-grid', metavar='FILE', help='Write UV grid to FITS file')
     group.add_argument('--write-dirty', metavar='FILE', help='Write dirty image to FITS file')
+    group.add_argument('--write-model', metavar='FILE', help='Write model image to FITS file')
+    group.add_argument('--write-residuals', metavar='FILE', help='Write image residuals to FITS file')
     group.add_argument('--vis-limit', type=int, metavar='N', help='Use only the first N visibilities')
     return parser
 
@@ -275,7 +277,13 @@ def main():
         progress.finish()
         if queue:
             queue.finish()
-        # TODO: restoring beam?
+        # TODO: restoring beam
+        if args.write_model is not None:
+            with step('Write model'):
+                io.write_fits_image(dataset, model, image_p, args.write_model)
+        if args.write_residuals is not None:
+            with step('Write residuals'):
+                io.write_fits_image(dataset, image, image_p, args.write_residuals)
         # Add residuals back in
         model += image
         with step('Write clean image'):
