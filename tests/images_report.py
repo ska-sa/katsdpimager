@@ -22,19 +22,27 @@ import glob
 from contextlib import closing
 
 class BuildInfo(object):
+    """Runs a command and stores the output and exit code. The output is also
+    echoed to stdout.
+    """
     def __init__(self, cmd):
         self.cmd = cmd
         start = timeit.default_timer()
-        try:
-            self.output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-            self.returncode = 0
-        except subprocess.CalledProcessError as e:
-            self.output = e.output
-            self.returncode = e.returncode
-            logging.warning(str(e) + '\n' + e.output)
+        output = io.BytesIO()
+        child = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        while True:
+            data = child.stdout.read(256)
+            if not data:
+                break
+            output.write(data)
+            sys.stdout.write(data)
+        self.output = output.getvalue().decode('utf-8')
+        self.returncode = child.wait()
         end = timeit.default_timer()
         self.elapsed = end - start
-        self.output = self.output.decode('utf-8')
+        if self.returncode != 0:
+            logging.warning("Process failed with exit code %s", self.returncode)
+        logging.info("Elapsed time %.3f", self.elapsed)
 
 class Image(object):
     def __init__(self, name, filebase, fits_pattern, cmd_pattern, clean_globs=[]):
@@ -59,6 +67,7 @@ class Image(object):
     def build(self, ms, output_dir, stokes):
         cmd = [Template(x).render_unicode(ms=ms, output_dir=output_dir, stokes=stokes)
                for x in self.cmd_pattern]
+        logging.info("Running %s...", cmd)
         build_info = BuildInfo(cmd)
         # Clean up unwanted files, making sure not to delete any files we
         # actually wanted.
