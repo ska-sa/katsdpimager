@@ -5,7 +5,6 @@ import sys
 import argparse
 import astropy.units as units
 import numpy as np
-import progress.bar
 import katsdpsigproc.accel as accel
 import katsdpimager.loader as loader
 import katsdpimager.parameters as parameters
@@ -14,6 +13,7 @@ import katsdpimager.grid as grid
 import katsdpimager.io as io
 import katsdpimager.fft as fft
 import katsdpimager.clean as clean
+import katsdpimager.progress as progress
 from contextlib import closing, contextmanager
 
 def parse_quantity(str_value):
@@ -82,18 +82,6 @@ def get_parser():
     group.add_argument('--vis-limit', type=int, metavar='N', help='Use only the first N visibilities')
     return parser
 
-def make_progressbar(name, *args, **kwargs):
-    bar = progress.bar.Bar("{:20}".format(name), suffix='%(percent)3d%% [%(eta_td)s]', *args, **kwargs)
-    bar.update()
-    return bar
-
-@contextmanager
-def step(name):
-    progress = make_progressbar(name, max=1)
-    yield
-    progress.next()
-    progress.finish()
-
 def data_iter(dataset, args):
     """Wrapper around :py:meth:`katsdpimager.loader_core.LoaderBase.data_iter`
     that handles truncation to a number of visibilities specified on the
@@ -114,48 +102,52 @@ def data_iter(dataset, args):
                 return
 
 def make_psf(queue, dataset, args, polarization_matrix, gridder, grid_to_image):
-    progress = None
+    bar = None
     gridder.clear()
     # TODO: pass a flag to avoid retrieving visibilities
-    for chunk in data_iter(dataset, args):
-        uvw = chunk['uvw']
-        weights = chunk['weights']
-        if progress is None:
-            progress = make_progressbar("Gridding PSF", max=chunk['total'])
-        # Transform the visibilities to the desired polarization
-        weights = polarization.apply_polarization_matrix_weights(weights, polarization_matrix)
-        gridder.grid(uvw, weights)
-        if queue:
-            queue.finish()
-        progress.goto(chunk['progress'])
-    progress.finish()
+    try:
+        for chunk in data_iter(dataset, args):
+            uvw = chunk['uvw']
+            weights = chunk['weights']
+            if bar is None:
+                bar = progress.make_progressbar("Gridding PSF", max=chunk['total'])
+            # Transform the visibilities to the desired polarization
+            weights = polarization.apply_polarization_matrix_weights(weights, polarization_matrix)
+            gridder.grid(uvw, weights)
+            if queue:
+                queue.finish()
+            bar.goto(chunk['progress'])
+    finally:
+        bar.finish()
 
-    with step('FFT PSF'):
+    with progress.step('FFT PSF'):
         grid_to_image()
         if queue:
             queue.finish()
 
 def make_dirty(queue, dataset, args, polarization_matrix, gridder, grid_to_image):
-    progress = None
+    bar = None
     gridder.clear()
-    for chunk in data_iter(dataset, args):
-        uvw = chunk['uvw']
-        weights = chunk['weights']
-        vis = chunk['vis']
-        if progress is None:
-            progress = make_progressbar("Gridding", max=chunk['total'])
-        # Transform the visibilities to the desired polarization
-        vis = polarization.apply_polarization_matrix(vis, polarization_matrix)
-        weights = polarization.apply_polarization_matrix_weights(weights, polarization_matrix)
-        # Pre-weight the visibilities
-        vis *= weights
-        gridder.grid(uvw, vis)
-        if queue:
-            queue.finish()
-        progress.goto(chunk['progress'])
-    progress.finish()
+    try:
+        for chunk in data_iter(dataset, args):
+            uvw = chunk['uvw']
+            weights = chunk['weights']
+            vis = chunk['vis']
+            if bar is None:
+                bar = progress.make_progressbar("Gridding", max=chunk['total'])
+            # Transform the visibilities to the desired polarization
+            vis = polarization.apply_polarization_matrix(vis, polarization_matrix)
+            weights = polarization.apply_polarization_matrix_weights(weights, polarization_matrix)
+            # Pre-weight the visibilities
+            vis *= weights
+            gridder.grid(uvw, vis)
+            if queue:
+                queue.finish()
+            bar.goto(chunk['progress'])
+    finally:
+        bar.finish()
 
-    with step('FFT'):
+    with progress.step('FFT'):
         grid_to_image()
         if queue:
             queue.finish()
@@ -255,41 +247,40 @@ def main():
         scale = np.reciprocal(image[image.shape[0] // 2, image.shape[1] // 2, ...])
         image *= scale
         if args.write_psf is not None:
-            with step('Write PSF'):
+            with progress.step('Write PSF'):
                 io.write_fits_image(dataset, image, image_p, args.write_psf)
         extract_psf(image, psf)
         make_dirty(queue, dataset, args, polarization_matrix, gridder, grid_to_image)
         image *= image_scale[..., np.newaxis]
         image *= scale
         if args.write_grid is not None:
-            with step('Write grid'):
+            with progress.step('Write grid'):
                 if args.host:
                     io.write_fits_grid(grid_data, image_p, args.write_grid)
                 else:
                     io.write_fits_grid(np.fft.fftshift(grid_data), image_p, args.write_grid)
         if args.write_dirty is not None:
-            with step('Write dirty image'):
+            with progress.step('Write dirty image'):
                 io.write_fits_image(dataset, image, image_p, args.write_dirty)
 
         #### Deconvolution ####
-        progress = make_progressbar('CLEAN', max=clean_p.minor)
+        bar = progress.make_progressbar('CLEAN', max=clean_p.minor)
         cleaner.reset()
-        for i in range(clean_p.minor):
-            cleaner()
-            progress.next()
-        progress.finish()
+        with progress.finishing(bar):
+            for i in bar.iter(range(clean_p.minor)):
+                cleaner()
         if queue:
             queue.finish()
         # TODO: restoring beam
         if args.write_model is not None:
-            with step('Write model'):
+            with progress.step('Write model'):
                 io.write_fits_image(dataset, model, image_p, args.write_model)
         if args.write_residuals is not None:
-            with step('Write residuals'):
+            with progress.step('Write residuals'):
                 io.write_fits_image(dataset, image, image_p, args.write_residuals)
         # Add residuals back in
         model += image
-        with step('Write clean image'):
+        with progress.step('Write clean image'):
             io.write_fits_image(dataset, model, image_p, args.output_file)
 
 if __name__ == '__main__':
