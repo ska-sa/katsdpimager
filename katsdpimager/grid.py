@@ -411,7 +411,8 @@ def _grid(kernel, values, uvw, vis, pixels, cell_size, oversample, w_scale, samp
     ksize = kernel.shape[4]
     # Offset to bias coordinates such that l,m=0 translates to the first
     # pixel to update in the grid.
-    offset = pixels // 2 - (ksize - 1) // 2
+    offset = np.float32(pixels // 2 - (ksize - 1) // 2)
+    uv_scale = np.float32(1 / cell_size)
     for row in range(uvw.shape[0]):
         u, v, w = uvw[row]
         for i in range(vis.shape[1]):
@@ -422,8 +423,8 @@ def _grid(kernel, values, uvw, vis, pixels, cell_size, oversample, w_scale, samp
             w = -w
             np.conj(sample, sample)
         # u and v are converted to cells, w to planes
-        u = u / cell_size + offset
-        v = v / cell_size + offset
+        u = u * uv_scale + offset
+        v = v * uv_scale + offset
         w = np.rint(w * w_scale)
         w_plane = int(min(w, max_w))
         u0, sub_u = subpixel_coord(u, oversample)
