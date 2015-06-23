@@ -90,6 +90,7 @@ class Image(object):
         figure.colorbar.set_font(size='x-small')
         figure.tick_labels.set_font(size='xx-small')
         figure.save(os.path.join(output_dir, self.svg_filename_thumb(stokes)))
+        figure.close()
 
     def _render_full(self, output_dir, input_filename, slices, stokes):
         figure = aplpy.FITSFigure(input_filename, slices=slices, figsize=(19, 18))
@@ -97,6 +98,7 @@ class Image(object):
         figure.colorbar.set_font(size='small')
         figure.tick_labels.set_font(size='small')
         figure.save(os.path.join(output_dir, self.svg_filename_full(stokes)))
+        figure.close()
 
     def render(self, output_dir, stokes):
         # Check whether the Stoke parameters are all bundled into one
