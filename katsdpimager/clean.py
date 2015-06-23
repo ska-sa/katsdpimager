@@ -15,6 +15,7 @@ minor cycles if the launch overheads become an issue.
 
 from __future__ import division, print_function
 import numpy as np
+import numba
 import katsdpsigproc.accel as accel
 import katsdpimager.types
 import pkg_resources
@@ -504,6 +505,30 @@ class Clean(accel.OperationSequence):
         return peak_value[0]
 
 
+@numba.jit(nopython=True)
+def _tile_peak(y0, x0, y1, x1, image, mode, zero):
+    """Implementation of :meth:`CleanHost._update_tile`, split out as a
+    function to allow numba to fully JIT it."""
+    best_pos = (x0, y0)
+    best_value = zero
+    if mode == CLEAN_I:
+        for i in range(y0, y1):
+            for j in range(x0, x1):
+                value = np.abs(image[i, j, 0])
+                if value > best_value:
+                    best_value = value
+                    best_pos = (i, j)
+    else:
+        for i in range(y0, y1):
+            for j in range(x0, x1):
+                value = zero
+                for k in range(image.shape[2]):
+                    value += image[i, j, k]**2
+                if value > best_value:
+                    best_value = value
+                    best_pos = (i, j)
+    return best_pos, best_value
+
 class CleanHost(object):
     """CPU-only equivalent to :class:`Clean`. The class keeps references to
     the provided arrays, and only examines modifies them when :meth:`reset`
@@ -539,14 +564,11 @@ class CleanHost(object):
         y0 = y * self.tile_size
         x1 = min(x0 + self.tile_size, self.image.shape[1])
         y1 = min(y0 + self.tile_size, self.image.shape[0])
-        tile = self.image[y0:y1, x0:x1, ...]
-        if self.clean_parameters.mode == CLEAN_I:
-            tile_fn = np.abs(tile[..., 0])
-        else:
-            tile_fn = np.sum(tile * tile, axis=2)
-        pos = np.unravel_index(np.argmax(tile_fn), tile_fn.shape)
-        self._tile_max[y, x] = tile_fn[pos]
-        self._tile_pos[y, x] = (pos[0] + y0, pos[1] + x0)
+        best_pos, best_value = _tile_peak(
+            y0, x0, y1, x1, self.image, self.clean_parameters.mode,
+            self.image.dtype.type(0))
+        self._tile_max[y, x] = best_value
+        self._tile_pos[y, x] = best_pos
 
     def _subtract_psf(self, y, x):
         psf_x = self.psf.shape[1] // 2
