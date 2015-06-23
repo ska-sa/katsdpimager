@@ -36,6 +36,7 @@ class BuildInfo(object):
                 break
             output.write(data)
             sys.stdout.write(data)
+            sys.stdout.flush()
         self.output = output.getvalue().decode('utf-8')
         self.returncode = child.wait()
         end = timeit.default_timer()
