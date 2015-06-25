@@ -160,11 +160,13 @@ def main():
     parser.add_argument('output_dir', help='Output directory')
     parser.add_argument('--stokes', default='IQUV', help='Stokes parameters to show')
     args = parser.parse_args()
+    # TODO: remove --kernel-width once the code can handle larger sizes
     katsdpimager_common = [
         'imager.py',
         '--stokes=${stokes}',
         '--input-option', 'data=CORRECTED_DATA',
         '--psf-patch=4608',
+        '--kernel-width=32',
         '${ms}']
     images = [
         Image('WSClean', 'wsclean', 'wsclean-{stokes}-image.fits',

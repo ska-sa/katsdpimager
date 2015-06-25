@@ -11,6 +11,7 @@ import astropy.units as units
 import katsdpsigproc.accel as accel
 import katsdpsigproc.tune as tune
 import numba
+import logging
 
 
 def kaiser_bessel(x, width, beta):
@@ -266,19 +267,24 @@ class GridderTemplate(object):
         self.grid_parameters = grid_parameters
         self.image_parameters = image_parameters
         self.dtype = image_parameters.complex_dtype
-        self.wgs_x = 16   # TODO: compute based on max_w (or parameter)
+        # These must be powers of 2. TODO: autotune
+        self.wgs_x = 16
         self.wgs_y = 16
-        self.multi_x = 1
-        self.multi_y = 1
+        kernel_size = max(self.wgs_x, self.wgs_y)
+        # Round kernel size up to a power of 2
+        while kernel_size < grid_parameters.kernel_width:
+            kernel_size *= 2
+        logging.info("Using kernel size of %d", kernel_size)
+        assert kernel_size % self.wgs_x == 0
+        assert kernel_size % self.wgs_y == 0
+        self.multi_x = kernel_size // self.wgs_x
+        self.multi_y = kernel_size // self.wgs_y
         self.num_polarizations = len(image_parameters.polarizations)
-        tile_x = self.wgs_x * self.multi_x
-        tile_y = self.wgs_y * self.multi_y
-        assert tile_x == tile_y
         self.convolve_kernel, self.beta = _generate_convolve_kernel(
-            image_parameters, grid_parameters, tile_x,
+            image_parameters, grid_parameters, kernel_size,
             accel.SVMArray(
                 context,
-                (grid_parameters.w_planes, grid_parameters.oversample, grid_parameters.oversample, tile_x, tile_x),
+                (grid_parameters.w_planes, grid_parameters.oversample, grid_parameters.oversample, kernel_size, kernel_size),
                 np.complex64))
         w_scale = float(units.m / grid_parameters.max_w) * (grid_parameters.w_planes - 1)
         self.program = accel.build(
@@ -440,7 +446,7 @@ class GridderHost(object):
     def __init__(self, image_parameters, grid_parameters):
         self.image_parameters = image_parameters
         self.grid_parameters = grid_parameters
-        kernel_size = 16  # TODO: take as a parameter
+        kernel_size = int(math.ceil(grid_parameters.kernel_width))
         self.kernel, self.beta = _generate_convolve_kernel(
             image_parameters, grid_parameters, kernel_size)
         pixels = image_parameters.pixels

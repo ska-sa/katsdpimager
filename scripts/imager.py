@@ -5,6 +5,7 @@ import sys
 import argparse
 import astropy.units as units
 import numpy as np
+import logging
 import katsdpsigproc.accel as accel
 import katsdpimager.loader as loader
 import katsdpimager.parameters as parameters
@@ -63,7 +64,9 @@ def get_parser():
     group.add_argument('--kernel-image-oversample', type=int, default=4, help='Oversampling factor for kernel generation [%(default)s]')
     group.add_argument('--w-planes', type=int, default=128, help='Number of W planes [%(default)s]'),
     group.add_argument('--max-w', type=parse_quantity, help='Largest w, as either distance or wavelengths [longest baseline]')
-    group.add_argument('--aa-size', type=float, default=7, help='Support of anti-aliasing kernel [%(default)s]')
+    group.add_argument('--aa-width', type=float, default=7, help='Support of anti-aliasing kernel [%(default)s]')
+    group.add_argument('--kernel-width', type=float, default=None, help='Support of combined anti-aliasing + w kernel [computed]')
+    group.add_argument('--eps-w', type=float, default=0.01, help='Level at which to truncate W kernel [%(default)s]')
     group = parser.add_argument_group('Cleaning options')
     # TODO: compute from some heuristic if not specified, instead of a hard-coded default
     group.add_argument('--psf-patch', type=int, default=100, help='Pixels in beam patch for cleaning [%(default)s]')
@@ -189,9 +192,11 @@ def main():
             args.max_w = array_p.longest_baseline
         elif args.max_w.unit.physical_type == 'dimensionless':
             args.max_w = args.max_w * image_p.wavelength
+        if args.kernel_width is None:
+            args.kernel_width = parameters.w_kernel_width(image_p, args.max_w, args.eps_w, args.aa_width)
         grid_p = parameters.GridParameters(
-            args.aa_size, args.grid_oversample, args.kernel_image_oversample,
-            args.w_planes, args.max_w)
+            args.aa_width, args.grid_oversample, args.kernel_image_oversample,
+            args.w_planes, args.max_w, args.kernel_width)
         if args.clean_mode == 'I':
             clean_mode = clean.CLEAN_I
         elif args.clean_mode == 'IQUV':
@@ -284,4 +289,5 @@ def main():
             io.write_fits_image(dataset, model, image_p, args.output_file)
 
 if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
     main()

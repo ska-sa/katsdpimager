@@ -116,6 +116,32 @@ Polarizations: {}
             ','.join([polarization.STOKES_NAMES[i] for i in self.polarizations]))
 
 
+def w_kernel_width(image_parameters, w, eps_w, antialias_width=0):
+    """Determine the width (in UV cells) for a W kernel. This is Eq 9 of
+    SKA-TEL-SDP-0000003.
+
+    Parameters
+    ----------
+    image_parameters : :class:`ImageParameters`
+        Image parameters, from which wavelength and image size are used
+    w : Quantity
+        W value for the kernel, as a distance
+    eps_w : float
+        Fraction of peak at which to truncate the kernel
+    antialias_width : float, optional
+        If provided, the return value is for a combined W and antialias
+        kernel, where the sizes of the individual kernels are combined
+        in quadrature.
+    """
+    fov = image_parameters.image_size
+    wl = float(w / image_parameters.wavelength)
+    # Squared size of the w part
+    wk2 = 4 * fov**2 * (
+        (wl * image_parameters.image_size / 2)**2
+        + wl**1.5 * fov / (2 * math.pi * eps_w))
+    return np.sqrt(wk2 + antialias_width**2)
+
+
 class GridParameters(object):
     """Parameters affecting gridding algorithm.
 
@@ -131,8 +157,11 @@ class GridParameters(object):
         Number of samples to take in w
     max_w : Quantity
         Maximum absolute w value, as a distance quantity
+    kernel_width : int, optional
+        Number of UV cells corresponding to the combined W+antialias kernel.
     """
-    def __init__(self, antialias_width, oversample, image_oversample, w_planes, max_w):
+    def __init__(self, antialias_width, oversample, image_oversample, w_planes,
+                 max_w, kernel_width):
         assert w_planes >= 2, 'At least 2 W planes are required'
         assert max_w.unit.physical_type == 'length'
         self.antialias_width = antialias_width
@@ -140,6 +169,7 @@ class GridParameters(object):
         self.image_oversample = image_oversample
         self.w_planes = w_planes
         self.max_w = max_w
+        self.kernel_width = kernel_width
 
 
 class CleanParameters(object):
