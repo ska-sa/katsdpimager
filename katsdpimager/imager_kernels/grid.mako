@@ -72,7 +72,7 @@ void grid(
     LOCAL_DECL float2 batch_vis[NPOLS][BATCH_SIZE];
 
     // In-register sums
-    Complex sums[NPOLS][MULTI_Y][MULTI_X];
+    Complex sums[MULTI_Y][MULTI_X][NPOLS];
     // Last-known UV coordinates
     int2 cur_uv[MULTI_Y][MULTI_X];
 
