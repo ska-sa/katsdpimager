@@ -20,7 +20,7 @@ def parse_quantity(str_value):
     """Parse a string into an astropy Quantity. Rather than trying to guess
     where the split occurs, we try every position from the back until we
     succeed."""
-    for i in range(len(str_value), -1, 0):
+    for i in range(len(str_value), 0, -1):
         try:
             value = float(str_value[:i])
             unit = units.Unit(str_value[i:])
