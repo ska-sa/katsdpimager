@@ -8,8 +8,12 @@
 <body>
 <div class="container-fluid">
 <h1>Build log for ${image.name | n}</h1>
-<h3>Command</h3>
-<p>${' '.join(build_info.cmd)}</p>
+<h3>Commands</h3>
+<pre>
+% for cmd in build_info.cmds:
+${' '.join(cmd)}
+% endfor
+</pre>
 % if build_info.returncode != 0:
 <p class="text-warning">Command failed with exit code ${build_info.returncode}.</p>
 % endif
@@ -29,10 +33,11 @@ Elapsed time: ${"%.1f" % build_info.elapsed} seconds
 <ul>
     <%
     filenames = []
-    for s in stokes:
-        filename = image.fits_filename(s)
-        if filename not in filenames:
-            filenames.append(filename)
+    for mode in modes:
+        for s in stokes:
+            filename = image.fits_filename(mode, s)
+            if filename not in filenames:
+                filenames.append(filename)
     %>
     % for filename in filenames:
     <li><a href="${filename | u}">${filename}</a></li>
