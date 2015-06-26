@@ -177,6 +177,8 @@ def main():
     parser.add_argument('output_dir', help='Output directory')
     parser.add_argument('--stokes', default='IQUV', help='Stokes parameters to show')
     args = parser.parse_args()
+
+    pixel_size = 1.74666067269186    # in arcsec: to match the value computed by katsdpimager
     # TODO: remove --kernel-width once the code can handle larger sizes
     katsdpimager_common = [
         'imager.py',
@@ -186,13 +188,13 @@ def main():
         '--kernel-width=32',
         '${ms}']
     lwimager_common = [
-        'lwimager', 'ms=${ms}', 'npix=4608', 'cellsize=1.747arcsec', 'wprojplanes=128', 'threshold=0.01Jy',
+        'lwimager', 'ms=${ms}', 'npix=4608', 'cellsize={}arcsec'.format(pixel_size), 'wprojplanes=128', 'threshold=0.01Jy',
         'weight=natural', 'stokes=${stokes}', 'data=CORRECTED_DATA']
     images = [
         Image('WSClean', 'wsclean', 'wsclean-{stokes}-image.fits', 'wsclean-{stokes}-dirty.fits',
               [['wsclean', '-mgain', '0.85', '-niter', '1000', '-threshold', '0.01',
                 '-weight', 'natural',
-                '-size', '4608', '4608', '-scale', '1.747asec', '-pol', '${",".join(stokes.lower())}',
+                '-size', '4608', '4608', '-scale', '{}asec'.format(pixel_size), '-pol', '${",".join(stokes.lower())}',
                 '-name', '${output_dir}/wsclean', '${ms}']],
               clean_globs=['wsclean-*.fits']),
         Image('lwimager', 'lwimager', 'lwimager.fits', 'lwimager-dirty.fits',

@@ -206,6 +206,7 @@ def main():
         clean_p = parameters.CleanParameters(
             args.minor, args.loop_gain, clean_mode,
             args.psf_patch)
+        print(image_p.pixel_size)
 
         #### Create data and operation instances ####
         if args.host:
