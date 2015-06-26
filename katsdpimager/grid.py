@@ -36,8 +36,8 @@ def kaiser_bessel(x, width, beta):
     return np.select([param >= 0], [values])
 
 
-def kaiser_bessel_fourier(f, width, beta):
-    """
+def kaiser_bessel_fourier(f, width, beta, out=None):
+    r"""
     Evaluate the continuous Fourier transform of :func:`kaiser_bessel`.
     Note that since the function is even and real, this is also the inverse
     Fourier transform.
@@ -50,12 +50,19 @@ def kaiser_bessel_fourier(f, width, beta):
         The kernel has support :math:`[-\frac{1}{2}W, \frac{1}{2}W]`
     beta : float
         Shape parameter
+    out : array-like, float
+        If specified, result is written into it
     """
     alpha = beta / math.pi
     # np.lib.scimath.sqrt returns complex values for negative inputs, whereas
     # np.sqrt returns NaN. We take the real component because np.sinc returns
     # complex if it has a complex input, even though the imaginary part is 0.
-    return width / np.i0(beta) * np.sinc(np.lib.scimath.sqrt((width * f)**2 - alpha * alpha)).real
+    ans = width / np.i0(beta) * np.sinc(np.lib.scimath.sqrt((width * f)**2 - alpha * alpha)).real
+    if out is not None:
+        out[:] = ans
+        return out
+    else:
+        return ans
 
 
 def antialias_kernel(width, oversample, beta=None):
@@ -228,34 +235,6 @@ def _generate_convolve_kernel(image_parameters, grid_parameters, width, out=None
     return out, beta
 
 
-def _taper(N, pixel_size, antialias_width, beta, out=None):
-    """Return the Fourier transform of the antialiasing kernel for
-    an N×N image.
-
-    Parameters
-    ----------
-    N : int
-        Number of pixels in the image
-    pixel_size : float
-        Size of pixels in the image (l/m coordinate system)
-    antialias_width : float
-        Support of the antialiasing kernel
-    beta : float
-        Shape parameter for the antialiasing kernel
-    out : array-like, optional
-        If provided, is used to store the result
-    """
-    x = np.arange(N) / N - 0.5
-    taper1d = kaiser_bessel_fourier(x, antialias_width, beta)
-    out = np.outer(taper1d, taper1d, out)
-    # We image T.I/n, so we need to correct for the division by n
-    lm = (np.arange(N) - (N // 2)) * float(pixel_size)
-    l = lm[:, np.newaxis]
-    m = lm[np.newaxis, :]
-    out /= np.sqrt(1.0 - (l * l + m * m))
-    return out
-
-
 class GridderTemplate(object):
     autotune_version = 1
 
@@ -317,7 +296,7 @@ class GridderTemplate(object):
 
     def taper(self, N, out=None):
         """Return the Fourier transform of the antialiasing kernel for
-        an N×N image.
+        an N-pixel 1D image.
 
         Parameters
         ----------
@@ -326,9 +305,8 @@ class GridderTemplate(object):
         out : array-like, optional
             If provided, is used to store the result
         """
-        return _taper(
-            N, self.image_parameters.pixel_size,
-            self.grid_parameters.antialias_width, self.beta, out)
+        x = np.arange(N) / N - 0.5
+        return kaiser_bessel_fourier(x, self.grid_parameters.antialias_width, self.beta, out)
 
 
 class Gridder(accel.Operation):
@@ -458,7 +436,7 @@ class GridderHost(object):
 
     def taper(self, N, out=None):
         """Return the Fourier transform of the antialiasing kernel for
-        an N×N image.
+        an N-pixel image.
 
         Parameters
         ----------
@@ -467,9 +445,8 @@ class GridderHost(object):
         out : array-like, optional
             If provided, is used to store the result
         """
-        return _taper(
-            N, self.image_parameters.pixel_size,
-            self.grid_parameters.antialias_width, self.beta, out)
+        x = np.arange(N) / N - 0.5
+        return kaiser_bessel_fourier(x, self.grid_parameters.antialias_width, self.beta, out)
 
     def grid(self, uvw, vis):
         """Add visibilities to the grid, with convolutional gridding.

@@ -208,6 +208,8 @@ def main():
             args.psf_patch)
 
         #### Create data and operation instances ####
+        lm_scale = float(image_p.pixel_size)
+        lm_bias = -0.5 * image_p.pixels * lm_scale
         if args.host:
             gridder = grid.GridderHost(image_p, grid_p)
             grid_data = gridder.values
@@ -215,10 +217,10 @@ def main():
             image = np.empty(grid_data.shape, image_p.real_dtype)
             model = np.empty(grid_data.shape, image_p.real_dtype)
             psf = np.empty(psf_shape(image_p, clean_p), image_p.real_dtype)
-            grid_to_image = fft.GridToImageHost(grid_data, layer, image)
+            grid_to_image = fft.GridToImageHost(
+                grid_data, layer, image,
+                gridder.taper(image_p.pixels), lm_scale, lm_bias)
             cleaner = clean.CleanHost(image_p, clean_p, image, psf, model)
-            image_scale = np.reciprocal(gridder.taper(image_p.pixels,
-                np.empty((image_p.pixels, image_p.pixels), image_p.real_dtype)))
         else:
             allocator = accel.SVMAllocator(context)
             # Gridder
@@ -227,14 +229,14 @@ def main():
             gridder.ensure_all_bound()
             grid_data = gridder.buffer('grid')
             # Grid to image
-            image_scale = np.reciprocal(gridder_template.taper(image_p.pixels,
-                accel.SVMArray(context, (image_p.pixels, image_p.pixels), image_p.real_dtype)))
+            kernel1d = accel.SVMArray(context, (image_p.pixels,), image_p.real_dtype)
+            gridder_template.taper(image_p.pixels, kernel1d)
             layer = accel.SVMArray(context, grid_data.shape, image_p.complex_dtype)
             image = accel.SVMArray(context, grid_data.shape, image_p.real_dtype)
             grid_to_image_template = fft.GridToImageTemplate(
                 queue, grid_data.shape, grid_data.padded_shape, image.shape, image.dtype)
-            grid_to_image = grid_to_image_template.instantiate(allocator)
-            grid_to_image.bind(grid=grid_data, layer=layer, image=image)
+            grid_to_image = grid_to_image_template.instantiate(lm_scale, lm_bias, allocator)
+            grid_to_image.bind(grid=grid_data, layer=layer, image=image, kernel1d=kernel1d)
             # CLEAN
             psf = accel.SVMArray(context, psf_shape(image_p, clean_p), image_p.real_dtype)
             model = accel.SVMArray(context, image.shape, image.dtype)
@@ -248,7 +250,6 @@ def main():
         #### Create dirty image ####
         make_psf(queue, dataset, args, polarization_matrix, gridder, grid_to_image)
         # TODO: all this scaling is hacky. Move it into subroutines somewhere
-        image *= image_scale[..., np.newaxis]
         scale = np.reciprocal(image[image.shape[0] // 2, image.shape[1] // 2, ...])
         image *= scale
         if args.write_psf is not None:
@@ -256,7 +257,6 @@ def main():
                 io.write_fits_image(dataset, image, image_p, args.write_psf)
         extract_psf(image, psf)
         make_dirty(queue, dataset, args, polarization_matrix, gridder, grid_to_image)
-        image *= image_scale[..., np.newaxis]
         image *= scale
         if args.write_grid is not None:
             with progress.step('Write grid'):

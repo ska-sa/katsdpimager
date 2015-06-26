@@ -237,10 +237,24 @@ class Fft(accel.Operation):
                 context._pycuda_context.synchronize()
 
 
-class ComplexToRealTemplate(object):
-    """Extracts just the real part of a complex array. This could probably be
-    done more efficiently using rectangle copy operations, but this class will
-    form the basis for more complicated transformations in w stacking.
+class TaperDivideTemplate(object):
+    r"""Extracts the real part of a complex image and scales by a tapering
+    function.
+
+    The function is the combination of a separable antialiasing function and
+    the 3rd direction cosine (n). Specifically, for input pixel coordinates x,
+    y, we calculate
+
+    .. math::
+
+
+       l(x) &= \text{lm_scale}\cdot x + \text{lm_bias}\\
+       m(y) &= \text{lm_scale}\cdot y + \text{lm_bias}\\
+       f(x, y) &= \frac{\text{kernel1d}[x] \cdot \text{kernel1d}[y]}{\sqrt{1-l(x)^2-m(y)^2}}
+
+    and divide :math:`f` from the image.
+
+    Further dimensions are supported e.g. for Stokes parameters.
 
     Parameters
     ----------
@@ -252,22 +266,24 @@ class ComplexToRealTemplate(object):
         Tuning parameters (currently unused)
     """
     def __init__(self, context, real_dtype, tuning=None):
-        self.real_dtype = real_dtype
-        self.wgs = 256  # TODO: autotuning
+        self.real_dtype = np.dtype(real_dtype)
+        self.wgs_x = 16  # TODO: autotuning
+        self.wgs_y = 16
         self.program = accel.build(
-            context, "imager_kernels/complex_to_real.mako",
+            context, "imager_kernels/taper_divide.mako",
             {
                 'real_type': katsdpimager.types.dtype_to_ctype(real_dtype),
-                'wgs': self.wgs,
+                'wgs_x': self.wgs_x,
+                'wgs_y': self.wgs_y,
             },
             extra_dirs=[pkg_resources.resource_filename(__name__, '')])
 
     def instantiate(self, *args, **kwargs):
-        return ComplexToReal(self, *args, **kwargs)
+        return TaperDivide(self, *args, **kwargs)
 
 
-class ComplexToReal(accel.Operation):
-    """Instantiation of :class:`ComplexToRealTemplate`
+class TaperDivide(accel.Operation):
+    """Instantiation of :class:`TaperDivideTemplate`
 
     .. rubric:: Slots
 
@@ -275,41 +291,81 @@ class ComplexToReal(accel.Operation):
         Input
     **dest** : array of real values
         Output
+    **kernel1d** : array of real values, 1D
+        Antialiasing function
 
     Parameters
     ----------
-    template : :class:`ComplexToRealTemplate`
+    template : :class:`TaperDivideTemplate`
         Operation template
     command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
         Command queue for the operation
     shape : tuple of int
-        Shape of the data.
+        Shape of the data (must be square)
+    lm_scale : float
+        Scale factor from pixel coordinates to l/m coordinates
+    lm_bias : float
+        Bias from scaled pixel coordinates to l/m coordinates
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
+
+    Raises
+    ------
+    ValueError
+        if the first two elements of shape are not equal and even
     """
-    def __init__(self, template, command_queue, shape, allocator=None):
-        super(ComplexToReal, self).__init__(command_queue, allocator)
+    def __init__(self, template, command_queue, shape, lm_scale, lm_bias, allocator=None):
+        if len(shape) < 2 or shape[0] != shape[1]:
+            raise ValueError('shape must be square, not {}'.format(shape))
+        if shape[0] % 2 != 0:
+            raise ValueError('image size must be even, not {}'.format(shape[0]))
+        super(TaperDivide, self).__init__(command_queue, allocator)
         self.template = template
-        dims = [accel.Dimension(size) for size in shape]
         complex_dtype = katsdpimager.types.real_to_complex(template.real_dtype)
+        dims = [accel.Dimension(x) for x in shape]
         self.slots['src'] = accel.IOSlot(dims, complex_dtype)
         self.slots['dest'] = accel.IOSlot(dims, template.real_dtype)
-        self.kernel = template.program.get_kernel('complex_to_real')
+        self.slots['kernel1d'] = accel.IOSlot((shape[0],), template.real_dtype)
+        self.kernel = template.program.get_kernel('taper_divide')
+        self.lm_scale = lm_scale
+        self.lm_bias = lm_bias
 
     def _run(self):
         src = self.buffer('src')
         dest = self.buffer('dest')
-        elements = int(np.product(src.padded_shape))
+        assert(src.padded_shape[1] == dest.padded_shape[1])
+        half_size = src.shape[0] // 2
+        x_stride = int(np.product(src.padded_shape[2:]))
+        y_stride = int(np.product(src.padded_shape[1:]))
+        kernel1d = self.buffer('kernel1d')
         self.command_queue.enqueue_kernel(
             self.kernel,
-            [dest.buffer, src.buffer, np.int32(elements)],
-            global_size=(accel.roundup(elements, self.template.wgs),),
-            local_size=(self.template.wgs,))
+            [
+                dest.buffer,
+                src.buffer,
+                np.int32(x_stride),
+                np.int32(y_stride),
+                kernel1d.buffer,
+                self.template.real_dtype.type(self.lm_scale),
+                self.template.real_dtype.type(self.lm_bias),
+                np.int32(half_size),
+                np.int32(half_size * x_stride),
+                np.int32(half_size * y_stride),
+                self.template.real_dtype.type(self.lm_scale * half_size)
+            ],
+            global_size=(x_stride,
+                         accel.roundup(half_size, self.template.wgs_x),
+                         accel.roundup(half_size, self.template.wgs_y)),
+            local_size=(x_stride, self.template.wgs_x, self.template.wgs_y)
+        )
 
 
 class GridToImageTemplate(object):
-    """Template for a combined operation that converts from a complex grid to
-    a real image. The grid need not be conjugate symmetric: it is put through
-    a complex-to-complex transformation, and the real part of the result is
-    returned. Both the grid and the image have the DC term in the middle.
+    """Template for a combined operation that converts from a complex grid to a
+    real image, including tapering correction.  The grid need not be conjugate
+    symmetric: it is put through a complex-to-complex transformation, and the
+    real part of the result is returned. Both the grid and the image have the
+    DC term in the middle.
 
     This operation is destructive: the grid is modified in-place.
 
@@ -332,11 +388,10 @@ class GridToImageTemplate(object):
 
     def __init__(self, command_queue, shape, padded_shape_src, padded_shape_dest, real_dtype):
         complex_dtype = katsdpimager.types.real_to_complex(real_dtype)
-        self.shift_real = FftshiftTemplate(command_queue.context, real_dtype)
         self.shift_complex = FftshiftTemplate(command_queue.context, complex_dtype)
         self.fft = FftTemplate(command_queue, 2, shape, complex_dtype,
                                padded_shape_src, padded_shape_dest)
-        self.complex_to_real = ComplexToRealTemplate(command_queue.context, real_dtype)
+        self.taper_divide = TaperDivideTemplate(command_queue.context, real_dtype)
 
     def instantiate(self, *args, **kwargs):
         return GridToImage(self, *args, **kwargs)
@@ -349,28 +404,28 @@ class GridToImage(accel.OperationSequence):
     ----------
     template : :class:`GridToImageTemplate`
         Operation template
+    lm_scale, lm_bias : float
+        See :class:`TaperDivide`
     allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
         Allocator used to allocate unbound slots
     """
-    def __init__(self, template, allocator=None):
+    def __init__(self, template, lm_scale, lm_bias, allocator=None):
         command_queue = template.fft.command_queue
         self._shift_grid = template.shift_complex.instantiate(
             command_queue, template.fft.shape, allocator)
         self._ifft = template.fft.instantiate(FFT_INVERSE, allocator)
-        self._complex_to_real = template.complex_to_real.instantiate(
-            command_queue, template.fft.shape, allocator)
-        self._shift_image = template.shift_real.instantiate(
-            command_queue, template.fft.shape, allocator)
+        self._taper_divide = template.taper_divide.instantiate(
+            command_queue, template.fft.shape, lm_scale, lm_bias, allocator)
         operations = [
             ('shift_grid', self._shift_grid),
             ('ifft', self._ifft),
-            ('complex_to_real', self._complex_to_real),
-            ('shift_image', self._shift_image),
+            ('taper_divide', self._taper_divide)
         ]
         compounds = {
             'grid': ['shift_grid:data', 'ifft:src'],
-            'layer': ['ifft:dest', 'complex_to_real:src'],
-            'image': ['complex_to_real:dest', 'shift_image:data']
+            'layer': ['ifft:dest', 'taper_divide:src'],
+            'image': ['taper_divide:dest'],
+            'kernel1d': ['taper_divide:kernel1d']
         }
         super(GridToImage, self).__init__(command_queue, operations, compounds, allocator=allocator)
 
@@ -388,15 +443,31 @@ class GridToImageHost(object):
         Input grid (unmodified)
     layer : ndarray, complex
         Intermediate structure holding the complex FFT
+    image : ndarray, real
+        Output image
+    kernel1d : ndarray, real
+        Tapering function
+    lm_scale, lm_bias : real
+        Linear transformation from pixel coordinates to l/m values
     """
 
-    def __init__(self, grid, layer, image):
+    def __init__(self, grid, layer, image, kernel1d, lm_scale, lm_bias):
+        assert image.shape[0] == image.shape[1]
+        assert image.shape[0] % 2 == 0
         self.grid = grid
         self.layer = layer
         self.image = image
+        self.kernel1d = kernel1d
+        self.lm_scale = lm_scale
+        self.lm_bias = lm_bias
 
     def __call__(self):
-        self.layer[:] = np.fft.ifft2(np.fft.fftshift(self.grid), axes=(0, 1))
+        self.layer[:] = np.fft.ifft2(np.fft.ifftshift(self.grid), axes=(0, 1))
         # Scale factor is to match behaviour of CUFFT, which is unnormalized
         scale = self.layer.shape[0] * self.layer.shape[1]
         self.image[:] = np.fft.fftshift(self.layer.real * scale)
+        lm = np.arange(self.image.shape[0]).astype(self.image.dtype) * self.lm_scale + self.lm_bias
+        lm2 = lm * lm
+        n = np.sqrt(1 - (lm2[:, np.newaxis] + lm2[np.newaxis, :]))
+        self.image *= n[..., np.newaxis]   # newaxis maps to polarization
+        self.image /= np.outer(self.kernel1d, self.kernel1d)[..., np.newaxis]

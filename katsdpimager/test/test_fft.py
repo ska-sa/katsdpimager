@@ -45,20 +45,30 @@ class TestFftshift(object):
         np.testing.assert_equal(expected, actual)
 
 
-class TestComplexToReal(object):
+class TestTaperDivide(object):
     @device_test
-    def test_complex_to_real(self, context, command_queue):
-        shape = (69, 123)
-        rs = np.random.RandomState(1)
-        template = fft.ComplexToRealTemplate(context, np.float32)
-        fn = template.instantiate(command_queue, shape)
+    def test_2d(self, context, command_queue):
+        size = 102
+        lm_scale = 0.1 / size
+        lm_bias = -lm_scale * size / 3   # Off-centre, to check that it's working
+        template = fft.TaperDivideTemplate(context, np.float32)
+        fn = template.instantiate(command_queue, (size, size), lm_scale, lm_bias)
         fn.ensure_all_bound()
-        src = (rs.standard_normal(shape) + 1j * rs.standard_normal(shape)).astype(np.complex64)
+        # Create random input data
+        rs = np.random.RandomState(1)
+        src = (rs.uniform(10.0, 100.0, (size, size)) + 1j * rs.uniform(10.0, 100.0, (size, size))).astype(np.complex64)
+        kernel1d = rs.uniform(1.0, 2.0, size).astype(np.float32)
+        fn.buffer('kernel1d').set(command_queue, kernel1d)
         fn.buffer('src').set(command_queue, src)
-        fn.buffer('dest').set(command_queue, np.zeros(shape, np.float32))
+        # Compute expected value
+        lm = np.arange(size) * lm_scale + lm_bias
+        lm2 = lm * lm
+        n = np.sqrt(1 - lm2[:, np.newaxis] - lm2[np.newaxis, :])
+        expected = np.fft.fftshift(src.real) * n / np.outer(kernel1d, kernel1d)
+        # Check it
         fn()
-        dest = fn.buffer('dest').get(command_queue)
-        np.testing.assert_array_equal(src.real, dest)
+        actual = fn.buffer('dest').get(command_queue)
+        np.testing.assert_allclose(expected, actual, 1e-4)
 
 
 class TestFft(object):
