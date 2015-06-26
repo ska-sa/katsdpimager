@@ -14,12 +14,18 @@ typedef atomic_accum_${real_type}2 atomic_accum_Complex;
 #define CONVOLVE_KERNEL_OVERSAMPLE_MASK ${convolve_kernel_oversample - 1}
 #define CONVOLVE_KERNEL_OVERSAMPLE_SHIFT ${int.bit_length(convolve_kernel_oversample) - 1}
 #define CONVOLVE_KERNEL_SLICE_STRIDE ${convolve_kernel_slice_stride}
-#define CONVOLVE_KERNEL_ROW_STRIDE ${convolve_kernel_row_stride}
 #define CONVOLVE_KERNEL_W_STRIDE ${convolve_kernel_w_stride}
 #define CONVOLVE_KERNEL_W_SCALE ${convolve_kernel_w_scale}f
 #define CONVOLVE_KERNEL_MAX_W ${convolve_kernel_max_w}f
 #define make_Complex make_${real_type}2
 #define atomic_accum_Complex_add atomic_accum_${real_type}2_add
+
+/// Computes a * b
+DEVICE_FN float2 complex_mul(float2 a, float2 b)
+{
+    return make_float2(fma(a.x, b.x, -a.y * b.y),
+                       fma(a.x, b.y, a.y * b.x));
+}
 
 /// Computes a * conj(b) + c
 DEVICE_FN Complex Complex_madc(float2 a, float2 b, Complex c)
@@ -65,7 +71,7 @@ void grid(
      * arrays.
      */
 
-    LOCAL_DECL int batch_offset[BATCH_SIZE];
+    LOCAL_DECL int2 batch_offset[BATCH_SIZE];
     // Index for first grid point to update
     LOCAL_DECL int2 batch_min_uv[BATCH_SIZE];
     // Visibilities multiplied by weights
@@ -125,11 +131,11 @@ void grid(
                     batch_vis[p][lid].y = -batch_vis[p][lid].y;
             }
             batch_min_uv[lid] = make_int2(min_u, min_v);
-            int slice = sub_v * CONVOLVE_KERNEL_OVERSAMPLE + sub_u;
             int w_plane = __float2int_rn(min(sample_w, CONVOLVE_KERNEL_MAX_W) * CONVOLVE_KERNEL_W_SCALE);
-            batch_offset[lid] = w_plane * CONVOLVE_KERNEL_W_STRIDE
-                + slice * CONVOLVE_KERNEL_SLICE_STRIDE
-                - (min_v * CONVOLVE_KERNEL_ROW_STRIDE + min_u);
+            int offset_w = w_plane * CONVOLVE_KERNEL_W_STRIDE;
+            batch_offset[lid] = make_int2(
+                offset_w + sub_u * CONVOLVE_KERNEL_SLICE_STRIDE - min_u,
+                offset_w + sub_v * CONVOLVE_KERNEL_SLICE_STRIDE - min_v);
         }
 
         BARRIER();
@@ -141,7 +147,7 @@ void grid(
             for (int p = 0; p < NPOLS; p++)
                 sample_vis[p] = batch_vis[p][vis_id];
             int2 min_uv = batch_min_uv[vis_id];
-            int base_offset = batch_offset[vis_id];
+            int2 base_offset = batch_offset[vis_id];
             for (int y = 0; y < MULTI_Y; y++)
                 for (int x = 0; x < MULTI_X; x++)
                 {
@@ -157,8 +163,9 @@ void grid(
                         for (int p = 0; p < NPOLS; p++)
                             sums[y][x][p] = make_Complex(0.0f, 0.0f);
                     }
-                    int offset = v * CONVOLVE_KERNEL_ROW_STRIDE + u + base_offset;
-                    float2 weight = convolve_kernel[offset];
+                    float2 weight_u = convolve_kernel[u + base_offset.x];
+                    float2 weight_v = convolve_kernel[v + base_offset.y];
+                    float2 weight = complex_mul(weight_u, weight_v);
                     for (int p = 0; p < NPOLS; p++)
                     {
                         // The weight is conjugated because the w kernel is
