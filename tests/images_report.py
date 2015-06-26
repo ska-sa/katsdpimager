@@ -187,7 +187,7 @@ def main():
         '${ms}']
     lwimager_common = [
         'lwimager', 'ms=${ms}', 'npix=4608', 'cellsize=1.747arcsec', 'wprojplanes=128', 'threshold=0.01Jy',
-        'weight=natural', 'data=CORRECTED_DATA']
+        'weight=natural', 'stokes=${stokes}', 'data=CORRECTED_DATA']
     images = [
         Image('WSClean', 'wsclean', 'wsclean-{stokes}-image.fits', 'wsclean-{stokes}-dirty.fits',
               [['wsclean', '-mgain', '0.85', '-niter', '1000', '-threshold', '0.01',
