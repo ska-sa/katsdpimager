@@ -13,24 +13,23 @@ typedef ${real_type}2 Complex;
  * @param y_offset  Product of @a half_size and @a y_stride
  * @param lm_offset Product of @a half_size and @a lm_scale
  */
-KERNEL
+KERNEL REQD_WORK_GROUP_SIZE(${wgs_x}, ${wgs_y}, 1)
 void taper_divide(
     GLOBAL Real * RESTRICT out,
     const GLOBAL Complex * RESTRICT in,
-    int x_stride,
-    int y_stride,
+    int row_stride,
+    int slice_stride,
     const GLOBAL Real * RESTRICT kernel1d,
     Real lm_scale,
     Real lm_bias,
     int half_size,
-    int x_offset,
     int y_offset,
     Real lm_offset)
 {
     int x[2], y[2];
-    int sub = get_global_id(0);
-    x[0] = get_global_id(1);
-    y[0] = get_global_id(2);
+    x[0] = get_global_id(0);
+    y[0] = get_global_id(1);
+    int pol = get_global_id(2);
     if (x[0] < half_size && y[0] < half_size)
     {
         Real kernel_x[2], kernel_y[2], l2[2], m2[2];
@@ -45,8 +44,8 @@ void taper_divide(
             kernel_y[i] = kernel1d[y[i]];
         }
         // Load data, applying fftshift
-        addr[0][0] = y[0] * y_stride + x[0] * x_stride + sub;
-        addr[0][1] = addr[0][0] + x_offset;
+        addr[0][0] = pol * slice_stride + y[0] * row_stride + x[0];
+        addr[0][1] = addr[0][0] + half_size;
         addr[1][0] = addr[0][0] + y_offset;
         addr[1][1] = addr[0][1] + y_offset;
         for (int i = 0; i < 2; i++)

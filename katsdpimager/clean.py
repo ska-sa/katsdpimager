@@ -73,7 +73,7 @@ class _UpdateTiles(accel.Operation):
 
     .. rubric:: Slots
 
-    **dirty** : array of shape (height, width, num_polarizations), real
+    **dirty** : array of shape (num_polarizations, height, width), real
         Dirty image
     **tile_max** : array of shape (height, width)
         Internal storage of maximum score for each tile
@@ -94,18 +94,18 @@ class _UpdateTiles(accel.Operation):
     """
 
     def __init__(self, template, command_queue, image_shape, allocator=None):
-        if image_shape[2] != template.num_polarizations:
+        if image_shape[0] != template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
         super(_UpdateTiles, self).__init__(command_queue, allocator)
-        num_tiles_x = accel.divup(image_shape[1], template.tilex)
-        num_tiles_y = accel.divup(image_shape[0], template.tiley)
-        image_width = accel.Dimension(image_shape[1])
-        image_height = accel.Dimension(image_shape[0])
+        num_tiles_x = accel.divup(image_shape[2], template.tilex)
+        num_tiles_y = accel.divup(image_shape[1], template.tiley)
+        image_width = accel.Dimension(image_shape[2])
+        image_height = accel.Dimension(image_shape[1])
         image_pols = accel.Dimension(template.num_polarizations, exact=True)
         tiles_width = accel.Dimension(num_tiles_x)
         tiles_height = accel.Dimension(num_tiles_y)
         self.template = template
-        self.slots['dirty'] = accel.IOSlot([image_height, image_width, image_pols], template.dtype)
+        self.slots['dirty'] = accel.IOSlot([image_pols, image_height, image_width], template.dtype)
         self.slots['tile_max'] = accel.IOSlot([tiles_height, tiles_width], template.dtype)
         self.slots['tile_pos'] = accel.IOSlot(
                 [tiles_height, tiles_width, accel.Dimension(2, exact=True)], np.int32)
@@ -128,9 +128,10 @@ class _UpdateTiles(accel.Operation):
                 self.kernel,
                 [
                     dirty.buffer,
-                    np.int32(dirty.padded_shape[1]),
-                    np.int32(dirty.shape[0]),
+                    np.int32(dirty.padded_shape[2]),
+                    np.int32(dirty.padded_shape[1] * dirty.padded_shape[2]),
                     np.int32(dirty.shape[1]),
+                    np.int32(dirty.shape[2]),
                     tile_max.buffer,
                     tile_pos.buffer,
                     np.int32(tile_max.padded_shape[1]),
@@ -178,7 +179,7 @@ class _FindPeak(accel.Operation):
 
     .. rubric:: Slots
 
-    **dirty** : array of shape (height, width, num_polarizations), real
+    **dirty** : array of shape (num_polarizations, height, width), real
         Dirty image, used to return the original values at the peak
     **tile_max** : array of shape (height, width)
         Internal storage of maximum score for each tile
@@ -199,19 +200,20 @@ class _FindPeak(accel.Operation):
     command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
         Command queue for the operation
     image_shape : tuple of int
-        Shape of the dirty image, as (height, width, num_polarizations)
+        Shape of the dirty image, as (num_polarizations, height, width)
     tile_shape : tuple of int
         Shape of the tile array, as (height, width)
     allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
         Allocator used to allocate unbound slots
     """
     def __init__(self, template, command_queue, image_shape, tile_shape, allocator=None):
-        if image_shape[2] != template.num_polarizations:
+        if image_shape[0] != template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
         super(_FindPeak, self).__init__(command_queue, allocator)
         self.template = template
-        image_dims = [accel.Dimension(image_shape[0]), accel.Dimension(image_shape[1]),
-                      accel.Dimension(image_shape[2], exact=True)]
+        image_dims = [accel.Dimension(image_shape[0], exact=True),
+                      accel.Dimension(image_shape[1]),
+                      accel.Dimension(image_shape[2])]
         tile_dims = [accel.Dimension(tile_shape[0]), accel.Dimension(tile_shape[1])]
         pair = accel.Dimension(2, exact=True)
         self.slots['dirty'] = accel.IOSlot(image_dims, template.dtype)
@@ -230,11 +232,12 @@ class _FindPeak(accel.Operation):
             self.kernel,
             [
                 dirty.buffer,
-                np.int32(dirty.padded_shape[1]),
+                np.int32(dirty.padded_shape[2]),
+                np.int32(dirty.padded_shape[1] * dirty.padded_shape[2]),
                 tile_max.buffer,
                 tile_pos.buffer,
-                np.int32(tile_max.shape[1]), np.int32(tile_max.shape[0]),
                 np.int32(tile_max.padded_shape[1]),
+                np.int32(tile_max.shape[1]), np.int32(tile_max.shape[0]),
                 self.buffer('peak_value').buffer,
                 self.buffer('peak_pos').buffer,
                 self.buffer('peak_pixel').buffer
@@ -285,11 +288,11 @@ class _SubtractPsf(accel.Operation):
 
     .. rubric:: Slots
 
-    **dirty** : array of shape (height, width, num_polarizations), real
+    **dirty** : array of shape (num_polarizations, height, width), real
         Dirty image
-    **model** : array of shape (height, width, num_polarizations), real
+    **model** : array of shape (num_polarizations, height, width), real
         Model image
-    **psf** : array of shape (height, width, num_polarizations), real
+    **psf** : array of shape (num_polarizations, height, width), real
         Point spread function, with center at (height // 2, width // 2)
     **peak_pixel** : array of shape (num_polarizations,), real
         Current dirty image value at the position where subtract is happening
@@ -304,9 +307,9 @@ class _SubtractPsf(accel.Operation):
         Scale factor for subtraction. The PSF is scaled by both `loop_gain` and
         the per-polarization value in the **peak_pixel** slot before subtraction.
     image_shape : tuple of int
-        Shape for the dirty and model images, as (height, width, num_polarizations)
+        Shape for the dirty and model images, as (num_polarizations, height, width)
     psf_shape : tuple of int
-        Shape for the point spread function, as (height, width, num_polarizations)
+        Shape for the point spread function, as (num_polarizations, height, width)
     allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
         Allocator used to allocate unbound slots
 
@@ -319,12 +322,12 @@ class _SubtractPsf(accel.Operation):
     def __init__(self, template, command_queue, loop_gain, image_shape, psf_shape, allocator=None):
         super(_SubtractPsf, self).__init__(command_queue, allocator)
         pol_dim = accel.Dimension(template.num_polarizations, exact=True)
-        if image_shape[2] != template.num_polarizations:
+        if image_shape[0] != template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
-        if psf_shape[2] != template.num_polarizations:
+        if psf_shape[0] != template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
-        image_dims = [accel.Dimension(image_shape[0]), accel.Dimension(image_shape[1]), pol_dim]
-        psf_dims = [accel.Dimension(psf_shape[0]), accel.Dimension(psf_shape[1]), pol_dim]
+        image_dims = [pol_dim, accel.Dimension(image_shape[1]), accel.Dimension(image_shape[2])]
+        psf_dims = [pol_dim, accel.Dimension(psf_shape[1]), accel.Dimension(psf_shape[2])]
         self.slots['dirty'] = accel.IOSlot(image_dims, template.dtype)
         self.slots['model'] = accel.IOSlot(image_dims, template.dtype)
         self.slots['psf'] = accel.IOSlot(psf_dims, template.dtype)
@@ -347,21 +350,23 @@ class _SubtractPsf(accel.Operation):
             [
                 dirty.buffer,
                 model.buffer,
+                np.int32(dirty.padded_shape[2]),
+                np.int32(dirty.padded_shape[1] * dirty.padded_shape[2]),
+                np.int32(dirty.shape[2]),
                 np.int32(dirty.shape[1]),
-                np.int32(dirty.shape[0]),
-                np.int32(dirty.padded_shape[1]),
                 psf.buffer,
+                np.int32(psf.padded_shape[2]),
+                np.int32(psf.padded_shape[1] * psf.padded_shape[2]),
+                np.int32(psf.shape[2]),
                 np.int32(psf.shape[1]),
-                np.int32(psf.shape[0]),
-                np.int32(psf.padded_shape[1]),
                 self.buffer('peak_pixel').buffer,
                 np.int32(pos[1]), np.int32(pos[0]),
-                np.int32(pos[1] - psf.shape[1] // 2),
-                np.int32(pos[0] - psf.shape[0] // 2),
+                np.int32(pos[1] - psf.shape[2] // 2),
+                np.int32(pos[0] - psf.shape[1] // 2),
                 np.float32(self.loop_gain)
             ],
-            global_size=(accel.roundup(psf.shape[1], self.template.wgsx),
-                         accel.roundup(psf.shape[0], self.template.wgsy)),
+            global_size=(accel.roundup(psf.shape[2], self.template.wgsx),
+                         accel.roundup(psf.shape[1], self.template.wgsy)),
             local_size=(self.template.wgsx, self.template.wgsy))
 
 
@@ -397,11 +402,11 @@ class Clean(accel.OperationSequence):
 
     .. rubric:: Slots
 
-    **dirty** : array of shape (height, width, num_polarizations), real
+    **dirty** : array of shape (num_polarizations, height, width), real
         Dirty image
-    **model** : array of shape (height, width, num_polarizations), real
+    **model** : array of shape (num_polarizations, height, width), real
         Model image
-    **psf** : array of shape (height, width, num_polarizations), real
+    **psf** : array of shape (num_polarizations, height, width), real
         Point spread function, with center at (height // 2, width // 2)
     **tile_max** : array of shape (height, width)
         Internal storage of maximum score for each tile
@@ -438,10 +443,10 @@ class Clean(accel.OperationSequence):
     def __init__(self, template, command_queue, image_parameters, allocator=None):
         if image_parameters.real_dtype != template.dtype:
             raise ValueError('dtype mismatch')
-        image_shape = (image_parameters.pixels, image_parameters.pixels,
-                       len(image_parameters.polarizations))
+        image_shape = (len(image_parameters.polarizations),
+                       image_parameters.pixels, image_parameters.pixels)
         psf_patch = min(image_parameters.pixels, template.clean_parameters.psf_patch)
-        psf_shape = (psf_patch, psf_patch, template.num_polarizations)
+        psf_shape = (template.num_polarizations, psf_patch, psf_patch)
         self._update_tiles = template._update_tiles.instantiate(
             command_queue, image_shape, allocator)
         tile_shape = self._update_tiles.slots['tile_max'].shape
@@ -465,7 +470,7 @@ class Clean(accel.OperationSequence):
             'peak_pos': ['find_peak:peak_pos'],
             'peak_pixel': ['find_peak:peak_pixel', 'subtract_psf:peak_pixel']
         }
-        super(Clean, self).__init__(command_queue, ops, compounds)
+        super(Clean, self).__init__(command_queue, ops, compounds, allocator=allocator)
         peak_value = self.slots['peak_value']
         peak_pos = self.slots['peak_pos']
         self._peak_value_host = accel.HostArray(
@@ -478,7 +483,8 @@ class Clean(accel.OperationSequence):
     def reset(self):
         """Call after populating the buffers but before the first minor cycle."""
         self.ensure_all_bound()
-        self._update_tiles(0, 0, self.buffer('dirty').shape[1], self.buffer('dirty').shape[0])
+        dirty = self.buffer('dirty')
+        self._update_tiles(0, 0, dirty.shape[2], dirty.shape[1])
 
     def __call__(self):
         """Run a single minor CLEAN cycle"""
@@ -497,10 +503,10 @@ class Clean(accel.OperationSequence):
         self._subtract_psf(peak_pos)
         # Update the tiles
         psf_shape = self.buffer('psf').shape
-        x0 = peak_pos[1] - psf_shape[1] // 2
-        x1 = x0 + psf_shape[1]
-        y0 = peak_pos[0] - psf_shape[0] // 2
-        y1 = y0 + psf_shape[0]
+        x0 = peak_pos[1] - psf_shape[2] // 2
+        x1 = x0 + psf_shape[2]
+        y0 = peak_pos[0] - psf_shape[1] // 2
+        y1 = y0 + psf_shape[1]
         self._update_tiles(x0, y0, x1, y1)
         return peak_value[0]
 
@@ -512,21 +518,21 @@ def _tile_peak(y0, x0, y1, x1, image, mode, zero):
     best_pos = (x0, y0)
     best_value = zero
     if mode == CLEAN_I:
-        for i in range(y0, y1):
-            for j in range(x0, x1):
-                value = np.abs(image[i, j, 0])
+        for y in range(y0, y1):
+            for x in range(x0, x1):
+                value = np.abs(image[0, y, x])
                 if value > best_value:
                     best_value = value
-                    best_pos = (i, j)
+                    best_pos = (y, x)
     else:
-        for i in range(y0, y1):
-            for j in range(x0, x1):
+        for y in range(y0, y1):
+            for x in range(x0, x1):
                 value = zero
-                for k in range(image.shape[2]):
-                    value += image[i, j, k]**2
+                for pol in range(image.shape[0]):
+                    value += image[pol, y, x]**2
                 if value > best_value:
                     best_value = value
-                    best_pos = (i, j)
+                    best_pos = (y, x)
     return best_pos, best_value
 
 class CleanHost(object):
@@ -554,16 +560,16 @@ class CleanHost(object):
         self.model = model
         self.psf = psf
         self.tile_size = 32
-        tiles_x = accel.divup(image.shape[1], self.tile_size)
-        tiles_y = accel.divup(image.shape[0], self.tile_size)
+        tiles_x = accel.divup(image.shape[2], self.tile_size)
+        tiles_y = accel.divup(image.shape[1], self.tile_size)
         self._tile_max = np.zeros((tiles_y, tiles_x), self.image_parameters.real_dtype)
         self._tile_pos = np.empty((tiles_y, tiles_x, 2), np.int32)
 
     def _update_tile(self, y, x):
         x0 = x * self.tile_size
         y0 = y * self.tile_size
-        x1 = min(x0 + self.tile_size, self.image.shape[1])
-        y1 = min(y0 + self.tile_size, self.image.shape[0])
+        x1 = min(x0 + self.tile_size, self.image.shape[2])
+        y1 = min(y0 + self.tile_size, self.image.shape[1])
         best_pos, best_value = _tile_peak(
             y0, x0, y1, x1, self.image, self.clean_parameters.mode,
             self.image.dtype.type(0))
@@ -571,31 +577,36 @@ class CleanHost(object):
         self._tile_pos[y, x] = best_pos
 
     def _subtract_psf(self, y, x):
-        psf_x = self.psf.shape[1] // 2
-        psf_y = self.psf.shape[0] // 2
+        psf_size_x = self.psf.shape[2]
+        psf_size_y = self.psf.shape[1]
+        image_size_x = self.image.shape[2]
+        image_size_y = self.image.shape[1]
+        # Centre point to subtract at (x, y) in image
+        psf_x = psf_size_x // 2
+        psf_y = psf_size_y // 2
         x0 = x - psf_x
-        x1 = x0 + self.psf.shape[1]
+        x1 = x0 + psf_size_x
         y0 = y - psf_y
-        y1 = y0 + self.psf.shape[0]
+        y1 = y0 + psf_size_y
         psf_x0 = 0
         psf_y0 = 0
-        psf_x1 = self.psf.shape[1]
-        psf_y1 = self.psf.shape[0]
+        psf_x1 = psf_size_x
+        psf_y1 = psf_size_y
         if x0 < 0:
             psf_x0 -= x0
             x0 = 0
         if y0 < 0:
             psf_y0 -= y0
             y0 = 0
-        if x1 > self.image.shape[1]:
-            psf_x1 -= (x1 - self.image.shape[1])
-            x1 = self.image.shape[1]
-        if y1 > self.image.shape[0]:
-            psf_y1 -= (y1 - self.image.shape[0])
-            y1 = self.image.shape[0]
-        scale = self.clean_parameters.loop_gain * self.image[y, x]
-        self.image[y0:y1, x0:x1, ...] -= scale * self.psf[psf_y0:psf_y1, psf_x0:psf_x1, ...]
-        self.model[y, x] += scale
+        if x1 > image_size_x:
+            psf_x1 -= (x1 - image_size_x)
+            x1 = image_size_x
+        if y1 > image_size_y:
+            psf_y1 -= (y1 - image_size_y)
+            y1 = image_size_y
+        scale = self.clean_parameters.loop_gain * self.image[:, y, x]
+        self.image[..., y0:y1, x0:x1] -= scale[:, np.newaxis, np.newaxis] * self.psf[..., psf_y0:psf_y1, psf_x0:psf_x1]
+        self.model[..., y, x] += scale
         return (y0, x0, y1, x1)
 
     def reset(self):

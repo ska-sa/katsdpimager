@@ -46,18 +46,24 @@ DEVICE_FN int wrap(int low, int tile_size, int pos)
 }
 
 DEVICE_FN void writeback(
-    GLOBAL atomic_accum_Complex * RESTRICT out, int out_stride,
+    GLOBAL atomic_accum_Complex * RESTRICT out,
+    int out_row_stride,
+    int out_pol_stride,
     int u, int v, const Complex values[NPOLS])
 {
-    int offset = (v * out_stride + u) * NPOLS;
+    int offset = (v * out_row_stride + u);
     for (int p = 0; p < NPOLS; p++)
-        atomic_accum_Complex_add(&out[offset + p], values[p]);
+    {
+        atomic_accum_Complex_add(&out[offset], values[p]);
+        offset += out_pol_stride;
+    }
 }
 
 KERNEL REQD_WORK_GROUP_SIZE(${wgs_x}, ${wgs_y}, 1)
 void grid(
     GLOBAL atomic_accum_Complex * RESTRICT out,
-    int out_stride,
+    int out_row_stride,
+    int out_pol_stride,
     const GLOBAL float * RESTRICT uvw,
     const GLOBAL float2 * RESTRICT vis,
     const GLOBAL float2 * RESTRICT convolve_kernel,
@@ -158,7 +164,7 @@ void grid(
                     int v = wrap(min_uv.y, TILE_Y, MULTI_Y * get_local_id(1) + y);
                     if (u != cur_uv[y][x].x || v != cur_uv[y][x].y)
                     {
-                        writeback(out, out_stride, cur_uv[y][x].x, cur_uv[y][x].y, sums[y][x]);
+                        writeback(out, out_row_stride, out_pol_stride, cur_uv[y][x].x, cur_uv[y][x].y, sums[y][x]);
                         cur_uv[y][x] = make_int2(u, v);
                         for (int p = 0; p < NPOLS; p++)
                             sums[y][x][p] = make_Complex(0.0f, 0.0f);
@@ -183,5 +189,5 @@ void grid(
     // Write back final internal values
     for (int y = 0; y < MULTI_Y; y++)
         for (int x = 0; x < MULTI_X; x++)
-            writeback(out, out_stride, cur_uv[y][x].x, cur_uv[y][x].y, sums[y][x]);
+            writeback(out, out_row_stride, out_pol_stride, cur_uv[y][x].x, cur_uv[y][x].y, sums[y][x]);
 }

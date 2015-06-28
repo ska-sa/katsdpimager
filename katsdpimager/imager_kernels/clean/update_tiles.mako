@@ -8,11 +8,6 @@
 #define NPOLS ${num_polarizations}
 typedef ${real_type} T;
 
-typedef struct
-{
-    T v[NPOLS];
-} pixel;
-
 ${sample.define_sample(real_type, wgsx * wgsy)}
 
 /**
@@ -23,8 +18,9 @@ ${sample.define_sample(real_type, wgsx * wgsy)}
  */
 KERNEL REQD_WORK_GROUP_SIZE(WGSX, WGSY, 1)
 void update_tiles(
-    const GLOBAL pixel * RESTRICT image,
-    int image_stride,
+    const GLOBAL T * RESTRICT image,
+    int image_row_stride,
+    int image_pol_stride,
     int image_width,
     int image_height,
     GLOBAL T * RESTRICT tile_max,
@@ -48,14 +44,17 @@ void update_tiles(
             int image_y = y0 + y;
             if (image_x < image_width && image_y < image_height)
             {
-                int pixel_offset = image_y * image_stride + image_x;
-                pixel pix = image[pixel_offset];
+                int pixel_offset = image_y * image_row_stride + image_x;
+                T pix = image[pixel_offset];
 % if clean_sumsq:
-                value = pix.v[0] * pix.v[0];
+                value = pix * pix;
                 for (int i = 1; i < NPOLS; i++)
-                    value = fma(pix.v[i], pix.v[i], value);
+                {
+                    pix = image[i * image_pol_stride + pixel_offset];
+                    value = fma(pix, pix, value);
+                }
 % else:
-                value = fabs(pix.v[0]);
+                value = fabs(pix);
 % endif
             }
             else

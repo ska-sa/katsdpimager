@@ -52,7 +52,7 @@ class _GpudataWrapper(object):
 
 class FftshiftTemplate(object):
     """Operation template for the equivalent of :py:meth:`np.fft.fftshift` on
-    the device, in-place. The first two dimensions are shifted, and these
+    the device, in-place. The last two dimensions are shifted, and these
     dimensions must have even size. Because the size is even, this operation
     is its own inverse.
 
@@ -112,34 +112,41 @@ class Fftshift(accel.Operation):
         super(Fftshift, self).__init__(command_queue, allocator)
         self.template = template
         self.kernel = template.program.get_kernel('fftshift')
-        if shape[0] % 2 != 0 or shape[1] % 2 != 0:
+        if shape[-1] % 2 != 0 or shape[-2] % 2 != 0:
             raise ValueError('First two dimensions of shape must be even')
         self.slots['data'] = accel.IOSlot(shape, template.dtype)
 
     def _run(self):
         data = self.buffer('data')
-        minor = int(np.product(data.padded_shape[2:]))
-        stride = minor * data.padded_shape[1]
-        items_x = data.shape[1] // 2 * minor
-        items_y = data.shape[0] // 2
+        items_x = data.shape[-1] // 2
+        items_y = data.shape[-2] // 2
+        if len(data.shape) == 1:
+            items_z = 1
+        else:
+            items_z = data.shape[0] * int(np.product(data.padded_shape[1:-2]))
+        row_stride = data.padded_shape[-1]
+        slice_stride = data.padded_shape[-2] * data.padded_shape[-1]
         self.command_queue.enqueue_kernel(
             self.kernel,
             [
-                data.buffer, np.int32(stride),
+                data.buffer,
+                np.int32(row_stride),
+                np.int32(slice_stride),
                 np.int32(items_x), np.int32(items_y),
-                np.int32(items_y * stride)
+                np.int32(items_y * row_stride)
             ],
             global_size=(accel.roundup(items_x, self.template.wgsx),
-                         accel.roundup(items_y, self.template.wgsy)),
-            local_size=(self.template.wgsx, self.template.wgsy)
+                         accel.roundup(items_y, self.template.wgsy),
+                         items_z),
+            local_size=(self.template.wgsx, self.template.wgsy, 1)
         )
 
 
 class FftTemplate(object):
     """Operation template for a forward or reverse FFT, complex to complex.
-    The transformation is done over the first N dimensions, with the remaining
-    dimensions for interleaving multiple arrays to be transformed. Dimensions
-    beyond the first N must have consistent padding between the source and
+    The transformation is done over the last N dimensions, with the remaining
+    dimensions for batching multiple arrays to be transformed. Dimensions
+    before the first N must have consistent padding between the source and
     destination, and it is recommended to have no padding at all since the
     padding arrays are also transformed.
 
@@ -165,28 +172,29 @@ class FftTemplate(object):
     """
     def __init__(self, command_queue, N, shape, dtype,
                  padded_shape_src, padded_shape_dest, tuning=None):
-        if padded_shape_src[N:] != padded_shape_dest[N:]:
+        if padded_shape_src[:-N] != padded_shape_dest[:-N]:
             raise ValueError('Source and destination padding does not match on batch dimensions')
         self.command_queue = command_queue
         self.shape = shape
         self.dtype = dtype
         self.padded_shape_src = padded_shape_src
         self.padded_shape_dest = padded_shape_dest
-        # CUDA 7.0 CUFFT has a bug where kernels are run in the default
-        # stream instead of the requested one, if dimensions are up to
-        # 1920.
+        # CUDA 7.0 CUFFT has a bug where kernels are run in the default stream
+        # instead of the requested one, if dimensions are up to 1920. There is
+        # a patch, but there is no query to detect whether it has been
+        # applied.
         self.needs_synchronize_workaround = any(x <= 1920 for x in shape[:N])
-        batches = int(np.product(padded_shape_src[N:]))
+        batches = int(np.product(padded_shape_src[:-N]))
         with command_queue.context:
             self.plan = scikits.cuda.fft.Plan(
-                shape[:N], dtype, dtype, batches,
+                shape[-N:], dtype, dtype, batches,
                 stream=command_queue._pycuda_stream,
-                inembed=np.array(padded_shape_src[:N], np.int32),
-                istride=batches,
-                idist=1,
-                onembed=np.array(padded_shape_dest[:N], np.int32),
-                ostride=batches,
-                odist=1)
+                inembed=np.array(padded_shape_src[-N:], np.int32),
+                istride=1,
+                idist=int(np.product(padded_shape_src[-N:])),
+                onembed=np.array(padded_shape_dest[-N:], np.int32),
+                ostride=1,
+                odist=int(np.product(padded_shape_dest[-N:])))
 
     def instantiate(self, *args, **kwargs):
         return Fft(self, *args, **kwargs)
@@ -247,14 +255,14 @@ class TaperDivideTemplate(object):
 
     .. math::
 
-
        l(x) &= \text{lm_scale}\cdot x + \text{lm_bias}\\
        m(y) &= \text{lm_scale}\cdot y + \text{lm_bias}\\
        f(x, y) &= \frac{\text{kernel1d}[x] \cdot \text{kernel1d}[y]}{\sqrt{1-l(x)^2-m(y)^2}}
 
     and divide :math:`f` from the image.
 
-    Further dimensions are supported e.g. for Stokes parameters.
+    Further dimensions are supported e.g. for Stokes parameters, which occur
+    before the l/m dimensions.
 
     Parameters
     ----------
@@ -312,20 +320,20 @@ class TaperDivide(accel.Operation):
     Raises
     ------
     ValueError
-        if the first two elements of shape are not equal and even
+        if the last two elements of shape are not equal and even
     """
     def __init__(self, template, command_queue, shape, lm_scale, lm_bias, allocator=None):
-        if len(shape) < 2 or shape[0] != shape[1]:
+        if len(shape) < 2 or shape[-1] != shape[-2]:
             raise ValueError('shape must be square, not {}'.format(shape))
-        if shape[0] % 2 != 0:
-            raise ValueError('image size must be even, not {}'.format(shape[0]))
+        if shape[-1] % 2 != 0:
+            raise ValueError('image size must be even, not {}'.format(shape[-1]))
         super(TaperDivide, self).__init__(command_queue, allocator)
         self.template = template
         complex_dtype = katsdpimager.types.real_to_complex(template.real_dtype)
         dims = [accel.Dimension(x) for x in shape]
         self.slots['src'] = accel.IOSlot(dims, complex_dtype)
         self.slots['dest'] = accel.IOSlot(dims, template.real_dtype)
-        self.slots['kernel1d'] = accel.IOSlot((shape[0],), template.real_dtype)
+        self.slots['kernel1d'] = accel.IOSlot((shape[-1],), template.real_dtype)
         self.kernel = template.program.get_kernel('taper_divide')
         self.lm_scale = lm_scale
         self.lm_bias = lm_bias
@@ -333,30 +341,30 @@ class TaperDivide(accel.Operation):
     def _run(self):
         src = self.buffer('src')
         dest = self.buffer('dest')
-        assert(src.padded_shape[1] == dest.padded_shape[1])
-        half_size = src.shape[0] // 2
-        x_stride = int(np.product(src.padded_shape[2:]))
-        y_stride = int(np.product(src.padded_shape[1:]))
+        assert(src.padded_shape == dest.padded_shape)
+        half_size = src.shape[-1] // 2
+        row_stride = src.padded_shape[-1]
+        slice_stride = row_stride * src.padded_shape[-2]
+        batches = int(np.product(src.padded_shape[:-2]))
         kernel1d = self.buffer('kernel1d')
         self.command_queue.enqueue_kernel(
             self.kernel,
             [
                 dest.buffer,
                 src.buffer,
-                np.int32(x_stride),
-                np.int32(y_stride),
+                np.int32(row_stride),
+                np.int32(slice_stride),
                 kernel1d.buffer,
                 self.template.real_dtype.type(self.lm_scale),
                 self.template.real_dtype.type(self.lm_bias),
                 np.int32(half_size),
-                np.int32(half_size * x_stride),
-                np.int32(half_size * y_stride),
-                self.template.real_dtype.type(self.lm_scale * half_size)
+                np.int32(half_size * row_stride),
+                self.template.real_dtype.type(half_size * self.lm_scale)
             ],
-            global_size=(x_stride,
-                         accel.roundup(half_size, self.template.wgs_x),
-                         accel.roundup(half_size, self.template.wgs_y)),
-            local_size=(x_stride, self.template.wgs_x, self.template.wgs_y)
+            global_size=(accel.roundup(half_size, self.template.wgs_x),
+                         accel.roundup(half_size, self.template.wgs_y),
+                         batches),
+            local_size=(self.template.wgs_x, self.template.wgs_y, 1)
         )
 
 
@@ -377,7 +385,7 @@ class GridToImageTemplate(object):
     command_queue : :class:`katsdpsigproc.cuda.CommandQueue`
         Command queue for the operation
     shape : tuple of int
-        Shape for both the source and destination, as (height, width, polarizations)
+        Shape for both the source and destination, as (polarizations, height, width)
     padded_shape_src : tuple of int
         Padded shape of the grid
     padded_shape_dest : tuple of int
@@ -452,8 +460,8 @@ class GridToImageHost(object):
     """
 
     def __init__(self, grid, layer, image, kernel1d, lm_scale, lm_bias):
-        assert image.shape[0] == image.shape[1]
-        assert image.shape[0] % 2 == 0
+        assert image.shape[-1] == image.shape[-2]
+        assert image.shape[-1] % 2 == 0
         self.grid = grid
         self.layer = layer
         self.image = image
@@ -462,12 +470,12 @@ class GridToImageHost(object):
         self.lm_bias = lm_bias
 
     def __call__(self):
-        self.layer[:] = np.fft.ifft2(np.fft.ifftshift(self.grid), axes=(0, 1))
+        self.layer[:] = np.fft.ifft2(np.fft.ifftshift(self.grid), axes=(1, 2))
         # Scale factor is to match behaviour of CUFFT, which is unnormalized
-        scale = self.layer.shape[0] * self.layer.shape[1]
+        scale = self.layer.shape[1] * self.layer.shape[2]
         self.image[:] = np.fft.fftshift(self.layer.real * scale)
-        lm = np.arange(self.image.shape[0]).astype(self.image.dtype) * self.lm_scale + self.lm_bias
+        lm = np.arange(self.image.shape[1]).astype(self.image.dtype) * self.lm_scale + self.lm_bias
         lm2 = lm * lm
         n = np.sqrt(1 - (lm2[:, np.newaxis] + lm2[np.newaxis, :]))
-        self.image *= n[..., np.newaxis]   # newaxis maps to polarization
-        self.image /= np.outer(self.kernel1d, self.kernel1d)[..., np.newaxis]
+        self.image *= n[np.newaxis, ...]   # newaxis maps to polarization
+        self.image /= np.outer(self.kernel1d, self.kernel1d)[np.newaxis, ...]

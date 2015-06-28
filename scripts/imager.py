@@ -157,14 +157,20 @@ def make_dirty(queue, dataset, args, polarization_matrix, gridder, grid_to_image
 
 def psf_shape(image_parameters, clean_parameters):
     psf_patch = min(image_parameters.pixels, clean_parameters.psf_patch)
-    return (psf_patch, psf_patch, len(image_parameters.polarizations))
+    return (len(image_parameters.polarizations), psf_patch, psf_patch)
 
 def extract_psf(image, psf):
-    y0 = (image.shape[0] - psf.shape[0]) // 2
-    y1 = y0 + psf.shape[0]
-    x0 = (image.shape[1] - psf.shape[1]) // 2
-    x1 = y0 + psf.shape[1]
-    psf[...] = image[y0:y1, x0:x1, ...]
+    """Copy the central region of `image` to `psf`.
+
+    .. todo::
+
+        Move to clean module, and ideally on the GPU.
+    """
+    y0 = (image.shape[1] - psf.shape[1]) // 2
+    y1 = y0 + psf.shape[1]
+    x0 = (image.shape[2] - psf.shape[2]) // 2
+    x1 = y0 + psf.shape[2]
+    psf[...] = image[..., y0:y1, x0:x1]
 
 def main():
     parser = get_parser()
@@ -231,6 +237,7 @@ def main():
             # Grid to image
             kernel1d = accel.SVMArray(context, (image_p.pixels,), image_p.real_dtype)
             gridder_template.taper(image_p.pixels, kernel1d)
+            # TODO: allocate these from the operations, to ensure alignment
             layer = accel.SVMArray(context, grid_data.shape, image_p.complex_dtype)
             image = accel.SVMArray(context, grid_data.shape, image_p.real_dtype)
             grid_to_image_template = fft.GridToImageTemplate(
@@ -238,19 +245,20 @@ def main():
             grid_to_image = grid_to_image_template.instantiate(lm_scale, lm_bias, allocator)
             grid_to_image.bind(grid=grid_data, layer=layer, image=image, kernel1d=kernel1d)
             # CLEAN
-            psf = accel.SVMArray(context, psf_shape(image_p, clean_p), image_p.real_dtype)
-            model = accel.SVMArray(context, image.shape, image.dtype)
-            model[:] = 0
             cleaner_template = clean.CleanTemplate(
                 context, clean_p, image_p.real_dtype, len(output_polarizations))
             cleaner = cleaner_template.instantiate(queue, image_p, allocator)
-            cleaner.bind(dirty=image, model=model, psf=psf)
+            cleaner.bind(dirty=image)
             cleaner.ensure_all_bound()
+            psf = cleaner.buffer('psf')
+            model = cleaner.buffer('model')
+            model[:] = 0
 
         #### Create dirty image ####
         make_psf(queue, dataset, args, polarization_matrix, gridder, grid_to_image)
         # TODO: all this scaling is hacky. Move it into subroutines somewhere
-        scale = np.reciprocal(image[image.shape[0] // 2, image.shape[1] // 2, ...])
+        scale = np.reciprocal(image[..., image.shape[1] // 2, image.shape[2] // 2])
+        scale = scale[:, np.newaxis, np.newaxis]
         image *= scale
         if args.write_psf is not None:
             with progress.step('Write PSF'):
@@ -263,7 +271,8 @@ def main():
                 if args.host:
                     io.write_fits_grid(grid_data, image_p, args.write_grid)
                 else:
-                    io.write_fits_grid(np.fft.fftshift(grid_data), image_p, args.write_grid)
+                    io.write_fits_grid(np.fft.fftshift(grid_data, axes=(1, 2)),
+                                       image_p, args.write_grid)
         if args.write_dirty is not None:
             with progress.step('Write dirty image'):
                 io.write_fits_image(dataset, image, image_p, args.write_dirty)

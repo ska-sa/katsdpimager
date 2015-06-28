@@ -318,8 +318,7 @@ class Gridder(accel.Operation):
         self.template = template
         self.max_vis = max_vis
         self.slots['grid'] = accel.IOSlot(
-            (template.image_parameters.pixels, template.image_parameters.pixels,
-                accel.Dimension(template.num_polarizations, exact=True)),
+            (template.num_polarizations, template.image_parameters.pixels, template.image_parameters.pixels),
             template.dtype)
         self.slots['uvw'] = accel.IOSlot(
             (max_vis, accel.Dimension(3, exact=True)), np.float32)
@@ -362,7 +361,8 @@ class Gridder(accel.Operation):
             self.kernel,
             [
                 grid.buffer,
-                np.int32(grid.padded_shape[1]),
+                np.int32(grid.padded_shape[2]),
+                np.int32(grid.padded_shape[1] * grid.padded_shape[2]),
                 self.buffer('uvw').buffer,
                 self.buffer('vis').buffer,
                 self.template.convolve_kernel.buffer,
@@ -413,8 +413,8 @@ def _grid(kernel, values, uvw, vis, pixels, cell_size, oversample, w_scale, samp
             for k in range(ksize):
                 kernel_sample = kernel[w_plane, sub_v, j] * kernel[w_plane, sub_u, k]
                 weight = np.conj(kernel_sample)
-                for pol in range(values.shape[2]):
-                    values[int(v0 + j), int(u0 + k), pol] += sample[pol] * weight
+                for pol in range(values.shape[0]):
+                    values[pol, int(v0 + j), int(u0 + k)] += sample[pol] * weight
 
 
 class GridderHost(object):
@@ -425,7 +425,7 @@ class GridderHost(object):
         self.kernel, self.beta = _generate_convolve_kernel(
             image_parameters, grid_parameters, kernel_size)
         pixels = image_parameters.pixels
-        shape = (pixels, pixels, len(image_parameters.polarizations))
+        shape = (len(image_parameters.polarizations), pixels, pixels)
         self.values = np.empty(shape, image_parameters.complex_dtype)
 
     def clear(self):

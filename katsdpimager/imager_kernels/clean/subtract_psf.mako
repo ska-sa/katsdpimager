@@ -12,11 +12,13 @@ typedef struct
 
 KERNEL REQD_WORK_GROUP_SIZE(WGSX, WGSY, 1)
 void subtract_psf(
-    GLOBAL pixel * RESTRICT dirty,
-    GLOBAL pixel * RESTRICT model,
-    int image_width, int image_height, int image_stride,
-    const GLOBAL pixel * RESTRICT psf,
-    int psf_width, int psf_height, int psf_stride,
+    GLOBAL T * RESTRICT dirty,
+    GLOBAL T * RESTRICT model,
+    int image_row_stride, int image_pol_stride,
+    int image_width, int image_height,
+    const GLOBAL T * RESTRICT psf,
+    int psf_row_stride, int psf_pol_stride,
+    int psf_width, int psf_height,
     const GLOBAL pixel * RESTRICT center,
     int centerx, int centery,
     int startx, int starty,
@@ -33,12 +35,9 @@ void subtract_psf(
         local_scale = scale;
         if (gx == 0 && gy == 0)
         {
-            int center_idx = centery * image_stride + centerx;
-            pixel m = model[center_idx];
-            model[center_idx] = m;
+            int center_idx = centery * image_row_stride + centerx;
             for (int i = 0; i < NPOLS; i++)
-                m.v[i] += scale.v[i];
-            model[center_idx] = m;
+                model[i * image_pol_stride + center_idx] += scale.v[i];
         }
     }
     BARRIER();
@@ -46,16 +45,17 @@ void subtract_psf(
 
     if (gx < psf_width && gy < psf_height)
     {
-        pixel p = psf[gy * psf_stride + gx];
         int x = startx + gx;
         int y = starty + gy;
         if (x >= 0 && x < image_width && y >= 0 && y < image_height)
         {
-            int idx = y * image_stride + x;
-            pixel d = dirty[idx];
+            int psf_addr = gy * psf_row_stride + gx;
+            int image_addr = y * image_row_stride + x;
             for (int i = 0; i < NPOLS; i++)
-                d.v[i] -= scale.v[i] * p.v[i];
-            dirty[idx] = d;
+            {
+                T p = psf[i * psf_pol_stride + psf_addr];
+                dirty[i * image_pol_stride + image_addr] -= scale.v[i] * p;
+            }
         }
     }
 }

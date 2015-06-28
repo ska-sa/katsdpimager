@@ -81,7 +81,7 @@ def write_fits_image(dataset, image, image_parameters, filename):
     dataset : :class:`katsdpimager.loader_core.LoaderBase`
         Source dataset (used to set metadata such as phase centre)
     image : :class:`numpy.ndarray`
-        Image data in Jy/beam, indexed by m, l and polarization. For
+        Image data in Jy/beam, indexed by polarization, m, l. For
         a 2M x 2N image, the phase centre is at coordinates (M, N).
     image_parameters : :class:`katsdpimager.parameters.ImageParameters`
         Metadata associated with the image
@@ -104,8 +104,8 @@ def write_fits_image(dataset, image, image_parameters, filename):
     # centre, because of the way fftshift works).  Note that astropy.io.fits
     # reverses the axis order. The X coordinate is computed differently
     # because the X axis is flipped to allow RA to increase right-to-left.
-    header['CRPIX1'] = image.shape[1] * 0.5
-    header['CRPIX2'] = image.shape[0] * 0.5 + 1.0
+    header['CRPIX1'] = image.shape[2] * 0.5
+    header['CRPIX2'] = image.shape[1] * 0.5 + 1.0
     # FITS uses degrees; and RA increases right-to-left
     delt = np.arcsin(image_parameters.pixel_size).to(units.deg).value
     header['CDELT1'] = -delt
@@ -125,10 +125,8 @@ def write_fits_image(dataset, image, image_parameters, filename):
     header['CRVAL2'] = phase_centre[1].to(units.deg).value
     pol_permute = _fits_polarizations(header, 3, image_parameters.polarizations)
 
-    # Second axis is reversed, because RA increases right-to-left.
-    # The permutation axis is rolled to the front, because Tigger doesn't
-    # correctly handle the file otherwise.
-    hdu = fits.PrimaryHDU(np.rollaxis(image[:, ::-1, pol_permute], 2), header)
+    # l axis is reversed, because RA increases right-to-left.
+    hdu = fits.PrimaryHDU(image[:, :, ::-1], header)
     hdu.writeto(filename, clobber=True)
 
 
@@ -160,7 +158,7 @@ def write_fits_grid(grid, image_parameters, filename):
     Parameters
     ----------
     grid : ndarray of complex
-        Grid data indexed by m, l, polarization
+        Grid data indexed by polarization, m, l
     image_parameters : :class:`katsdpimager.parameters.ImageParameters`
         Metadata used to set headers
     filename : str
@@ -173,7 +171,7 @@ def write_fits_grid(grid, image_parameters, filename):
         transform in the FITS header.
     """
     grid = _split_array(grid, image_parameters.real_dtype)
-    grid = grid.transpose(3, 2, 0, 1)
+    grid = grid.transpose(3, 0, 1, 2)
 
     header = fits.Header()
     header['BUNIT'] = 'JY'
