@@ -1,6 +1,85 @@
 # -*- coding: utf-8 -*-
 
-"""Convolutional gridding"""
+r"""Convolutional gridding with W projection.
+
+The GPU approach is based on [Rom12_]. Each workgroup (thread block) handles a
+contiguous range of visibilities, with the threads cooperating to grid each
+visibility.  The grid is divided into *bins*, whose size is the same as the
+size of the convolution function. These bins are further divided into *tiles*,
+which are divided into *blocks*. A workitem (thread) handles all blocks that
+are at the same offset within their bin. Similarly, a workgroup handles all
+tiles that are at the same offset within their bin.
+
+.. tikz:: Mapping of workitems and workgroups to group points. One workgroup
+   contributes to all the green cells. One workitem contributes to all the
+   cells marked with a red dot. Here blocks are 2×2, tiles are 4×4 and bins
+   are 8×8. The dashed lines indicate the footprint of the convolution kernel
+   for a single visibility, showing that the thread contributes four values.
+
+   [x=0.5cm, y=0.5cm]
+   \foreach \i in {4, 12}
+       \foreach \j in {0, 8}
+       {
+           \fill[shift={(\i,\j)},green!50!white] (0, 0) rectangle (4, 4);
+       }
+   \foreach \i in {4,5, 12, 13}
+       \foreach \j in {2,3, 10,11}
+       {
+           \node[shift={(\i,\j)},circle,inner sep=0pt, minimum size=0.2cm,fill=red] at (0.5, 0.5) {};
+       }
+   \draw[help lines] (0, 0) grid[step=0.5cm] (16, 16);
+   \draw[very thick] (0, 0) grid[step=4cm] (16, 16);
+   \draw[very thick,dashed] (2, 3) rectangle (10, 11);
+
+This means that each visibility is processed by multiple work-groups.
+Specifically, the number of work-groups loading a visibility is the bin size
+over the tile size.
+
+Each thread maintains a number of accumulators: one per position within a
+block, per polarization. When moving to the next visibility, any counters that
+now correspond to a grid element outside the footprint are flushed to global
+memory (with an atomic add), and reset to a zero value at the new position
+that falls inside the footprint. Provided that the footprint only moves
+slowly, this reduces memory traffic.
+
+Visibilities are loaded in *batches*, whose size equals the number of
+workitems in a workgroup. First, all workitems cooperatively load a batch,
+preprocess it to determine pixel and subpixel coordinates, and store the
+values in shared memory. Then, each thread iterates over the visibilities in
+the batch. This amortises the costs of the global memory loads and address
+computations.
+
+Future planned changes
+----------------------
+At present, the footprint is allowed to move one grid cell at a time. If it
+were forced to allows align to the blocks, then a number of address
+computations could be amortized over a whole block. This would require that
+the kernel function be padded slightly (by one less than the block size) so
+that the support of the function always falls within the footprint, even when
+the footprint has been snapped to the block grid.
+
+There are two possible ways to handle tiles. The current implementation puts
+each tile position into a different workgroup. This has the advantage that it
+is not necessary to flush all the accumulators at the end of each batch, but
+the disadvantage that every visibility is loaded from global memory multiple
+times. A possible alternative (for which further analysis would be needed) is
+to load a batch into shared memory, and then process multiple tiles in series
+inside the workgroup, reusing the values in shared memory each time.
+
+Another reason to use separate workgroups for each tile is that it may be
+possible to eliminate atomic operations on small devices (such as a Tegra K1
+or X1) by having each workgroup process *all* the visibilities, rather than
+splitting them up to create more workgroups. This eliminates the potential for
+race conditions, because each workgroup is handling a disjoint part of the
+grid. This does limit the amount of available parallelism to the number of
+blocks per bin, which is why it is probably only practical on embedded
+devices, and even then probably requires a block size of 1.
+
+.. [Rom12] Romein, John W. 2012. An efficient work-distribution strategy for
+   gridding radio-telescope data on GPUs. In *Proceedings of the 26th ACM International
+   Conference on Supercomputing (ICS '12)*, 321-330.
+   http://www.astron.nl/~romein/papers/ICS-12/gridding.pdf
+"""
 
 from __future__ import division, print_function
 from . import parameters
@@ -124,7 +203,7 @@ def antialias_w_kernel(
     :math:`\sqrt{1-l^2-m^2}-1 \approx (\sqrt{1-l^2}-1) + (\sqrt{1-m^2}-1)`
     makes it makes it very close to separable [#]_.
 
-    .. [#] The error in the approximation above is on the order of :math:10^{-8}
+    .. [#] The error in the approximation above is on the order of :math:`10^{-8}`
        for a 1 degree field of view.
 
     We multiply the inverse Fourier transform of the (idealised) antialiasing
