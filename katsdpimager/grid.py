@@ -244,17 +244,19 @@ class GridderTemplate(object):
         self.image_parameters = image_parameters
         self.dtype = image_parameters.complex_dtype
         # These must be powers of 2. TODO: autotune
-        self.wgs_x = 16
-        self.wgs_y = 16
-        kernel_size = max(self.wgs_x, self.wgs_y)
+        self.wgs_x = 8
+        self.wgs_y = 8
+        self.multi_x = 2
+        self.multi_y = 2
+        self.tile_x = self.wgs_x * self.multi_x
+        self.tile_y = self.wgs_y * self.multi_y
+        kernel_size = max(self.tile_x, self.tile_y)
         # Round kernel size up to a power of 2
         while kernel_size < grid_parameters.kernel_width:
             kernel_size *= 2
         logging.info("Using kernel size of %d", kernel_size)
-        assert kernel_size % self.wgs_x == 0
-        assert kernel_size % self.wgs_y == 0
-        self.multi_x = kernel_size // self.wgs_x
-        self.multi_y = kernel_size // self.wgs_y
+        assert kernel_size % self.tile_x == 0
+        assert kernel_size % self.tile_y == 0
         self.num_polarizations = len(image_parameters.polarizations)
         self.convolve_kernel, self.beta = _generate_convolve_kernel(
             image_parameters, grid_parameters, kernel_size,
@@ -273,6 +275,8 @@ class GridderTemplate(object):
                 'convolve_kernel_w_stride': np.product(self.convolve_kernel.padded_shape[1:]),
                 'convolve_kernel_w_scale': w_scale,
                 'convolve_kernel_max_w': float(grid_parameters.max_w / units.m),
+                'convolve_kernel_size_x': kernel_size,
+                'convolve_kernel_size_y': kernel_size,
                 'multi_x': self.multi_x,
                 'multi_y': self.multi_y,
                 'wgs_x': self.wgs_x,
@@ -357,6 +361,9 @@ class Gridder(accel.Operation):
         grid = self.buffer('grid')
         workgroups = 256  # TODO: tune this in some way
         vis_per_workgroup = accel.divup(self._num_vis, workgroups)
+        convolve_kernel_size = self.template.convolve_kernel.shape[-1]
+        tiles_x = convolve_kernel_size // self.template.tile_x
+        tiles_y = convolve_kernel_size // self.template.tile_y
         self.command_queue.enqueue_kernel(
             self.kernel,
             [
@@ -371,8 +378,10 @@ class Gridder(accel.Operation):
                 np.int32(vis_per_workgroup),
                 np.int32(self._num_vis),
             ],
-            global_size=(self.template.wgs_x * workgroups, self.template.wgs_y),
-            local_size=(self.template.wgs_x, self.template.wgs_y)
+            global_size=(self.template.wgs_x * workgroups,
+                         self.template.wgs_y * tiles_x,
+                         tiles_y),
+            local_size=(self.template.wgs_x, self.template.wgs_y, 1)
         )
 
     def parameters(self):

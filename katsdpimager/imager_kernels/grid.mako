@@ -10,6 +10,8 @@ typedef atomic_accum_${real_type}2 atomic_accum_Complex;
 #define TILE_Y ${multi_y * wgs_y}
 #define MULTI_X ${multi_x}
 #define MULTI_Y ${multi_y}
+#define CONVOLVE_KERNEL_SIZE_X ${convolve_kernel_size_x}
+#define CONVOLVE_KERNEL_SIZE_Y ${convolve_kernel_size_y}
 #define CONVOLVE_KERNEL_OVERSAMPLE ${convolve_kernel_oversample}
 #define CONVOLVE_KERNEL_OVERSAMPLE_MASK ${convolve_kernel_oversample - 1}
 #define CONVOLVE_KERNEL_OVERSAMPLE_SHIFT ${int.bit_length(convolve_kernel_oversample) - 1}
@@ -97,6 +99,9 @@ void grid(
             cur_uv[y][x] = make_int2(0, 0);
         }
 
+    int u_phase = get_group_id(1) * TILE_X + get_local_id(0) * MULTI_X;
+    int v_phase = get_group_id(2) * TILE_Y + get_local_id(1) * MULTI_Y;
+
     const int lid = get_local_id(1) * ${wgs_x} + get_local_id(0);
     int batch_start = get_group_id(0) * vis_per_workgroup;
     int batch_end = min(nvis, batch_start + vis_per_workgroup);
@@ -160,8 +165,8 @@ void grid(
                     // TODO: expand convolution kernel footprint such that
                     // multi-xy block is emitted as a unit, instead of separate
                     // cur_uv for each element.
-                    int u = wrap(min_uv.x, TILE_X, MULTI_X * get_local_id(0) + x);
-                    int v = wrap(min_uv.y, TILE_Y, MULTI_Y * get_local_id(1) + y);
+                    int u = wrap(min_uv.x, CONVOLVE_KERNEL_SIZE_X, u_phase + x);
+                    int v = wrap(min_uv.y, CONVOLVE_KERNEL_SIZE_Y, v_phase + y);
                     if (u != cur_uv[y][x].x || v != cur_uv[y][x].y)
                     {
                         writeback(out, out_row_stride, out_pol_stride, cur_uv[y][x].x, cur_uv[y][x].y, sums[y][x]);
