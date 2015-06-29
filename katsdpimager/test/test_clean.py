@@ -27,7 +27,7 @@ class TestClean(object):
 
     @device_test
     def test_update_tiles(self, context, command_queue):
-        image_shape = (567, 456, 4)
+        image_shape = (4, 567, 456)
         rs = np.random.RandomState(seed=1)
         template = clean._UpdateTilesTemplate(context, np.float32, 4, clean.CLEAN_I)
         fn = template.instantiate(command_queue, image_shape)
@@ -54,9 +54,9 @@ class TestClean(object):
                 else:
                     y0 = y * template.tiley
                     x0 = x * template.tilex
-                    y1 = min(y0 + template.tiley, dirty.shape[0])
-                    x1 = min(x0 + template.tilex, dirty.shape[1])
-                    tile = np.abs(dirty[y0:y1, x0:x1, 0])
+                    y1 = min(y0 + template.tiley, dirty.shape[1])
+                    x1 = min(x0 + template.tilex, dirty.shape[2])
+                    tile = np.abs(dirty[0, y0:y1, x0:x1])
                     pos = np.unravel_index(np.argmax(tile), tile.shape)
                     assert_equal(tile[pos], tile_max[y, x])
                     assert_equal(pos[0] + y0, tile_pos[y, x, 0])
@@ -64,7 +64,7 @@ class TestClean(object):
 
     @device_test
     def test_find_peak(self, context, command_queue):
-        image_shape = (256, 256, 4)
+        image_shape = (4, 256, 256)
         tile_shape = (72, 67)
         template = clean._FindPeakTemplate(context, np.float32, 4)
         fn = template.instantiate(command_queue, image_shape, tile_shape)
@@ -87,21 +87,21 @@ class TestClean(object):
         best = np.unravel_index(np.argmax(tile_max), tile_max.shape)
         assert_equal(tile_max[best], peak_value[0])
         np.testing.assert_array_equal(tile_pos[best], peak_pos)
-        np.testing.assert_array_equal(dirty[peak_pos[0], peak_pos[1], :], peak_pixel)
+        np.testing.assert_array_equal(dirty[:, peak_pos[0], peak_pos[1]], peak_pixel)
 
     @device_test
     def test_subtract_psf(self, context, command_queue):
         loop_gain = 0.25
-        image_shape = (200, 345, 4)
-        psf_shape = (72, 131, 4)
+        image_shape = (4, 200, 345)
+        psf_shape = (4, 72, 131)
         pos = (170, 59)    # chosen so that the PSF will be clipped to the image
         rs = np.random.RandomState(seed=1)
         dirty = rs.standard_normal(image_shape).astype(np.float32)
         psf = rs.standard_normal(psf_shape).astype(np.float32)
         expected = dirty.copy()
-        peak_pixel = dirty[pos]
+        peak_pixel = dirty[:, pos[0], pos[1]]
         print(loop_gain * peak_pixel)
-        expected[134:200, 0:125, :] -= loop_gain * peak_pixel * psf[:66, 6:]
+        expected[:, 134:200, 0:125] -= loop_gain * peak_pixel[:, np.newaxis, np.newaxis] * psf[:, :66, 6:]
 
         template = clean._SubtractPsfTemplate(context, np.float32, 4)
         fn = template.instantiate(command_queue, loop_gain, image_shape, psf_shape)
@@ -114,4 +114,4 @@ class TestClean(object):
         dirty = fn.buffer('dirty').get(command_queue)
         model = fn.buffer('model').get(command_queue)
         np.testing.assert_allclose(expected, dirty, atol=1e-4)
-        np.testing.assert_allclose(loop_gain * peak_pixel, model[pos])
+        np.testing.assert_allclose(loop_gain * peak_pixel, model[:, pos[0], pos[1]])
