@@ -28,6 +28,7 @@ There is also a memory-based backend to simplify testing.
 from __future__ import print_function, division
 import h5py
 import numpy as np
+import numba
 import katsdpimager.grid as grid
 import astropy.units as units
 
@@ -70,6 +71,96 @@ def _make_fapl(cache_entries, cache_size):
     return fapl
 
 
+@numba.jit(nopython=True)
+def _convert_to_buffer(
+    channel, uvw, weights, baselines, vis, out,
+    pixels, cell_size, max_w, w_planes, kernel_width, oversample):
+    """Implementation of :meth:`VisibilityCollector._convert_to_buffer`,
+    split out as a function for numba acceleration.
+    """
+    N = uvw.shape[0]
+    P = vis.shape[1]
+    max_plane = w_planes - 1
+    offset = np.float32(pixels // 2 - (kernel_width - 1) // 2)
+    uv_scale = np.float32(1 / cell_size)
+    w_scale = float(max_plane / max_w)
+    for row in range(N):
+        u = uvw[row, 0]
+        v = uvw[row, 1]
+        w = uvw[row, 2]
+        if w < 0:
+            u = -u
+            v = -v
+            w = -w
+            for p in range(P):
+                out[row].vis[p] = np.conj(vis[row, p])
+        else:
+            for p in range(P):
+                out[row].vis[p] = vis[row, p]
+        for p in range(P):
+            out[row].vis[p] *= weights[row, p]
+        u = u * uv_scale + offset
+        v = v * uv_scale + offset
+        w = np.rint(w * w_scale)
+        w_plane = int(min(w, max_plane))
+        w_slice = 0  # TODO: change once w-stacking implemented
+        u0, sub_u = grid.subpixel_coord(u, oversample)
+        v0, sub_v = grid.subpixel_coord(v, oversample)
+        out[row].channel = channel
+        out[row].uv[0] = u0
+        out[row].uv[1] = v0
+        out[row].sub_uv[0] = sub_u
+        out[row].sub_uv[1] = sub_v
+        out[row].w_plane = w_plane
+        out[row].w_slice = w_slice
+        for p in range(P):
+            out[row].weights[p] = weights[row, p]
+        out[row].baseline = baselines[row]
+
+
+@numba.jit(nopython=True)
+def _compress_buffer(buffer):
+    """Core loop of :meth:`VisibilityCollector._process_buffer, split into a
+    free function for numba acceleration.
+    """
+    out_pos = 0
+    last = buffer[0]    # Value irrelevant, but needed for type inference
+    last_valid = False
+    P = buffer[0].vis.shape[0]
+    for element in buffer:
+        if element.baseline < 0:
+            continue       # Autocorrelation
+        # Here uv and sub_uv are converted to lists because == gives
+        # elementwise results on arrays.
+        key = (element.channel, element.w_slice,
+               element.uv[0], element.uv[1],
+               element.sub_uv[0], element.sub_uv[1],
+               element.w_plane)
+        if (last_valid
+                and element.channel == last.channel
+                and element.w_slice == last.w_slice
+                and element.uv[0] == last.uv[0]
+                and element.uv[1] == last.uv[1]
+                and element.sub_uv[0] == last.sub_uv[0]
+                and element.sub_uv[1] == last.sub_uv[1]
+                and element.w_plane == last.w_plane):
+            for p in range(P):
+                last.vis[p] += element.vis[p]
+            for p in range(P):
+                last.weights[p] += element.weights[p]
+        else:
+            if last_valid:
+                buffer[out_pos] = last
+                out_pos += 1
+            prev_key = key
+            last = element
+            last_valid = True
+    if last_valid:
+        buffer[out_pos] = last
+        out_pos += 1
+    return out_pos
+
+
 class VisibilityCollector(object):
     """Base class that accepts a stream of visibility data and stores it. The
     subclasses provide the storage backends.
@@ -100,40 +191,22 @@ class VisibilityCollector(object):
         regions that have the same channel and w slice, each of which is
         appended to the relevant dataset in the file.
         """
-        buf = self._buffer[:self._used]
+        if self._used == 0:
+            return
+        buffer = self._buffer[:self._used]
         # mergesort is stable, so will preserve ordering by time
-        buf.sort(kind='mergesort', order=['channel', 'w_slice', 'baseline'])
-        prev_key = None
-        last = None
-        out_pos = 0
-        for element in buf:
-            if element['baseline'] < 0:
-                continue       # Autocorrelation
-            # Here uv and sub_uv are converted to lists because == gives
-            # elementwise results on arrays.
-            key = (element.channel, element.w_slice, element.uv.tolist(), element.sub_uv.tolist(), element.w_plane)
-            if key == prev_key:
-                last.vis[:] += element.vis[:]
-                last.weights[:] += element.weights[:]
-            else:
-                if last is not None:
-                    self._buffer[out_pos] = last
-                    out_pos += 1
-                prev_key = key
-                last = element
-        if last is not None:
-            self._buffer[out_pos] = last
-            out_pos += 1
-        self._used = 0
+        buffer.sort(kind='mergesort', order=['channel', 'w_slice', 'baseline'])
+        N = _compress_buffer(buffer)
         # Write regions to file
-        if out_pos > 0:
-            key = self._buffer[:out_pos][['channel', 'w_slice']]
+        if N > 0:
+            key = buffer[:N][['channel', 'w_slice']]
             prev = 0
             for split in np.nonzero(key[1:] != key[:-1])[0]:
                 end = split + 1
-                self._emit(self._buffer[prev:end])
+                self._emit(buffer[prev:end])
                 prev = end
-            self._emit(self._buffer[prev:out_pos])
+            self._emit(buffer[prev:N])
+        self._used = 0
 
     def _emit(self, elements):
         """Write an array of compressed elements with the same channel and w
@@ -145,8 +218,6 @@ class VisibilityCollector(object):
         """Apply element-wise preprocessing to a number of elements and write
         the results to `out`, which will be a view of a range from the buffer.
 
-        .. todo:: Accelerate with numba
-
         Parameters
         ----------
         channel : int
@@ -156,40 +227,14 @@ class VisibilityCollector(object):
         out : record array
             N-element view of portion of the buffer to write
         """
-        N = uvw.shape[0]
-        P = vis.shape[1]
-        max_w = self.grid_parameters.w_planes - 1
-        ksize = self.grid_parameters.kernel_width
-        offset = np.float32(self.image_parameters[channel].pixels // 2 - (ksize - 1) // 2)
-        uv_scale = np.float32(1 / self.image_parameters[channel].cell_size)
-        w_scale = float(units.m / self.grid_parameters.max_w) * max_w
-        uvw = uvw.to(units.m).value
-        for row in range(N):
-            u, v, w = uvw[row, :]
-            if w < 0:
-                u = -u
-                v = -v
-                w = -w
-                out[row].vis[:] = np.conj(vis[row, :])
-            else:
-                out[row].vis[:] = vis[row, :]
-            out[row].vis[:] *= weights[row, :]
-            u = u * uv_scale + offset
-            v = v * uv_scale + offset
-            w = np.rint(w * w_scale)
-            w_plane = int(min(w, max_w))
-            w_slice = 0  # TODO: change once w-stacking implemented
-            u0, sub_u = grid.subpixel_coord(u, self.grid_parameters.oversample)
-            v0, sub_v = grid.subpixel_coord(v, self.grid_parameters.oversample)
-            out[row].channel = channel
-            out[row].uv[0] = u0
-            out[row].uv[1] = v0
-            out[row].sub_uv[0] = sub_u
-            out[row].sub_uv[1] = sub_v
-            out[row].w_plane = w_plane
-            out[row].w_slice = w_slice
-            out[row].weights[:] = weights[row, :]
-            out[row].baseline = baselines[row]
+        _convert_to_buffer(
+            channel, uvw.to(units.m).value, weights, baselines, vis, out,
+            self.image_parameters[channel].pixels,
+            self.image_parameters[channel].cell_size.to(units.m).value,
+            self.grid_parameters.max_w.to(units.m).value,
+            self.grid_parameters.w_planes,
+            self.grid_parameters.kernel_width,
+            self.grid_parameters.oversample)
 
     def add(self, channel, uvw, weights, baselines, vis):
         """Add a set of visibilities to the collector. Each of the provided
