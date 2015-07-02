@@ -100,7 +100,6 @@ class TestClean(object):
         psf = rs.standard_normal(psf_shape).astype(np.float32)
         expected = dirty.copy()
         peak_pixel = dirty[:, pos[0], pos[1]]
-        print(loop_gain * peak_pixel)
         expected[:, 134:200, 0:125] -= loop_gain * peak_pixel[:, np.newaxis, np.newaxis] * psf[:, :66, 6:]
 
         template = clean._SubtractPsfTemplate(context, np.float32, 4)
