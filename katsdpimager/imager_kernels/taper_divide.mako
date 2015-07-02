@@ -12,6 +12,7 @@ typedef ${real_type}2 Complex;
  * @param x_offset  Product of @a half_size and @a x_stride
  * @param y_offset  Product of @a half_size and @a y_stride
  * @param lm_offset Product of @a half_size and @a lm_scale
+ * @param w2        Twice the central W value for the slice
  */
 KERNEL REQD_WORK_GROUP_SIZE(${wgs_x}, ${wgs_y}, 1)
 void taper_divide(
@@ -24,7 +25,8 @@ void taper_divide(
     Real lm_bias,
     int half_size,
     int y_offset,
-    Real lm_offset)
+    Real lm_offset,
+    Real w2)
 {
     int x[2], y[2];
     x[0] = get_global_id(0);
@@ -33,7 +35,7 @@ void taper_divide(
     if (x[0] < half_size && y[0] < half_size)
     {
         Real kernel_x[2], kernel_y[2], l2[2], m2[2];
-        Real value[2][2];
+        Complex value[2][2];
         int addr[2][2];
         x[1] = x[0] + half_size;
         y[1] = y[0] + half_size;
@@ -50,7 +52,7 @@ void taper_divide(
         addr[1][1] = addr[0][1] + y_offset;
         for (int i = 0; i < 2; i++)
             for (int j = 0; j < 2; j++)
-                value[i][j] = in[addr[1 - i][1 - j]].x;
+                value[i][j] = in[addr[1 - i][1 - j]];
 
         // Compute l^2, m^2 (first compute l and m)
         l2[0] = x[0] * lm_scale + lm_bias;
@@ -68,7 +70,12 @@ void taper_divide(
             for (int j = 0; j < 2; j++)
             {
                 Real n = sqrt(1 - m2[i] - l2[j]);
-                out[addr[i][j]] = value[i][j] * n / (kernel_y[i] * kernel_x[j]);
+                Real c, s;
+                // TODO: add sincospi wrapper for OpenCL
+                sincospi(w2 * (n - 1), &s, &c);
+                // Multiply by e^(2pi i w (n-1))
+                Real rotated = value[i][j].x * c - value[i][j].y * s;
+                out[addr[i][j]] = rotated * n / (kernel_y[i] * kernel_x[j]);
             }
     }
 }

@@ -293,7 +293,10 @@ def _generate_convolve_kernel(image_parameters, grid_parameters, width, out=None
             (grid_parameters.w_planes, grid_parameters.oversample, width),
             np.complex64)
     cell_wavelengths = float(image_parameters.cell_size / image_parameters.wavelength)
-    max_w_wavelengths = float(grid_parameters.max_w / image_parameters.wavelength)
+    # Separation in w between slices
+    w_slice_wavelengths = float(grid_parameters.max_w / (grid_parameters.w_slices * image_parameters.wavelength))
+    # Separation in w between planes
+    w_plane_wavelengths = w_slice_wavelengths / grid_parameters.w_planes
     # Puts the first null of the taper function at the edge of the image
     beta = math.pi * math.sqrt(0.25 * grid_parameters.antialias_width**2 - 1.0)
     # Move the null outside the image, to avoid numerical instabilities.
@@ -301,7 +304,10 @@ def _generate_convolve_kernel(image_parameters, grid_parameters, width, out=None
     # ideally should be handled by clipping the image.
     beta *= 1.2
     # TODO: use sqrt(w) scaling as in Cornwell, Golap and Bhatnagar (2008)?
-    for i, w in enumerate(np.linspace(0.0, max_w_wavelengths, grid_parameters.w_planes)):
+    # TODO: can halve work and memory by exploiting conjugate symmetry
+    # Find w for the midpoint of the final plane
+    max_w_wavelengths = (w_slice_wavelengths - w_plane_wavelengths) * 0.5
+    for i, w in enumerate(np.linspace(-max_w_wavelengths, max_w_wavelengths, grid_parameters.w_planes)):
         antialias_w_kernel(
             cell_wavelengths, w, width,
             grid_parameters.oversample,

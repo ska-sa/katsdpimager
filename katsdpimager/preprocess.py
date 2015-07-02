@@ -75,16 +75,16 @@ def _make_fapl(cache_entries, cache_size):
 @numba.jit(nopython=True)
 def _convert_to_buffer(
     channel, uvw, weights, baselines, vis, out,
-    pixels, cell_size, max_w, w_planes, kernel_width, oversample):
+    pixels, cell_size, max_w, w_slices, w_planes, kernel_width, oversample):
     """Implementation of :meth:`VisibilityCollector._convert_to_buffer`,
     split out as a function for numba acceleration.
     """
     N = uvw.shape[0]
     P = vis.shape[1]
-    max_plane = w_planes - 1
     offset = np.float32(pixels // 2 - (kernel_width - 1) // 2)
     uv_scale = np.float32(1 / cell_size)
-    w_scale = float(max_plane / max_w)
+    w_scale = float(w_slices * w_planes / max_w)
+    max_slice_plane = w_slices * w_planes - 1
     for row in range(N):
         u = uvw[row, 0]
         v = uvw[row, 1]
@@ -102,9 +102,10 @@ def _convert_to_buffer(
             out[row].vis[p] *= weights[row, p]
         u = u * uv_scale + offset
         v = v * uv_scale + offset
-        w = np.rint(w * w_scale)
-        w_plane = int(min(w, max_plane))
-        w_slice = 0  # TODO: change once w-stacking implemented
+        w = np.trunc(w * w_scale)
+        w_slice_plane = int(min(w, max_slice_plane))
+        w_slice = w_slice_plane // w_planes
+        w_plane = w_slice_plane % w_planes
         u0, sub_u = grid.subpixel_coord(u, oversample)
         v0, sub_v = grid.subpixel_coord(v, oversample)
         out[row].channel = channel
@@ -241,6 +242,7 @@ class VisibilityCollector(object):
             self.image_parameters[channel].pixels,
             self.image_parameters[channel].cell_size.to(units.m).value,
             self.grid_parameters.max_w.to(units.m).value,
+            self.grid_parameters.w_slices,
             self.grid_parameters.w_planes,
             self.grid_parameters.kernel_width,
             self.grid_parameters.oversample)

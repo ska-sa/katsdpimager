@@ -2,6 +2,7 @@
 
 from __future__ import print_function, division
 import numpy as np
+import math
 import pkg_resources
 import scikits.cuda.fft
 from katsdpsigproc import accel
@@ -246,8 +247,8 @@ class Fft(accel.Operation):
 
 
 class TaperDivideTemplate(object):
-    r"""Extracts the real part of a complex image and scales by a tapering
-    function.
+    r"""Applies a W correction, extracts the real part of a complex image and
+    scales by a tapering function.
 
     The function is the combination of a separable antialiasing function and
     the 3rd direction cosine (n). Specifically, for input pixel coordinates x,
@@ -259,7 +260,14 @@ class TaperDivideTemplate(object):
        m(y) &= \text{lm_scale}\cdot y + \text{lm_bias}\\
        f(x, y) &= \frac{\text{kernel1d}[x] \cdot \text{kernel1d}[y]}{\sqrt{1-l(x)^2-m(y)^2}}
 
-    and divide :math:`f` from the image.
+    and divide :math:`f` from the image. The W correction is to multiply the
+    (complex) image by
+
+    .. math::
+
+       e^{2\pi i w\left(\sqrt{1-l(x)^2-m(y)^2} - 1\right)}
+
+    before extracting the real component.
 
     Further dimensions are supported e.g. for Stokes parameters, which occur
     before the l/m dimensions.
@@ -337,6 +345,11 @@ class TaperDivide(accel.Operation):
         self.kernel = template.program.get_kernel('taper_divide')
         self.lm_scale = lm_scale
         self.lm_bias = lm_bias
+        self.w = 0
+
+    def set_w(self, w):
+        """Set w (in wavelengths)."""
+        self.w = w
 
     def _run(self):
         src = self.buffer('src')
@@ -359,7 +372,8 @@ class TaperDivide(accel.Operation):
                 self.template.real_dtype.type(self.lm_bias),
                 np.int32(half_size),
                 np.int32(half_size * row_stride),
-                self.template.real_dtype.type(half_size * self.lm_scale)
+                self.template.real_dtype.type(half_size * self.lm_scale),
+                self.template.real_dtype.type(2 * self.w)
             ],
             global_size=(accel.roundup(half_size, self.template.wgs_x),
                          accel.roundup(half_size, self.template.wgs_y),
@@ -437,6 +451,9 @@ class GridToImage(accel.OperationSequence):
         }
         super(GridToImage, self).__init__(command_queue, operations, compounds, allocator=allocator)
 
+    def set_w(self, w):
+        self._taper_divide.set_w(w)
+
 
 class GridToImageHost(object):
     """CPU-only equivalent to :class:`GridToHost`.
@@ -468,14 +485,22 @@ class GridToImageHost(object):
         self.kernel1d = kernel1d
         self.lm_scale = lm_scale
         self.lm_bias = lm_bias
+        self.w = 0
+
+    def set_w(self, w):
+        self.w = w
 
     def __call__(self):
         self.layer[:] = np.fft.ifft2(np.fft.ifftshift(self.grid), axes=(1, 2))
         # Scale factor is to match behaviour of CUFFT, which is unnormalized
         scale = self.layer.shape[1] * self.layer.shape[2]
-        self.image[:] = np.fft.fftshift(self.layer.real * scale)
         lm = np.arange(self.image.shape[1]).astype(self.image.dtype) * self.lm_scale + self.lm_bias
+        # We do calculations involving the complex values prior to applying
+        # fftshift to save memory, so we have to apply the inverse shift to lm.
+        lm = np.fft.ifftshift(lm)
         lm2 = lm * lm
         n = np.sqrt(1 - (lm2[:, np.newaxis] + lm2[np.newaxis, :]))
-        self.image *= n[np.newaxis, ...]   # newaxis maps to polarization
+        w_correct = np.exp(2j * math.pi * self.w * (n - 1))
+        self.layer *= w_correct
+        self.image[:] = np.fft.fftshift(self.layer.real * n[np.newaxis, ...]) * scale
         self.image /= np.outer(self.kernel1d, self.kernel1d)[np.newaxis, ...]

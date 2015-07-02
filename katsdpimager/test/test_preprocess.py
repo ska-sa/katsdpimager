@@ -32,6 +32,7 @@ class BaseTestVisibilityCollector(object):
             antialias_width=7.0,
             oversample=8.0,
             image_oversample=4.0,
+            w_slices=1,
             w_planes=128,
             max_w=400 * units.m,
             kernel_width=64)

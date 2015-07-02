@@ -63,7 +63,8 @@ def get_parser():
     group = parser.add_argument_group('Gridding options')
     group.add_argument('--grid-oversample', type=int, default=8, help='Oversampling factor for convolution kernels [%(default)s]')
     group.add_argument('--kernel-image-oversample', type=int, default=4, help='Oversampling factor for kernel generation [%(default)s]')
-    group.add_argument('--w-planes', type=int, default=128, help='Number of W planes [%(default)s]'),
+    group.add_argument('--w-slices', type=int, default=1, help='Number of W slices [%(default)s]')
+    group.add_argument('--w-planes', type=int, default=128, help='Number of W planes per slice [%(default)s]'),
     group.add_argument('--max-w', type=parse_quantity, help='Largest w, as either distance or wavelengths [longest baseline]')
     group.add_argument('--aa-width', type=float, default=7, help='Support of anti-aliasing kernel [%(default)s]')
     group.add_argument('--kernel-width', type=float, default=None, help='Support of combined anti-aliasing + w kernel [computed]')
@@ -122,7 +123,7 @@ def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, po
         collector.close()
     return collector
 
-def make_dirty(queue, reader, name, field, polarization_matrix, gridder, grid_to_image):
+def make_dirty(queue, reader, name, field, polarization_matrix, gridder, grid_to_image, mid_w):
     gridder.clear()
     bar = progress.make_progressbar('Gridding {}'.format(name), max=reader.len(0, 0))
     with progress.finishing(bar):
@@ -133,6 +134,7 @@ def make_dirty(queue, reader, name, field, polarization_matrix, gridder, grid_to
             bar.next(len(chunk))
 
     with progress.step('FFT {}'.format(name)):
+        grid_to_image.set_w(mid_w)
         grid_to_image()
         if queue:
             queue.finish()
@@ -181,10 +183,10 @@ def main():
         elif args.max_w.unit.physical_type == 'dimensionless':
             args.max_w = args.max_w * image_p.wavelength
         if args.kernel_width is None:
-            args.kernel_width = parameters.w_kernel_width(image_p, args.max_w, args.eps_w, args.aa_width)
+            args.kernel_width = parameters.w_kernel_width(image_p, 0.5 * args.max_w, args.eps_w, args.aa_width)
         grid_p = parameters.GridParameters(
             args.aa_width, args.grid_oversample, args.kernel_image_oversample,
-            args.w_planes, args.max_w, args.kernel_width)
+            args.w_slices, args.w_planes, args.max_w, args.kernel_width)
         if args.clean_mode == 'I':
             clean_mode = clean.CLEAN_I
         elif args.clean_mode == 'IQUV':
@@ -241,7 +243,8 @@ def main():
         reader = collector.reader()
 
         #### Create dirty image ####
-        make_dirty(queue, reader, 'PSF', 'weights', polarization_matrix, gridder, grid_to_image)
+        mid_w = float(0.5 * grid_p.max_w / image_p.wavelength)
+        make_dirty(queue, reader, 'PSF', 'weights', polarization_matrix, gridder, grid_to_image, mid_w)
         # TODO: all this scaling is hacky. Move it into subroutines somewhere
         scale = np.reciprocal(image[..., image.shape[1] // 2, image.shape[2] // 2])
         scale = scale[:, np.newaxis, np.newaxis]
@@ -250,7 +253,7 @@ def main():
             with progress.step('Write PSF'):
                 io.write_fits_image(dataset, image, image_p, args.write_psf)
         extract_psf(image, psf)
-        make_dirty(queue, reader, 'dirty image', 'vis', polarization_matrix, gridder, grid_to_image)
+        make_dirty(queue, reader, 'dirty image', 'vis', polarization_matrix, gridder, grid_to_image, mid_w)
         image *= scale
         if args.write_grid is not None:
             with progress.step('Write grid'):

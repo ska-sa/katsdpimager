@@ -153,20 +153,23 @@ class GridParameters(object):
         Number of UV sub-cells per cell, for sampling kernels
     image_oversample : int
         Oversampling in image plane during kernel generation
+    w_slices : int
+        Number of slices for w-stacking
     w_planes : int
-        Number of samples to take in w
+        Number of samples to take in w within each slice
     max_w : Quantity
         Maximum absolute w value, as a distance quantity
     kernel_width : int, optional
         Number of UV cells corresponding to the combined W+antialias kernel.
     """
-    def __init__(self, antialias_width, oversample, image_oversample, w_planes,
-                 max_w, kernel_width):
-        assert w_planes >= 2, 'At least 2 W planes are required'
-        assert max_w.unit.physical_type == 'length'
+    def __init__(self, antialias_width, oversample, image_oversample,
+                 w_slices, w_planes, max_w, kernel_width):
+        if max_w.unit.physical_type != 'length':
+            raise TypeError('max W must be specified as a length')
         self.antialias_width = antialias_width
         self.oversample = oversample
         self.image_oversample = image_oversample
+        self.w_slices = w_slices
         self.w_planes = w_planes
         self.max_w = max_w
         self.kernel_width = kernel_width
