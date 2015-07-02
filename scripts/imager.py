@@ -10,6 +10,7 @@ import katsdpsigproc.accel as accel
 import katsdpimager.loader as loader
 import katsdpimager.parameters as parameters
 import katsdpimager.polarization as polarization
+import katsdpimager.preprocess as preprocess
 import katsdpimager.grid as grid
 import katsdpimager.io as io
 import katsdpimager.fft as fft
@@ -94,7 +95,7 @@ def data_iter(dataset, args):
     for chunk in dataset.data_iter(args.channel, args.vis_block):
         if N is not None:
             if N < len(chunk['uvw']):
-                for key in ['uvw', 'weights', 'vis']:
+                for key in ['uvw', 'weights', 'baselines', 'vis']:
                     if key in chunk:
                         chunk[key] = chunk[key][:N]
                 chunk['progress'] = chunk['total']
@@ -104,53 +105,36 @@ def data_iter(dataset, args):
             if N == 0:
                 return
 
-def make_psf(queue, dataset, args, polarization_matrix, gridder, grid_to_image):
+def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, polarization_matrix):
     bar = None
-    gridder.clear()
-    # TODO: pass a flag to avoid retrieving visibilities
+    collector = preprocess.VisibilityCollectorMem([image_parameters], grid_parameters)
     try:
         for chunk in data_iter(dataset, args):
-            uvw = chunk['uvw']
-            weights = chunk['weights']
             if bar is None:
-                bar = progress.make_progressbar("Gridding PSF", max=chunk['total'])
+                bar = progress.make_progressbar("Preprocessing vis", max=chunk['total'])
             # Transform the visibilities to the desired polarization
-            weights = polarization.apply_polarization_matrix_weights(weights, polarization_matrix)
-            gridder.grid(uvw, weights)
-            if queue:
-                queue.finish()
+            # TODO: do this as part of preprocess
+            weights = polarization.apply_polarization_matrix_weights(chunk['weights'], polarization_matrix)
+            vis = polarization.apply_polarization_matrix(chunk['vis'], polarization_matrix)
+            collector.add(0, chunk['uvw'], weights, chunk['baselines'], vis)
             bar.goto(chunk['progress'])
     finally:
-        bar.finish()
+        if bar is not None:
+            bar.finish()
+        collector.close()
+    return collector
 
-    with progress.step('FFT PSF'):
-        grid_to_image()
-        if queue:
-            queue.finish()
-
-def make_dirty(queue, dataset, args, polarization_matrix, gridder, grid_to_image):
-    bar = None
+def make_dirty(queue, reader, name, field, polarization_matrix, gridder, grid_to_image):
     gridder.clear()
-    try:
-        for chunk in data_iter(dataset, args):
-            uvw = chunk['uvw']
-            weights = chunk['weights']
-            vis = chunk['vis']
-            if bar is None:
-                bar = progress.make_progressbar("Gridding", max=chunk['total'])
-            # Transform the visibilities to the desired polarization
-            vis = polarization.apply_polarization_matrix(vis, polarization_matrix)
-            weights = polarization.apply_polarization_matrix_weights(weights, polarization_matrix)
-            # Pre-weight the visibilities
-            vis *= weights
-            gridder.grid(uvw, vis)
+    bar = progress.make_progressbar('Gridding {}'.format(name), max=reader.len(0, 0))
+    with progress.finishing(bar):
+        for chunk in reader.iter_slice(0, 0):
+            gridder.grid(chunk.uv, chunk.sub_uv, chunk.w_plane, chunk[field])
             if queue:
                 queue.finish()
-            bar.goto(chunk['progress'])
-    finally:
-        bar.finish()
+            bar.next(len(chunk))
 
-    with progress.step('FFT'):
+    with progress.step('FFT {}'.format(name)):
         grid_to_image()
         if queue:
             queue.finish()
@@ -254,8 +238,12 @@ def main():
             model = cleaner.buffer('model')
             model[:] = 0
 
+        #### Preprocess visibilities ####
+        collector = preprocess_visibilities(dataset, args, image_p, grid_p, polarization_matrix)
+        reader = collector.reader()
+
         #### Create dirty image ####
-        make_psf(queue, dataset, args, polarization_matrix, gridder, grid_to_image)
+        make_dirty(queue, reader, 'PSF', 'weights', polarization_matrix, gridder, grid_to_image)
         # TODO: all this scaling is hacky. Move it into subroutines somewhere
         scale = np.reciprocal(image[..., image.shape[1] // 2, image.shape[2] // 2])
         scale = scale[:, np.newaxis, np.newaxis]
@@ -264,7 +252,7 @@ def main():
             with progress.step('Write PSF'):
                 io.write_fits_image(dataset, image, image_p, args.write_psf)
         extract_psf(image, psf)
-        make_dirty(queue, dataset, args, polarization_matrix, gridder, grid_to_image)
+        make_dirty(queue, reader, 'dirty image', 'vis', polarization_matrix, gridder, grid_to_image)
         image *= scale
         if args.write_grid is not None:
             with progress.step('Write grid'):

@@ -66,11 +66,10 @@ void grid(
     GLOBAL atomic_accum_Complex * RESTRICT out,
     int out_row_stride,
     int out_pol_stride,
-    const GLOBAL float * RESTRICT uvw,
+    const GLOBAL short4 * RESTRICT uv,
+    const GLOBAL short * RESTRICT w_plane,
     const GLOBAL float2 * RESTRICT vis,
     const GLOBAL float2 * RESTRICT convolve_kernel,
-    float uv_scale,
-    float uv_bias,
     int vis_per_workgroup,
     int nvis)
 {
@@ -112,41 +111,20 @@ void grid(
         if (lid < batch_size)
         {
             int vis_id = batch_start + lid;
-            float sample_u = uvw[vis_id * 3];
-            float sample_v = uvw[vis_id * 3 + 1];
-            float sample_w = uvw[vis_id * 3 + 2];
-            bool flipped = false;
-            if (sample_w < 0) // TODO: eliminate this once uvw are preprocessed
-            {
-                sample_u = -sample_u;
-                sample_v = -sample_v;
-                sample_w = -sample_w;
-                flipped = true;
-            }
-            // TODO: make portable __float2int_rd
-            int fine_u = __float2int_rd(sample_u * uv_scale + uv_bias);
-            int fine_v = __float2int_rd(sample_v * uv_scale + uv_bias);
-            // TODO: consider scaling and masking v differently to eliminate
-            // multiplication by CONVOLVE_KERNEL_OVERSAMPLE later on.
-            int sub_u = fine_u & CONVOLVE_KERNEL_OVERSAMPLE_MASK;
-            int sub_v = fine_v & CONVOLVE_KERNEL_OVERSAMPLE_MASK;
-            int min_u = fine_u >> CONVOLVE_KERNEL_OVERSAMPLE_SHIFT;
-            int min_v = fine_v >> CONVOLVE_KERNEL_OVERSAMPLE_SHIFT;
-
+            short4 sample_uv = uv[vis_id];
+            short sample_w_plane = w_plane[vis_id];
             for (int p = 0; p < NPOLS; p++)
             {
                 // TODO: could improve this using float4s where appropriate
                 int idx = vis_id * NPOLS + p;
                 batch_vis[p][lid] = vis[idx];
-                if (flipped)
-                    batch_vis[p][lid].y = -batch_vis[p][lid].y;
             }
-            batch_min_uv[lid] = make_int2(min_u, min_v);
-            int w_plane = __float2int_rn(min(sample_w, CONVOLVE_KERNEL_MAX_W) * CONVOLVE_KERNEL_W_SCALE);
-            int offset_w = w_plane * CONVOLVE_KERNEL_W_STRIDE;
+            int2 min_uv = make_int2(sample_uv.x, sample_uv.y);
+            int offset_w = sample_w_plane * CONVOLVE_KERNEL_W_STRIDE;
+            batch_min_uv[lid] = min_uv;
             batch_offset[lid] = make_int2(
-                offset_w + sub_u * CONVOLVE_KERNEL_SLICE_STRIDE - min_u,
-                offset_w + sub_v * CONVOLVE_KERNEL_SLICE_STRIDE - min_v);
+                offset_w + sample_uv.z * CONVOLVE_KERNEL_SLICE_STRIDE - min_uv.x,
+                offset_w + sample_uv.w * CONVOLVE_KERNEL_SLICE_STRIDE - min_uv.y);
         }
 
         BARRIER();

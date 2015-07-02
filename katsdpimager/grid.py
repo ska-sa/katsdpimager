@@ -389,6 +389,20 @@ class GridderTemplate(object):
 
 
 class Gridder(accel.Operation):
+    """Instantiation of :class:`GridderTemplate`.
+
+    .. rubric:: Slots
+
+    **uv** : array of int16×4
+        The first two elements for each visibility are the
+        UV coordinates of the first grid cell to be updated. The other two are
+        the subpixel U and V coordinates.
+    **w_plane** : array of int16
+        W plane index per visibility, clamped to the range of allocated w planes
+    **vis** : array of complex64 × pols
+        Visibilities
+    """
+
     def __init__(self, template, command_queue, array_parameters,
                  max_vis, allocator=None):
         super(Gridder, self).__init__(command_queue, allocator)
@@ -403,18 +417,13 @@ class Gridder(accel.Operation):
         self.slots['grid'] = accel.IOSlot(
             (template.num_polarizations, template.image_parameters.pixels, template.image_parameters.pixels),
             template.dtype)
-        self.slots['uvw'] = accel.IOSlot(
-            (max_vis, accel.Dimension(3, exact=True)), np.float32)
+        self.slots['uv'] = accel.IOSlot(
+            (max_vis, accel.Dimension(4, exact=True)), np.int16)
+        self.slots['w_plane'] = accel.IOSlot((max_vis,), np.int16)
         self.slots['vis'] = accel.IOSlot(
             (max_vis, accel.Dimension(template.num_polarizations, exact=True)), np.complex64)
         self.kernel = template.program.get_kernel('grid')
         self._num_vis = 0
-        cell_size_m = template.image_parameters.cell_size.to(units.m).value
-        self.uv_scale = template.grid_parameters.oversample / cell_size_m
-        # Offset to bias coordinates such that u,v=0 translates to the first
-        # pixel to update in the grid, measured in subpixels
-        uv_bias_pixels = template.image_parameters.pixels // 2 - (convolve_kernel_size - 1) // 2
-        self.uv_bias = float(uv_bias_pixels) * template.grid_parameters.oversample
 
     def set_num_vis(self, n):
         if n < 0 or n > self.max_vis:
@@ -426,12 +435,17 @@ class Gridder(accel.Operation):
         """TODO: implement on GPU"""
         self.buffer('grid').fill(0)
 
-    def grid(self, uvw, vis):
+    def grid(self, uv, sub_uv, w_plane, vis):
         """Add visibilities to the grid, with convolutional gridding using the
         anti-aliasing filter."""
-        self.set_num_vis(len(uvw))
-        self.buffer('uvw')[:len(uvw)] = uvw
-        self.buffer('vis')[:len(vis)] = vis
+        N = len(uv)
+        if len(sub_uv) != N or len(w_plane) != N or len(vis) != N:
+            raise ValueError('Lengths do not match')
+        self.set_num_vis(N)
+        self.buffer('uv')[:N, 0:2] = uv
+        self.buffer('uv')[:N, 2:4] = sub_uv
+        self.buffer('w_plane')[:N] = w_plane
+        self.buffer('vis')[:N] = vis
         self()
 
     def _run(self):
@@ -449,11 +463,10 @@ class Gridder(accel.Operation):
                 grid.buffer,
                 np.int32(grid.padded_shape[2]),
                 np.int32(grid.padded_shape[1] * grid.padded_shape[2]),
-                self.buffer('uvw').buffer,
+                self.buffer('uv').buffer,
+                self.buffer('w_plane').buffer,
                 self.buffer('vis').buffer,
                 self.template.convolve_kernel.buffer,
-                np.float32(self.uv_scale),
-                np.float32(self.uv_bias),
                 np.int32(vis_per_workgroup),
                 np.int32(self._num_vis),
             ],
@@ -471,35 +484,20 @@ class Gridder(accel.Operation):
 
 
 @numba.jit(nopython=True)
-def _grid(kernel, values, uvw, vis, pixels, cell_size, oversample, w_scale, sample):
+def _grid(kernel, values, uv, sub_uv, w_plane, vis, sample):
     """Internal implementation of :meth:`GridderHost.grid`, split out so that
     Numba can JIT it.
     """
-    max_w = kernel.shape[0] - 1
     ksize = kernel.shape[2]
-    # Offset to bias coordinates such that l,m=0 translates to the first
-    # pixel to update in the grid.
-    offset = np.float32(pixels // 2 - (ksize - 1) // 2)
-    uv_scale = np.float32(1 / cell_size)
-    for row in range(uvw.shape[0]):
-        u, v, w = uvw[row]
+    for row in range(uv.shape[0]):
+        u0, v0 = uv[row]
+        sub_u, sub_v = sub_uv[row]
         for i in range(vis.shape[1]):
             sample[i] = vis[row, i]
-        if w < 0:
-            u = -u
-            v = -v
-            w = -w
-            np.conj(sample, sample)
         # u and v are converted to cells, w to planes
-        u = u * uv_scale + offset
-        v = v * uv_scale + offset
-        w = np.rint(w * w_scale)
-        w_plane = int(min(w, max_w))
-        u0, sub_u = subpixel_coord(u, oversample)
-        v0, sub_v = subpixel_coord(v, oversample)
         for j in range(ksize):
             for k in range(ksize):
-                kernel_sample = kernel[w_plane, sub_v, j] * kernel[w_plane, sub_u, k]
+                kernel_sample = kernel[w_plane[row], sub_v, j] * kernel[w_plane[row], sub_u, k]
                 weight = np.conj(kernel_sample)
                 for pol in range(values.shape[0]):
                     values[pol, int(v0 + j), int(u0 + k)] += sample[pol] * weight
@@ -533,23 +531,21 @@ class GridderHost(object):
         x = np.arange(N) / N - 0.5
         return kaiser_bessel_fourier(x, self.grid_parameters.antialias_width, self.beta, out)
 
-    def grid(self, uvw, vis):
+    def grid(self, uv, sub_uv, w_plane, vis):
         """Add visibilities to the grid, with convolutional gridding.
 
         Parameters
         ----------
-        uvw : 2D Quantity array
-            UVW coordinates for visibilities, indexed by sample then u/v/w
-        vis : 2D ndarray of complex
+        uv : 2D array, integer
+            Preprocessed grid UV coordinates
+        sub_uv : 2D array, integer
+            Preprocessed grid UV sub-pixel coordinates
+        w_plane : 1D array, integer
+            Preprocessed grid W plane coordinates
+        vis : 2D ndarray of complex or real
             Visibility data, indexed by sample and polarization, and
             pre-multiplied by all weights
         """
-        assert uvw.unit.physical_type == 'length'
-        pixels = self.image_parameters.pixels
-        w_scale = float(units.m / self.grid_parameters.max_w) * (self.grid_parameters.w_planes - 1)
         _grid(self.kernel, self.values,
-              uvw.to(units.m).value.astype(np.float32), vis,
-              self.image_parameters.pixels,
-              self.image_parameters.cell_size.to(units.m).value,
-              self.grid_parameters.oversample,
-              np.float32(w_scale), np.empty((vis.shape[1],), self.values.dtype))
+              uv, sub_uv, w_plane, vis,
+              np.empty((vis.shape[1],), self.values.dtype))

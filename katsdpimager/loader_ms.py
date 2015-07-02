@@ -101,7 +101,9 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
                 weight = self._main.getcol('WEIGHT', start, end - start)[valid, ...]
             flag = self._main.getcol('FLAG', start, end - start)[valid, ...]
             weight = weight * np.logical_not(flag[:, channel, :])
-            yield dict(uvw=uvw, weights=weight, vis=data, progress=end, total=self._main.nrows())
+            baseline = (antenna1 * self._antenna.nrows() + antenna2)[valid, ...]
+            yield dict(uvw=uvw, weights=weight, baselines=baseline, vis=data,
+                       progress=end, total=self._main.nrows())
 
     def close(self):
         self._main.close()
