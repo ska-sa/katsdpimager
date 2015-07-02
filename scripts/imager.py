@@ -112,11 +112,9 @@ def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, po
         for chunk in data_iter(dataset, args):
             if bar is None:
                 bar = progress.make_progressbar("Preprocessing vis", max=chunk['total'])
-            # Transform the visibilities to the desired polarization
-            # TODO: do this as part of preprocess
-            weights = polarization.apply_polarization_matrix_weights(chunk['weights'], polarization_matrix)
-            vis = polarization.apply_polarization_matrix(chunk['vis'], polarization_matrix)
-            collector.add(0, chunk['uvw'], weights, chunk['baselines'], vis)
+            collector.add(
+                0, chunk['uvw'], chunk['weights'], chunk['baselines'], chunk['vis'],
+                polarization_matrix)
             bar.goto(chunk['progress'])
     finally:
         if bar is not None:

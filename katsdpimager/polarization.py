@@ -127,7 +127,19 @@ def apply_polarization_matrix(data, matrix):
     matrix : array-like
         Matrix returned by :py:func:`polarization_matrix`, or constructed
         otherwise.
+
+    Returns
+    -------
+    array-like
+        Transformed visibilities
+
+    Raises
+    ------
+    ValueError
+        if the last dimension of `data` has the wrong size
     """
+    if data.shape[-1] != matrix.shape[1]:
+        raise ValueError('data has the wrong shape')
     out_shape = data.shape[:-1] + matrix.shape[0:1]
     out = np.zeros(out_shape, dtype=data.dtype)
     for i in range(matrix.shape[0]):
@@ -153,7 +165,14 @@ def apply_polarization_matrix_weights(weights, matrix):
     -------
     array-like
         Transformed weights
+
+    Raises
+    ------
+    ValueError
+        if the last dimension of `weights` has the wrong size
     """
+    if weights.shape[-1] != matrix.shape[1]:
+        raise ValueError('weights has the wrong shape')
     # Transform weights to variance estimates. The abs() is to force
     # negative zeros to positive zeros, so that the reciprocal
     # is +inf.

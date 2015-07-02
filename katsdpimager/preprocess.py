@@ -29,6 +29,7 @@ from __future__ import print_function, division
 import h5py
 import numpy as np
 import numba
+import katsdpimager.polarization as polarization
 import katsdpimager.grid as grid
 import astropy.units as units
 
@@ -244,7 +245,7 @@ class VisibilityCollector(object):
             self.grid_parameters.kernel_width,
             self.grid_parameters.oversample)
 
-    def add(self, channel, uvw, weights, baselines, vis):
+    def add(self, channel, uvw, weights, baselines, vis, polarization_matrix=None):
         """Add a set of visibilities to the collector. Each of the provided
         arrays must have the same size on the first axis.
 
@@ -258,14 +259,17 @@ class VisibilityCollector(object):
         weights : array, float32
             N×P array of weights, where P is the number of polarizations.
             Flags must be folded into the weights.
-        baselines: array, int
+        baselines : array, int
             1D array of integer, indicating baseline IDs. The IDs are
             arbitrary and need not be contiguous, and are used only to
             associate visibilities from the same baseline together.
             Negative baseline IDs indicate autocorrelations, which will
             be discarded.
-        vis: array, complex64
+        vis : array, complex64
             N×P array of visibilities.
+        polarization_matrix : matrix, optional
+            If specified, the input visibilities are transformed by this
+            matrix.
         """
         N = uvw.shape[0]
         if len(uvw.shape) != 2:
@@ -281,6 +285,10 @@ class VisibilityCollector(object):
         if uvw.shape[1] != 3:
             raise ValueError('uvw has invalid shape')
         ip = self.image_parameters[channel]
+
+        if polarization_matrix is not None:
+            weights = polarization.apply_polarization_matrix_weights(weights, polarization_matrix)
+            vis = polarization.apply_polarization_matrix(vis, polarization_matrix)
         if weights.shape[1] != len(ip.polarizations):
             raise ValueError('weights has invalid shape')
         if vis.shape[1] != len(ip.polarizations):
