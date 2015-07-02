@@ -63,6 +63,7 @@ class TestTaperDivide(object):
         kernel1d = rs.uniform(1.0, 2.0, size).astype(np.float32)
         fn.buffer('kernel1d').set(command_queue, kernel1d)
         fn.buffer('src').set(command_queue, src)
+        fn.buffer('dest').set(command_queue, np.zeros((size, size), np.float32))
         # Compute expected value
         lm = np.arange(size) * lm_scale + lm_bias
         lm2 = lm * lm
@@ -93,6 +94,7 @@ class TestTaperDivide(object):
         kernel1d = rs.uniform(1.0, 2.0, size).astype(np.float32)
         fn.buffer('kernel1d').set(command_queue, kernel1d)
         fn.buffer('src').set(command_queue, src)
+        fn.buffer('dest').set(command_queue, np.zeros(shape, np.float32))
         # Compute expected value
         lm = np.arange(size) * lm_scale + lm_bias
         lm2 = lm * lm
