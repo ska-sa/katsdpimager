@@ -163,7 +163,15 @@ def _compress_buffer(buffer):
 
 class VisibilityCollector(object):
     """Base class that accepts a stream of visibility data and stores it. The
-    subclasses provide the storage backends.
+    subclasses provide the storage backends. Multiple channels are supported.
+
+    Parameters
+    ----------
+    image_parameters : list of :class:`katsdpimager.parameters.ImageParameters`
+        The image parameters for each channel. They must all have the same set
+        of polarizations.
+    grid_parameters : :class:`katsdpimager.parameters.GridParameters`
+        Gridding parameters
     """
     def __init__(self, image_parameters, grid_parameters):
         self.image_parameters = image_parameters
@@ -243,7 +251,7 @@ class VisibilityCollector(object):
         Parameters
         ----------
         channel : int
-            A channel ID, which indexed the `image_parameters` array passed to
+            A channel ID, which indexes the `image_parameters` array passed to
             the constructor.
         uvw : Quantity array, Quantity
             N×3 array of UVW coordinates.
@@ -310,13 +318,21 @@ class VisibilityCollector(object):
 
 
 class VisibilityCollectorHDF5(VisibilityCollector):
-    """Visibility collector that stores data in an HDF5 file."""
+    """Visibility collector that stores data in an HDF5 file.
+
+    Parameters
+    ----------
+    filename : str
+        Filename for HDF5 file to write
+    args,kwargs
+        Passed to base class constructor
+    """
 
     def __init__(
             self, filename, *args, **kwargs):
         super(VisibilityCollectorHDF5, self).__init__(*args, **kwargs)
         # TODO: need a more intelligent manner to select cache sizes
-        # TODO: investigate adding compression. Should work fairly well on UVW
+        # TODO: investigate adding compression. Should work fairly well on UVW.
         self.filename = filename
         self.file = h5py.File(h5py.h5f.create(filename, fapl=_make_fapl(100003, 128 * 1024**2)))
         self.datasets = []

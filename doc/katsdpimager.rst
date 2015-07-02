@@ -22,6 +22,8 @@ Submodules
    katsdpimager.loader_ms
    katsdpimager.parameters
    katsdpimager.polarization
+   katsdpimager.preprocess
+   katsdpimager.progress
    katsdpimager.types
 
 Module contents
