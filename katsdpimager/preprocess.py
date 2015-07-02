@@ -192,7 +192,7 @@ class VisibilityCollector(object):
 
     @property
     def num_w_slices(self):
-        return 1
+        return self.grid_parameters.w_slices
 
     def _process_buffer(self):
         """Sort and compress the buffer, and write the results to file.
@@ -427,6 +427,7 @@ class VisibilityReaderHDF5(VisibilityReader):
         super(VisibilityReaderHDF5, self).__init__(collector)
         # TODO: think about what to set cache size to
         self.file = h5py.File(h5py.h5f.open(collector.filename, flags=h5py.h5f.ACC_RDONLY, fapl=_make_fapl(100003, 128 * 1024**2)))
+        self.num_w_slices = collector.num_w_slices
 
     def _get_dataset(self, channel, w_slice):
         return self.file['channel_{}'.format(channel)]['slice_{}'.format(w_slice)]
@@ -466,6 +467,10 @@ class VisibilityReaderMem(VisibilityReader):
 
     def len(self, channel, w_slice):
         return sum(len(x) for x in self.datasets[channel][w_slice])
+
+    @property
+    def num_w_slices(self):
+        return len(self.datasets[0])
 
     def close(self):
         super(VisibilityReaderMem, self).close()

@@ -75,7 +75,7 @@ void taper_divide(
                 sincospi(w2 * (n - 1), &s, &c);
                 // Multiply by e^(2pi i w (n-1))
                 Real rotated = value[i][j].x * c - value[i][j].y * s;
-                out[addr[i][j]] = rotated * n / (kernel_y[i] * kernel_x[j]);
+                out[addr[i][j]] += rotated * n / (kernel_y[i] * kernel_x[j]);
             }
     }
 }

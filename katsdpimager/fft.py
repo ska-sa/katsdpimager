@@ -454,6 +454,10 @@ class GridToImage(accel.OperationSequence):
     def set_w(self, w):
         self._taper_divide.set_w(w)
 
+    def clear(self):
+        """TODO: implement on GPU"""
+        self.buffer('image').fill(0)
+
 
 class GridToImageHost(object):
     """CPU-only equivalent to :class:`GridToHost`.
@@ -490,6 +494,9 @@ class GridToImageHost(object):
     def set_w(self, w):
         self.w = w
 
+    def clear(self):
+        self.image.fill(0)
+
     def __call__(self):
         self.layer[:] = np.fft.ifft2(np.fft.ifftshift(self.grid, axes=(1, 2)), axes=(1, 2))
         # Scale factor is to match behaviour of CUFFT, which is unnormalized
@@ -502,5 +509,10 @@ class GridToImageHost(object):
         n = np.sqrt(1 - (lm2[:, np.newaxis] + lm2[np.newaxis, :]))
         w_correct = np.exp(2j * math.pi * self.w * (n - 1))
         self.layer *= w_correct
-        self.image[:] = np.fft.fftshift(self.layer.real * n[np.newaxis, ...], axes=(1, 2)) * scale
-        self.image /= np.outer(self.kernel1d, self.kernel1d)[np.newaxis, ...]
+        # TODO: most of the calculations here would be more efficient with numba
+        image = self.layer.real.copy()
+        image *= scale
+        image *= n[np.newaxis, ...]
+        image = np.fft.fftshift(image, axes=(1, 2))
+        image /= np.outer(self.kernel1d, self.kernel1d)[np.newaxis, ...]
+        self.image += image

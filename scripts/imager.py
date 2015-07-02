@@ -123,21 +123,28 @@ def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, po
         collector.close()
     return collector
 
-def make_dirty(queue, reader, name, field, polarization_matrix, gridder, grid_to_image, mid_w):
-    gridder.clear()
-    bar = progress.make_progressbar('Gridding {}'.format(name), max=reader.len(0, 0))
-    with progress.finishing(bar):
-        for chunk in reader.iter_slice(0, 0):
-            gridder.grid(chunk.uv, chunk.sub_uv, chunk.w_plane, chunk[field])
+def make_dirty(queue, reader, name, field, gridder, grid_to_image, mid_w):
+    grid_to_image.clear()
+    for w_slice in range(reader.num_w_slices):
+        label = '{} {}/{}'.format(name, w_slice + 1, reader.num_w_slices)
+        N = reader.len(0, w_slice)
+        bar = progress.make_progressbar('Grid {}'.format(label), max=max(N, 1))
+        gridder.clear()
+        with progress.finishing(bar):
+            for chunk in reader.iter_slice(0, w_slice):
+                gridder.grid(chunk.uv, chunk.sub_uv, chunk.w_plane, chunk[field])
+                if queue:
+                    queue.finish()
+                bar.next(len(chunk))
+            if N == 0:
+                # Show 100% even though there was nothing to do
+                bar.next()
+
+        with progress.step('FFT {}'.format(label)):
+            grid_to_image.set_w(mid_w[w_slice])
+            grid_to_image()
             if queue:
                 queue.finish()
-            bar.next(len(chunk))
-
-    with progress.step('FFT {}'.format(name)):
-        grid_to_image.set_w(mid_w)
-        grid_to_image()
-        if queue:
-            queue.finish()
 
 def psf_shape(image_parameters, clean_parameters):
     psf_patch = min(image_parameters.pixels, clean_parameters.psf_patch)
@@ -243,8 +250,9 @@ def main():
         reader = collector.reader()
 
         #### Create dirty image ####
-        mid_w = float(0.5 * grid_p.max_w / image_p.wavelength)
-        make_dirty(queue, reader, 'PSF', 'weights', polarization_matrix, gridder, grid_to_image, mid_w)
+        slice_w_step = float(grid_p.max_w / image_p.wavelength / grid_p.w_slices)
+        mid_w = np.arange(0.5, grid_p.w_slices) * slice_w_step
+        make_dirty(queue, reader, 'PSF', 'weights', gridder, grid_to_image, mid_w)
         # TODO: all this scaling is hacky. Move it into subroutines somewhere
         scale = np.reciprocal(image[..., image.shape[1] // 2, image.shape[2] // 2])
         scale = scale[:, np.newaxis, np.newaxis]
@@ -253,7 +261,7 @@ def main():
             with progress.step('Write PSF'):
                 io.write_fits_image(dataset, image, image_p, args.write_psf)
         extract_psf(image, psf)
-        make_dirty(queue, reader, 'dirty image', 'vis', polarization_matrix, gridder, grid_to_image, mid_w)
+        make_dirty(queue, reader, 'dirty image', 'vis', gridder, grid_to_image, mid_w)
         image *= scale
         if args.write_grid is not None:
             with progress.step('Write grid'):
