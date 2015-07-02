@@ -53,7 +53,7 @@ def _make_dtype(num_polarizations, internal):
         ('w_plane', np.int16)
     ]
     if internal:
-        fields += [('baseline', np.int16), ('w_slice', np.int16), ('channel', np.int32)]
+        fields += [('w_slice', np.int16), ('channel', np.int32), ('baseline', np.int32)]
     return np.dtype(fields)
 
 
