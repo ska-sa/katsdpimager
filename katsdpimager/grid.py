@@ -456,7 +456,7 @@ class Gridder(accel.Operation):
         self.buffer('uv')[:N, 2:4] = sub_uv
         self.buffer('w_plane')[:N] = w_plane
         self.buffer('vis')[:N] = vis
-        self()
+        return self()
 
     def _run(self):
         if self._num_vis == 0:

@@ -7,6 +7,7 @@ import astropy.units as units
 import numpy as np
 import logging
 import colors
+import functools
 import katsdpsigproc.accel as accel
 import katsdpimager.loader as loader
 import katsdpimager.parameters as parameters
@@ -90,6 +91,7 @@ def get_parser():
     group.add_argument('--write-dirty', metavar='FILE', help='Write dirty image to FITS file')
     group.add_argument('--write-model', metavar='FILE', help='Write model image to FITS file')
     group.add_argument('--write-residuals', metavar='FILE', help='Write image residuals to FITS file')
+    group.add_argument('--profile', action='store_true', help='Do profiling on GPU code')
     group.add_argument('--vis-limit', type=int, metavar='N', help='Use only the first N visibilities')
     return parser
 
@@ -131,6 +133,23 @@ def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, po
         collector.num_input, collector.num_output, 100.0 * collector.num_output / collector.num_input)
     return collector
 
+
+def timer(queue):
+    """Decorator that enqueues markers before and after the wrapped function, and
+    returns a function that, when called, returns the elapsed time."""
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            def get_elapsed():
+                return end.time_since(start)
+            start = queue.enqueue_marker()
+            fn(*args, **kwargs)
+            end = queue.enqueue_marker()
+            return get_elapsed
+        return wrapper
+    return decorator
+
+
 def make_dirty(queue, reader, name, field, gridder, grid_to_image, mid_w):
     grid_to_image.clear()
     for w_slice in range(reader.num_w_slices):
@@ -141,12 +160,20 @@ def make_dirty(queue, reader, name, field, gridder, grid_to_image, mid_w):
         label = '{} {}/{}'.format(name, w_slice + 1, reader.num_w_slices)
         bar = progress.make_progressbar('Grid {}'.format(label), max=N)
         gridder.clear()
+        grid_time = 0.0
         with progress.finishing(bar):
             for chunk in reader.iter_slice(0, w_slice):
-                gridder.grid(chunk.uv, chunk.sub_uv, chunk.w_plane, chunk[field])
+                t = gridder.grid(chunk.uv, chunk.sub_uv, chunk.w_plane, chunk[field])
                 if queue:
+                    # Need to serialise calls to grid, since otherwise the next
+                    # call will overwrite the incoming data before the previous
+                    # iteration is done with it.
                     queue.finish()
+                if t is not None:
+                    grid_time += t()
                 bar.next(len(chunk))
+        if grid_time > 0.0:
+            logger.info("Gridded %d points in %.3fs (%.3g/s)", N, grid_time, N / grid_time)
 
         with progress.step('FFT {}'.format(label)):
             grid_to_image.set_w(mid_w[w_slice])
@@ -221,7 +248,7 @@ def main():
     context = None
     if not args.host:
         context = accel.create_some_context(device_filter=lambda x: x.is_cuda)
-        queue = context.create_command_queue()
+        queue = context.create_command_queue(profile=args.profile)
 
     with closing(loader.load(args.input_file, args.input_option)) as dataset:
         #### Determine parameters ####
@@ -277,6 +304,8 @@ def main():
             gridder_template = grid.GridderTemplate(context, image_p, grid_p)
             gridder = gridder_template.instantiate(queue, array_p, args.vis_block, allocator)
             gridder.ensure_all_bound()
+            if args.profile:
+                grid.Gridder.__call__ = timer(queue)(grid.Gridder.__call__)
             grid_data = gridder.buffer('grid')
             # Grid to image
             kernel1d = accel.SVMArray(context, (image_p.pixels,), image_p.real_dtype)
