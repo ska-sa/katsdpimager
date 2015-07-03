@@ -69,11 +69,11 @@ def get_parser():
     group = parser.add_argument_group('Gridding options')
     group.add_argument('--grid-oversample', type=int, default=8, help='Oversampling factor for convolution kernels [%(default)s]')
     group.add_argument('--kernel-image-oversample', type=int, default=4, help='Oversampling factor for kernel generation [%(default)s]')
-    group.add_argument('--w-slices', type=int, default=1, help='Number of W slices [%(default)s]')
+    group.add_argument('--w-slices', type=int, help='Number of W slices [computed from --kernel-width]')
     group.add_argument('--w-planes', type=int, default=128, help='Number of W planes per slice [%(default)s]'),
     group.add_argument('--max-w', type=parse_quantity, help='Largest w, as either distance or wavelengths [longest baseline]')
     group.add_argument('--aa-width', type=float, default=7, help='Support of anti-aliasing kernel [%(default)s]')
-    group.add_argument('--kernel-width', type=int, default=None, help='Support of combined anti-aliasing + w kernel [computed]')
+    group.add_argument('--kernel-width', type=int, default=64, help='Support of combined anti-aliasing + w kernel [computed]')
     group.add_argument('--eps-w', type=float, default=0.01, help='Level at which to truncate W kernel [%(default)s]')
     group = parser.add_argument_group('Cleaning options')
     # TODO: compute from some heuristic if not specified, instead of a hard-coded default
@@ -84,7 +84,7 @@ def get_parser():
     group = parser.add_argument_group('Performance tuning options')
     group.add_argument('--vis-block', type=int, default=1048576, help='Number of visibilities to load at a time [%(default)s]')
     group = parser.add_argument_group('Debugging options')
-    group.add_argument('--host', action='store_true', help='Perform gridding on the CPU')
+    group.add_argument('--host', action='store_true', help='Perform operations on the CPU')
     group.add_argument('--write-psf', metavar='FILE', help='Write image of PSF to FITS file')
     group.add_argument('--write-grid', metavar='FILE', help='Write UV grid to FITS file')
     group.add_argument('--write-dirty', metavar='FILE', help='Write dirty image to FITS file')
@@ -238,8 +238,8 @@ def main():
             args.max_w = array_p.longest_baseline
         elif args.max_w.unit.physical_type == 'dimensionless':
             args.max_w = args.max_w * image_p.wavelength
-        if args.kernel_width is None:
-            args.kernel_width = parameters.w_kernel_width(image_p, 0.5 * args.max_w, args.eps_w, args.aa_width)
+        if args.w_slices is None:
+            args.w_slices = parameters.w_slices(image_p, args.max_w, args.eps_w, args.kernel_width, args.aa_width)
         grid_p = parameters.GridParameters(
             args.aa_width, args.grid_oversample, args.kernel_image_oversample,
             args.w_slices, args.w_planes, args.max_w, args.kernel_width)
@@ -314,7 +314,7 @@ def main():
             with progress.step('Write PSF'):
                 io.write_fits_image(dataset, image, image_p, args.write_psf)
         extract_psf(image, psf)
-        make_dirty(queue, reader, 'dirty image', 'vis', gridder, grid_to_image, mid_w)
+        make_dirty(queue, reader, 'image', 'vis', gridder, grid_to_image, mid_w)
         image *= scale
         if args.write_grid is not None:
             with progress.step('Write grid'):

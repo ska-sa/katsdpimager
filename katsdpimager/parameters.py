@@ -144,6 +144,24 @@ def w_kernel_width(image_parameters, w, eps_w, antialias_width=0):
         + wl**1.5 * fov / (2 * math.pi * eps_w))
     return np.sqrt(wk2 + antialias_width**2)
 
+def w_slices(image_parameters, max_w, eps_w, kernel_width, antialias_width=0):
+    lo = 0
+    hi = 1
+    # Each slice is corrected to its center, so maximum W deviation from the
+    # slice center is only half the slice thickness.
+    max_w = max_w * 0.5
+    # Find a number of slices that is definitely big enough
+    while w_kernel_width(image_parameters, max_w / hi, eps_w, antialias_width) > kernel_width:
+        hi *= 2
+    # Binary search
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if w_kernel_width(image_parameters, max_w / mid, eps_w, antialias_width) < kernel_width:
+            hi = mid
+        else:
+            lo = mid
+    return hi
+
 
 class GridParameters(object):
     """Parameters affecting gridding algorithm.
