@@ -126,9 +126,12 @@ def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, po
 def make_dirty(queue, reader, name, field, gridder, grid_to_image, mid_w):
     grid_to_image.clear()
     for w_slice in range(reader.num_w_slices):
-        label = '{} {}/{}'.format(name, w_slice + 1, reader.num_w_slices)
         N = reader.len(0, w_slice)
-        bar = progress.make_progressbar('Grid {}'.format(label), max=max(N, 1))
+        if N == 0:
+            logging.info("Skipping slice %d which has no visibilities", w_slice + 1)
+            continue
+        label = '{} {}/{}'.format(name, w_slice + 1, reader.num_w_slices)
+        bar = progress.make_progressbar('Grid {}'.format(label), max=N)
         gridder.clear()
         with progress.finishing(bar):
             for chunk in reader.iter_slice(0, w_slice):
@@ -136,9 +139,6 @@ def make_dirty(queue, reader, name, field, gridder, grid_to_image, mid_w):
                 if queue:
                     queue.finish()
                 bar.next(len(chunk))
-            if N == 0:
-                # Show 100% even though there was nothing to do
-                bar.next()
 
         with progress.step('FFT {}'.format(label)):
             grid_to_image.set_w(mid_w[w_slice])
