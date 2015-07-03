@@ -8,5 +8,6 @@ mock
 numba
 pycuda
 h5py
+ansicolors
 scikits.cuda==0.5.0b2
 git+ssh://git@github.com/ska-sa/katsdpsigproc@imager-support#egg=katsdpsigproc
