@@ -185,6 +185,8 @@ class VisibilityCollector(object):
         self._buffer = np.rec.recarray((1024**2,), self.buffer_dtype)
         #: Number of valid elements in buffer
         self._used = 0
+        self.num_input = 0
+        self.num_output = 0
 
     @property
     def num_channels(self):
@@ -216,6 +218,8 @@ class VisibilityCollector(object):
                 self._emit(buffer[prev:end])
                 prev = end
             self._emit(buffer[prev:N])
+        self.num_input += self._used
+        self.num_output += N
         self._used = 0
 
     def _emit(self, elements):

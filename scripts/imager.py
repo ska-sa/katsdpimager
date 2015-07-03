@@ -6,6 +6,7 @@ import argparse
 import astropy.units as units
 import numpy as np
 import logging
+import colors
 import katsdpsigproc.accel as accel
 import katsdpimager.loader as loader
 import katsdpimager.parameters as parameters
@@ -17,6 +18,10 @@ import katsdpimager.fft as fft
 import katsdpimager.clean as clean
 import katsdpimager.progress as progress
 from contextlib import closing, contextmanager
+
+
+logger = logging.getLogger()
+
 
 def parse_quantity(str_value):
     """Parse a string into an astropy Quantity. Rather than trying to guess
@@ -50,6 +55,7 @@ def get_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('input_file', type=str, metavar='INPUT', help='Input measurement set')
     parser.add_argument('output_file', type=str, metavar='OUTPUT', help='Output FITS file')
+    parser.add_argument('--log-level', type=str, default='INFO', metavar='LEVEL', help='Logging level [%(default)s]')
     group = parser.add_argument_group('Input selection')
     group.add_argument('--input-option', '-i', action='append', default=[], metavar='KEY=VALUE', help='Backend-specific input parsing option')
     group.add_argument('--channel', '-c', type=int, default=0, help='Channel number [%(default)s]')
@@ -67,7 +73,7 @@ def get_parser():
     group.add_argument('--w-planes', type=int, default=128, help='Number of W planes per slice [%(default)s]'),
     group.add_argument('--max-w', type=parse_quantity, help='Largest w, as either distance or wavelengths [longest baseline]')
     group.add_argument('--aa-width', type=float, default=7, help='Support of anti-aliasing kernel [%(default)s]')
-    group.add_argument('--kernel-width', type=float, default=None, help='Support of combined anti-aliasing + w kernel [computed]')
+    group.add_argument('--kernel-width', type=int, default=None, help='Support of combined anti-aliasing + w kernel [computed]')
     group.add_argument('--eps-w', type=float, default=0.01, help='Level at which to truncate W kernel [%(default)s]')
     group = parser.add_argument_group('Cleaning options')
     # TODO: compute from some heuristic if not specified, instead of a hard-coded default
@@ -121,6 +127,8 @@ def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, po
         if bar is not None:
             bar.finish()
         collector.close()
+    logger.info("Compressed %d visibilities to %d (%.2f%%)",
+        collector.num_input, collector.num_output, 100.0 * collector.num_output / collector.num_input)
     return collector
 
 def make_dirty(queue, reader, name, field, gridder, grid_to_image, mid_w):
@@ -128,7 +136,7 @@ def make_dirty(queue, reader, name, field, gridder, grid_to_image, mid_w):
     for w_slice in range(reader.num_w_slices):
         N = reader.len(0, w_slice)
         if N == 0:
-            logging.info("Skipping slice %d which has no visibilities", w_slice + 1)
+            logger.info("Skipping slice %d which has no visibilities", w_slice + 1)
             continue
         label = '{} {}/{}'.format(name, w_slice + 1, reader.num_w_slices)
         bar = progress.make_progressbar('Grid {}'.format(label), max=N)
@@ -163,10 +171,51 @@ def extract_psf(image, psf):
     x1 = y0 + psf.shape[2]
     psf[...] = image[..., y0:y1, x0:x1]
 
+
+class ColorFormatter(logging.Formatter):
+    COLORS = {
+        logging.CRITICAL: colors.red,
+        logging.ERROR: colors.red,
+        logging.WARNING: colors.magenta,
+        logging.INFO: colors.green,
+        logging.DEBUG: colors.blue
+    }
+
+    def __init__(self, *args, **kwargs):
+        super(ColorFormatter, self).__init__(*args, **kwargs)
+
+    def format(self, record):
+        msg = super(ColorFormatter, self).format(record)
+        if record.levelno in self.COLORS:
+            msg = self.COLORS[record.levelno](msg)
+        return msg
+
+
+def configure_logging(args):
+    log_handler = logging.StreamHandler()
+    fmt = "[%(levelname)s] %(message)s"
+    if sys.stderr.isatty():
+        log_handler.setFormatter(ColorFormatter(fmt))
+    else:
+        log_handler.setFormatter(logging.Formatter(fmt))
+    logger.addHandler(log_handler)
+    logger.setLevel(args.log_level.upper())
+
+def log_parameters(name, params):
+    if logger.isEnabledFor(logging.INFO):
+        s = str(params)
+        lines = s.split('\n')
+        logger.info(name + ":")
+        for line in lines:
+            if line:
+                logger.info('    ' + line)
+
+
 def main():
     parser = get_parser()
     args = parser.parse_args()
     args.input_option = ['--' + opt for opt in args.input_option]
+    configure_logging(args)
 
     queue = None
     context = None
@@ -203,6 +252,10 @@ def main():
         clean_p = parameters.CleanParameters(
             args.minor, args.loop_gain, clean_mode,
             args.psf_patch)
+
+        log_parameters("Image parameters", image_p)
+        log_parameters("Grid parameters", grid_p)
+        log_parameters("CLEAN parameters", clean_p)
 
         #### Create data and operation instances ####
         lm_scale = float(image_p.pixel_size)
@@ -295,5 +348,4 @@ def main():
             io.write_fits_image(dataset, model, image_p, args.output_file)
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
     main()

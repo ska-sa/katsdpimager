@@ -93,6 +93,9 @@ import numba
 import logging
 
 
+logger = logging.getLogger(__name__)
+
+
 def kaiser_bessel(x, width, beta):
     r"""Evaluate Kaiser-Bessel window function. Refer to
     http://www.dsprelated.com/freebooks/sasp/Kaiser_Window.html
@@ -339,7 +342,8 @@ class GridderTemplate(object):
         # Round kernel size up to a power of 2
         while kernel_size < grid_parameters.kernel_width:
             kernel_size *= 2
-        logging.info("Using kernel size of %d", kernel_size)
+        if kernel_size != grid_parameters.kernel_width:
+            logger.info("kernel size rounded up to %d", kernel_size)
         assert kernel_size % self.tile_x == 0
         assert kernel_size % self.tile_y == 0
         self.num_polarizations = len(image_parameters.polarizations)
