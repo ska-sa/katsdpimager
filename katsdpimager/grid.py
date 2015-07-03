@@ -332,10 +332,10 @@ class GridderTemplate(object):
         self.image_parameters = image_parameters
         self.dtype = image_parameters.complex_dtype
         # These must be powers of 2. TODO: autotune
-        self.wgs_x = 8
-        self.wgs_y = 8
-        self.multi_x = 2
-        self.multi_y = 2
+        self.wgs_x = 16
+        self.wgs_y = 16
+        self.multi_x = 1
+        self.multi_y = 1
         self.tile_x = self.wgs_x * self.multi_x
         self.tile_y = self.wgs_y * self.multi_y
         kernel_size = max(self.tile_x, self.tile_y)
