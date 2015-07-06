@@ -74,7 +74,7 @@ def get_parser():
     group.add_argument('--grid-oversample', type=int, default=8, help='Oversampling factor for convolution kernels [%(default)s]')
     group.add_argument('--kernel-image-oversample', type=int, default=4, help='Oversampling factor for kernel generation [%(default)s]')
     group.add_argument('--w-slices', type=int, help='Number of W slices [computed from --kernel-width]')
-    group.add_argument('--w-planes', type=int, default=128, help='Number of W planes per slice [%(default)s]'),
+    group.add_argument('--w-step', type=parse_quantity, default='1.0', help='Separation between W planes, in subgrid cells or a distance [%(default)s]'),
     group.add_argument('--max-w', type=parse_quantity, help='Largest w, as either distance or wavelengths [longest baseline]')
     group.add_argument('--aa-width', type=float, default=7, help='Support of anti-aliasing kernel [%(default)s]')
     group.add_argument('--kernel-width', type=int, default=64, help='Support of combined anti-aliasing + w kernel [computed]')
@@ -280,9 +280,17 @@ def main():
             args.max_w = args.max_w * image_p.wavelength
         if args.w_slices is None:
             args.w_slices = parameters.w_slices(image_p, args.max_w, args.eps_w, args.kernel_width, args.aa_width)
+        if args.w_step.unit.physical_type == 'length':
+            w_planes = float(args.max_w / args.w_step)
+        elif args.w_step.unit.physical_type == 'dimensionless':
+            w_step = args.w_step * image_p.cell_size / args.grid_oversample
+            w_planes = float(args.max_w / w_step)
+        else:
+            raise ValueError('--w-step must be dimensionless or a length')
+        w_planes = int(np.ceil(w_planes / args.w_slices))
         grid_p = parameters.GridParameters(
             args.aa_width, args.grid_oversample, args.kernel_image_oversample,
-            args.w_slices, args.w_planes, args.max_w, args.kernel_width)
+            args.w_slices, w_planes, args.max_w, args.kernel_width)
         if args.clean_mode == 'I':
             clean_mode = clean.CLEAN_I
         elif args.clean_mode == 'IQUV':
