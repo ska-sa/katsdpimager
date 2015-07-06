@@ -8,6 +8,9 @@ import numpy as np
 import logging
 import colors
 import functools
+import tempfile
+import atexit
+import os
 import katsdpsigproc.accel as accel
 import katsdpimager.loader as loader
 import katsdpimager.parameters as parameters
@@ -83,7 +86,9 @@ def get_parser():
     group.add_argument('--minor', type=int, default=1000, help='Minor cycles per major cycle [%(default)s]')
     group.add_argument('--clean-mode', choices=['I', 'IQUV'], default='IQUV', help='Stokes parameters to consider for peak-finding [%(default)s]')
     group = parser.add_argument_group('Performance tuning options')
-    group.add_argument('--vis-block', type=int, default=1048576, help='Number of visibilities to load at a time [%(default)s]')
+    group.add_argument('--vis-block', type=int, default=1048576, help='Number of visibilities to load and grid at a time [%(default)s]')
+    group.add_argument('--no-tmp-file', dest='tmp_file', action='store_false', default=True, help='Keep preprocessed visibilities in memory')
+    group.add_argument('--max-cache-size', type=int, default=None, help='Limit HDF5 cache size for preprocessing')
     group = parser.add_argument_group('Debugging options')
     group.add_argument('--host', action='store_true', help='Perform operations on the CPU')
     group.add_argument('--write-psf', metavar='FILE', help='Write image of PSF to FITS file')
@@ -116,7 +121,15 @@ def data_iter(dataset, args):
 
 def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, polarization_matrix):
     bar = None
-    collector = preprocess.VisibilityCollectorMem([image_parameters], grid_parameters, args.vis_block)
+    if args.tmp_file:
+        handle, filename = tempfile.mkstemp('.h5')
+        os.close(handle)
+        atexit.register(os.remove, filename)
+        collector = preprocess.VisibilityCollectorHDF5(
+            filename, [image_parameters], grid_parameters, args.vis_block,
+            max_cache_size=args.max_cache_size)
+    else:
+        collector = preprocess.VisibilityCollectorMem([image_parameters], grid_parameters, args.vis_block)
     try:
         for chunk in data_iter(dataset, args):
             if bar is None:
