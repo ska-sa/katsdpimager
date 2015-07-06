@@ -315,7 +315,7 @@ class VisibilityCollector(object):
                 uvw[start : end],
                 weights[start : end],
                 baselines[start : end],
-                vis[start : end], 
+                vis[start : end],
                 self._buffer[self._used : self._used + M])
             self._used += M
             start += M
