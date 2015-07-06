@@ -116,7 +116,7 @@ def data_iter(dataset, args):
 
 def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, polarization_matrix):
     bar = None
-    collector = preprocess.VisibilityCollectorMem([image_parameters], grid_parameters)
+    collector = preprocess.VisibilityCollectorMem([image_parameters], grid_parameters, args.vis_block)
     try:
         for chunk in data_iter(dataset, args):
             if bar is None:

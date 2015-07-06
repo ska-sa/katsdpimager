@@ -58,7 +58,7 @@ class BaseTestVisibilityCollector(object):
                 np.testing.assert_array_equal(actual.w_plane, slice_data.w_plane)
 
     def test_empty(self):
-        with closing(self.factory()) as collector:
+        with closing(self.factory(self.image_parameters, self.grid_parameters, 2)) as collector:
             pass
         self.check(collector, [[np.rec.recarray(0, collector.store_dtype)] for channel in range(2)])
 
@@ -87,7 +87,7 @@ class BaseTestVisibilityCollector(object):
             [1.5 + 1.3j, 1.1 + 2.7j, 1.0 - 2j, 2.5 + 1j],
             [1.2 + 3.4j, 5.6 + 7.8j, 9.0 + 1.2j, 3.4 + 5.6j],
             ], dtype=np.complex64)
-        with closing(self.factory()) as collector:
+        with closing(self.factory(self.image_parameters, self.grid_parameters, 64)) as collector:
             collector.add(0, uvw, weights, baselines, vis)
         self.check(collector, [[np.rec.fromarrays([
             [[1089, 1011], [951, 908]],
@@ -100,19 +100,19 @@ class BaseTestVisibilityCollector(object):
 
 
 class TestVisibilityCollectorMem(BaseTestVisibilityCollector):
-    def factory(self):
-        return preprocess.VisibilityCollectorMem(self.image_parameters, self.grid_parameters)
+    def factory(self, *args, **kwargs):
+        return preprocess.VisibilityCollectorMem(*args, **kwargs)
 
 class TestVisibilityCollectorHDF5(BaseTestVisibilityCollector):
     def setup(self):
         super(TestVisibilityCollectorHDF5, self).setup()
         self._tmpfiles = []
 
-    def factory(self):
+    def factory(self, *args, **kwargs):
         handle, filename = tempfile.mkstemp(suffix='.h5')
         self._tmpfiles.append(filename)
         os.close(handle)
-        return preprocess.VisibilityCollectorHDF5(filename, self.image_parameters, self.grid_parameters)
+        return preprocess.VisibilityCollectorHDF5(filename, *args, **kwargs)
 
     def teardown(self):
         for filename in self._tmpfiles:

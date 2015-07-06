@@ -174,15 +174,16 @@ class VisibilityCollector(object):
         of polarizations.
     grid_parameters : :class:`katsdpimager.parameters.GridParameters`
         Gridding parameters
+    buffer_size : int
+        Number of visibilities to buffer, prior to compression
     """
-    def __init__(self, image_parameters, grid_parameters):
+    def __init__(self, image_parameters, grid_parameters, buffer_size):
         self.image_parameters = image_parameters
         self.grid_parameters = grid_parameters
         num_polarizations = len(image_parameters[0].polarizations)
         self.store_dtype = _make_dtype(num_polarizations, False)
         self.buffer_dtype = _make_dtype(num_polarizations, True)
-        # TODO: set buffer size more sensibly
-        self._buffer = np.rec.recarray((1024**2,), self.buffer_dtype)
+        self._buffer = np.rec.recarray(buffer_size, self.buffer_dtype)
         #: Number of valid elements in buffer
         self._used = 0
         self.num_input = 0
