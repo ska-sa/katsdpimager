@@ -150,7 +150,7 @@ def timer(queue):
     return decorator
 
 
-def make_dirty(queue, reader, name, field, gridder, grid_to_image, mid_w):
+def make_dirty(queue, reader, name, field, gridder, grid_to_image, mid_w, vis_block):
     grid_to_image.clear()
     for w_slice in range(reader.num_w_slices):
         N = reader.len(0, w_slice)
@@ -162,7 +162,7 @@ def make_dirty(queue, reader, name, field, gridder, grid_to_image, mid_w):
         gridder.clear()
         grid_time = 0.0
         with progress.finishing(bar):
-            for chunk in reader.iter_slice(0, w_slice):
+            for chunk in reader.iter_slice(0, w_slice, vis_block):
                 t = gridder.grid(chunk.uv, chunk.sub_uv, chunk.w_plane, chunk[field])
                 if queue:
                     # Need to serialise calls to grid, since otherwise the next
@@ -334,7 +334,7 @@ def main():
         #### Create dirty image ####
         slice_w_step = float(grid_p.max_w / image_p.wavelength / grid_p.w_slices)
         mid_w = np.arange(0.5, grid_p.w_slices) * slice_w_step
-        make_dirty(queue, reader, 'PSF', 'weights', gridder, grid_to_image, mid_w)
+        make_dirty(queue, reader, 'PSF', 'weights', gridder, grid_to_image, mid_w, args.vis_block)
         # TODO: all this scaling is hacky. Move it into subroutines somewhere
         scale = np.reciprocal(image[..., image.shape[1] // 2, image.shape[2] // 2])
         scale = scale[:, np.newaxis, np.newaxis]
@@ -343,7 +343,7 @@ def main():
             with progress.step('Write PSF'):
                 io.write_fits_image(dataset, image, image_p, args.write_psf)
         extract_psf(image, psf)
-        make_dirty(queue, reader, 'image', 'vis', gridder, grid_to_image, mid_w)
+        make_dirty(queue, reader, 'image', 'vis', gridder, grid_to_image, mid_w, args.vis_block)
         image *= scale
         if args.write_grid is not None:
             with progress.step('Write grid'):

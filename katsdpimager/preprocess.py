@@ -13,10 +13,8 @@ The following transformations are done:
 - Visibilities with the same UVW coordinates (after quantisation) are merged
   ("compressed").
 
-The resulting visibilities are stored in HDF5. A separate dataset is created
-for each channel and W slice, because the data needs to be fully sorted by W
-slice. HDF5 variable-length arrays are not suitable because the whole
-variable-length array has to be loaded as a unit.
+The resulting visibilities are stored in HDF5 (:class:`VisibilityCollectorHDF5`)
+or numpy arrays (:class:`VisibilityCollectorMem`).
 
 Partial sorting by baseline is implemented by buffering up a reasonably large
 number of visibilities and sorting them. The merging is also partial, since
@@ -29,9 +27,14 @@ from __future__ import print_function, division
 import h5py
 import numpy as np
 import numba
+import math
+import logging
 import katsdpimager.polarization as polarization
 import katsdpimager.grid as grid
 import astropy.units as units
+
+
+logger = logging.getLogger(__name__)
 
 
 def _make_dtype(num_polarizations, internal):
@@ -58,7 +61,7 @@ def _make_dtype(num_polarizations, internal):
     return np.dtype(fields)
 
 
-def _make_fapl(cache_entries, cache_size):
+def _make_fapl(cache_entries, cache_size, w0):
     """Create a File Access Properties List for h5py with a specified number
     of cache entries and cache size. This is based around the internal
     make_fapl function in h5py.
@@ -66,7 +69,7 @@ def _make_fapl(cache_entries, cache_size):
 
     fapl = h5py.h5p.create(h5py.h5p.FILE_ACCESS)
     cache_settings = list(fapl.get_cache())
-    fapl.set_cache(cache_settings[0], cache_entries, cache_size, cache_settings[3])
+    fapl.set_cache(cache_settings[0], cache_entries, cache_size, w0)
     fapl.set_fclose_degree(h5py.h5f.CLOSE_STRONG)
     fapl.set_libver_bounds(h5py.h5f.LIBVER_LATEST, h5py.h5f.LIBVER_LATEST)
     return fapl
@@ -332,47 +335,100 @@ class VisibilityCollector(object):
         raise NotImplementedError()
 
 
+def _is_prime(n):
+    for i in xrange(2, int(math.sqrt(n) + 1)):
+        if n % i == 0:
+            return False
+    return True
+
+
 class VisibilityCollectorHDF5(VisibilityCollector):
-    """Visibility collector that stores data in an HDF5 file.
+    """Visibility collector that stores data in an HDF5 file. All the
+    visibilities are stored in one dataset, with axes for channel and W-slice.
+    The visibilities for one channel and W-slice are strung along the third
+    axis. This creates a ragged array, which HDF5 does not directly support
+    (it supports variable-length arrays, but as far as I can tell each VL
+    array is stored and retrieved as a unit, rather than chunked). However,
+    chunked storage allocates chunks only as needed, so we store a regular
+    array and use an attribute to indicate the length of each row.
+
+    An alternative is to use a separate dataset for each channel and W-slice.
+    This will work, but (again, as far as I can tell), libhdf5 uses a separate
+    cache for each dataset, making it difficult to bound the total memory
+    usage in this scenario.
+
+    Chunks are shaped so that each chunk only contains data for one channel
+    and W-slice, to allow this data to be efficiently read back.
 
     Parameters
     ----------
     filename : str
         Filename for HDF5 file to write
+    max_cache_size : int, optional
+        Maximum bytes to use for the HDF5 chunk cache. The default is
+        unbounded. The actual size will not be larger than one chunk per
+        channel/w-slice pair.
+    chunk_elements : int, optional
+        Number of visibilities per chunk. The default corresponds to about
+        1MB per chunk for full-Stokes. Reducing this will save memory, but may
+        reduce performance (particularly for spinning drives with high
+        latency).
     args,kwargs
         Passed to base class constructor
     """
 
-    def __init__(
-            self, filename, *args, **kwargs):
+    def __init__(self, filename, *args, **kwargs):
+        max_cache_size = kwargs.pop('max_cache_size', None)
+        chunk_elements = kwargs.pop('chunk_elements', 16384)
         super(VisibilityCollectorHDF5, self).__init__(*args, **kwargs)
-        # TODO: need a more intelligent manner to select cache sizes
-        # TODO: investigate adding compression. Should work fairly well on UVW.
+        chunk_size = chunk_elements * self.store_dtype.itemsize
+        # We will be jumping between channels and W slices, so to avoid
+        # evicting a chunk and then reloading it, we ideally have a big
+        # enough cache to hold one chunk for each channel+w-slice.
+        cache_chunks = self.num_channels * self.num_w_slices
+        cache_size = chunk_size * cache_chunks
+        if max_cache_size is not None and cache_size > max_cache_size:
+            cache_size = max_cache_size
+            cache_chunks = cache_size // chunk_size
+        # HDF5 recommendation for max performance is 100 slots per chunk, and
+        # a prime number
+        slots = cache_chunks * 100 + 1
+        while not _is_prime(slots):
+            slots += 2
+        logger.debug('Setting cache size to %d slots, %d bytes', slots, cache_size)
         self.filename = filename
-        self.file = h5py.File(h5py.h5f.create(filename, fapl=_make_fapl(100003, 128 * 1024**2)))
-        self.datasets = []
-        for channel in range(self.num_channels):
-            group = self.file.create_group("channel_{}".format(channel))
-            group_datasets = []
-            for w_slice in range(self.num_w_slices):
-                # TODO: set chunk size more sensibly
-                # TODO: ensure that fill is with undefined rather than zeros
-                group_datasets.append(group.create_dataset(
-                    "slice_{}".format(w_slice),
-                    (0,), maxshape=(None,), dtype=self.store_dtype,
-                    chunks=(65536,)))
-            self.datasets.append(group_datasets)
+        self._file = h5py.File(h5py.h5f.create(filename, fapl=_make_fapl(slots, cache_size, 1.0)))
+        self._length = np.zeros((self.num_channels, self.num_w_slices), np.int64)
+        self._dataset = self._file.create_dataset(
+            "vis", (self.num_channels, self.num_w_slices, 0),
+            maxshape=(self.num_channels, self.num_w_slices, None),
+            dtype=self.store_dtype,
+            compression='gzip',
+            chunks=(1, 1, chunk_elements))
 
     def _emit(self, elements):
         N = elements.shape[0]
-        dataset = self.datasets[elements[0].channel][elements[0].w_slice]
-        dataset.resize(dataset.shape[0] + N, axis=0)
-        dataset[-N:] = elements.astype(self.store_dtype)
+        channel = elements[0].channel
+        w_slice = elements[0].w_slice
+        old_length = self._length[channel, w_slice]
+        self._length[channel, w_slice] += N
+        if self._length[channel, w_slice] > self._dataset.shape[2]:
+            self._dataset.resize(self._length[channel, w_slice], axis=2)
+        # This slightly contorted access is for performance reasons: see
+        # https://github.com/h5py/h5py/issues/492
+        self._dataset[channel : channel+1, w_slice : w_slice+1, old_length : self._length[channel, w_slice]] = \
+            elements.astype(self.store_dtype)[np.newaxis, np.newaxis, :]
 
     def close(self):
         super(VisibilityCollectorHDF5, self).close()
-        self.file.close()
-        self.file = None
+        self._dataset.attrs.create('length', self._length)
+        if logger.isEnabledFor(logging.INFO):
+            filesize = self._file.id.get_filesize()
+            expected = self.store_dtype.itemsize * np.sum(self._length)
+            logger.info("Wrote %d bytes to %s (%.2f%% compression)",
+                filesize, self._file.filename, 100.0 * filesize / expected)
+        self._file.close()
+        self._file = None
 
     def reader(self):
         return VisibilityReaderHDF5(self)
@@ -407,10 +463,15 @@ class VisibilityReader(object):
     def __init__(self, collector):
         pass
 
-    def iter_slice(self, channel, w_slice):
+    def iter_slice(self, channel, w_slice, block_size=None):
         """A generator that iterates over the visibilities in blocks. Each
         iteration yields an array of some number of visibilities, in the type
         returned by :func:`_make_dtype`.
+
+        If `block_size` is specified, the visibilities will be batched into
+        groups of this size (except possibly the final batch, which will be
+        shorter). If not specified, batches are of arbitrary length,
+        depending on the collector.
 
         .. warning:: An implementation may recycle a single buffer for this
            purpose. The returned array must be consumed (or copied) before
@@ -430,36 +491,49 @@ class VisibilityReader(object):
 class VisibilityReaderHDF5(VisibilityReader):
     def __init__(self, collector):
         super(VisibilityReaderHDF5, self).__init__(collector)
-        # TODO: think about what to set cache size to
-        self.file = h5py.File(h5py.h5f.open(collector.filename, flags=h5py.h5f.ACC_RDONLY, fapl=_make_fapl(100003, 128 * 1024**2)))
-        self.num_w_slices = collector.num_w_slices
+        # We're doing a linear read over the file, so we don't need to increase
+        # the cache size.
+        # TODO: experiment with setting a tiny cache so that blocks bypass the
+        # cache entirely.
+        self._file = h5py.File(h5py.h5f.open(collector.filename, flags=h5py.h5f.ACC_RDONLY))
+        self._dataset = self._file["vis"]
+        self._length = self._dataset.attrs['length']
 
-    def _get_dataset(self, channel, w_slice):
-        return self.file['channel_{}'.format(channel)]['slice_{}'.format(w_slice)]
+    def len(self, channel, w_slice):
+        return self._length[channel, w_slice]
 
-    def iter_slice(self, channel, w_slice):
-        dataset = self._get_dataset(channel, w_slice)
-        block_size = dataset.chunks[0]
+    def iter_slice(self, channel, w_slice, block_size=None):
         if block_size is None:
-            block_size = 65536
-        buf = np.empty((block_size,), dataset.dtype)
-        N = dataset.shape[0]
-        for start in xrange(0, N - block_size, block_size):
-            dataset.read_direct(buf, np.s_[start : start+block_size], np.s_[0 : block_size])
+            block_size = self._dataset.chunks[2]
+        buf3d = np.rec.recarray((1, 1, block_size), self._dataset.dtype)
+        buf = buf3d[0, 0, :]
+        N = self.len(channel, w_slice)
+        for start in xrange(0, N - block_size + 1, block_size):
+            self._dataset.read_direct(
+                buf3d,
+                np.s_[channel : channel+1, w_slice : w_slice+1, start : start+block_size],
+                np.s_[:, :, 0 : block_size])
             yield buf
         last = N % block_size
         if last > 0:
-            buf = np.empty((last,), dataset.dtype)
-            dataset.read_direct(buf, np.s_[N - last : N], np.s_[0 : last])
-            yield buf
+            self._dataset.read_direct(
+                buf3d,
+                np.s_[channel : channel+1, w_slice : w_slice+1, N - last : N],
+                np.s_[:, :, 0 : last])
+            yield buf[:last]
 
-    def len(self, channel, w_slice):
-        return len(self._get_dataset(channel, w_slice))
+    @property
+    def num_channels(self):
+        return self._length.shape[0]
+
+    @property
+    def num_w_slices(self):
+        return self._length.shape[1]
 
     def close(self):
         super(VisibilityReaderHDF5, self).close()
-        self.file.close()
-        self.file = None
+        self._file.close()
+        self._file = None
 
 
 class VisibilityReaderMem(VisibilityReader):
@@ -467,11 +541,36 @@ class VisibilityReaderMem(VisibilityReader):
         super(VisibilityReaderMem, self).__init__(collector)
         self.datasets = collector.datasets
 
-    def iter_slice(self, channel, w_slice):
-        return iter(self.datasets[channel][w_slice])
+    def _iter_slice_blocked(self, channel, w_slice, block_size):
+        dataset = self.datasets[channel][w_slice]
+        if not dataset:
+            return
+        buf = np.rec.recarray((block_size,), dataset[0].dtype)
+        buf_pos = 0
+        for dset in dataset:
+            dset_pos = 0
+            while len(dset) - dset_pos > block_size - buf_pos:
+                buf[buf_pos:] = dset[dset_pos : dset_pos + (block_size - buf_pos)]
+                yield buf
+                dset_pos += block_size - buf_pos
+                buf_pos = 0
+            buf[buf_pos : buf_pos + len(dset) - dset_pos] = dset[dset_pos:]
+            buf_pos += len(dset) - dset_pos
+        if buf_pos > 0:
+            yield buf[:buf_pos]
+
+    def iter_slice(self, channel, w_slice, block_size=None):
+        if block_size is None:
+            return iter(self.datasets[channel][w_slice])
+        else:
+            return self._iter_slice_blocked(channel, w_slice, block_size)
 
     def len(self, channel, w_slice):
         return sum(len(x) for x in self.datasets[channel][w_slice])
+
+    @property
+    def num_channels(self):
+        return len(self.datasets)
 
     @property
     def num_w_slices(self):
