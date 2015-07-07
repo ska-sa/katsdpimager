@@ -142,3 +142,23 @@ class TestFft(object):
         command_queue.finish()
         expected = np.fft.ifftn(src, axes=(2, 3)) * (src.shape[2] * src.shape[3])
         np.testing.assert_allclose(expected, dest, rtol=1e-4)
+
+
+class TestScale(object):
+    @device_test
+    def test(self, context, command_queue):
+        shape = (4, 123, 234)
+        dtype = np.float32
+        rs = np.random.RandomState(1)
+        template = fft.ScaleTemplate(context, dtype, shape[0])
+        fn = template.instantiate(command_queue, shape)
+        fn.ensure_all_bound()
+        src = rs.uniform(size=shape).astype(np.float32)
+        scale_factor = np.array([1.2, 2.3, 3.4, -4.5], dtype)
+        data = fn.buffer('data')
+        data.set(command_queue, src)
+        fn.set_scale_factor(scale_factor)
+        fn()
+        actual = data.get(command_queue)
+        expected = src * scale_factor[:, np.newaxis, np.newaxis]
+        np.testing.assert_allclose(expected, actual)

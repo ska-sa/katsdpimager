@@ -382,6 +382,94 @@ class TaperDivide(accel.Operation):
         )
 
 
+class ScaleTemplate(object):
+    """Scale an image by a fixed amount per polarization.
+
+    Parameters
+    ----------
+    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+        Context for which kernels will be compiled
+    dtype : {`np.float32`, `np.float64`}
+        Image precision
+    num_polarizations : int
+        Number of polarizations stored in the image
+    tuning : dict, optional
+        Tuning parameters (currently unused)
+    """
+
+    def __init__(self, context, dtype, num_polarizations, tuning=None):
+        # TODO: autotuning
+        self.context = context
+        self.dtype = np.dtype(dtype)
+        self.num_polarizations = num_polarizations
+        self.wgsx = 16
+        self.wgsy = 16
+        self.program = accel.build(
+            context, "imager_kernels/scale.mako",
+            {
+                'real_type': katsdpimager.types.dtype_to_ctype(dtype),
+                'wgsx': self.wgsx,
+                'wgsy': self.wgsy,
+                'num_polarizations': num_polarizations
+            },
+            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+
+    def instantiate(self, *args, **kwargs):
+        return Scale(self, *args, **kwargs)
+
+
+class Scale(accel.Operation):
+    """Instantiation of :class:`ScaleTemplate`.
+
+    .. rubric:: Slots
+
+    **data** : array
+        Image, indexed by polarization, y, x
+
+    Parameters
+    ----------
+    template : :class:`ScaleTemplate`
+        Operation template
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+        Command queue for the operation
+    shape : tuple of int
+        Shape of the data.
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
+    """
+    def __init__(self, template, command_queue, shape, allocator=None):
+        super(Scale, self).__init__(command_queue, allocator)
+        self.template = template
+        if len(shape) != 3:
+            raise ValueError('Wrong number of dimensions in shape')
+        if shape[0] != template.num_polarizations:
+            raise ValueError('Mismatch in number of polarizations')
+        self.slots['data'] = accel.IOSlot(
+            (accel.Dimension(shape[0]),
+             accel.Dimension(shape[1], template.wgsy),
+             accel.Dimension(shape[2], template.wgsx)), template.dtype)
+        self.kernel = template.program.get_kernel('scale')
+        self.scale_factor = np.zeros((shape[0],), template.dtype)
+
+    def set_scale_factor(self, scale_factor):
+        self.scale_factor[:] = scale_factor
+
+    def _run(self):
+        data = self.buffer('data')
+        self.command_queue.enqueue_kernel(
+            self.kernel,
+            [
+                data.buffer,
+                np.int32(data.padded_shape[2]),
+                np.int32(data.padded_shape[1] * data.padded_shape[2]),
+                self.scale_factor
+            ],
+            global_size=(accel.roundup(data.shape[2], self.template.wgsx),
+                         accel.roundup(data.shape[1], self.template.wgsy)),
+            local_size=(self.template.wgsx, self.template.wgsy)
+        )
+
+
 class GridToImageTemplate(object):
     """Template for a combined operation that converts from a complex grid to a
     real image, including tapering correction.  The grid need not be conjugate
