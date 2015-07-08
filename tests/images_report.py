@@ -179,13 +179,11 @@ def main():
     args = parser.parse_args()
 
     pixel_size = 3.49328831150462    # in arcsec: to match the value computed by katsdpimager
-    # TODO: remove --kernel-width once the code can handle larger sizes
     katsdpimager_common = [
         'imager.py',
         '--stokes=${stokes}',
         '--input-option', 'data=CORRECTED_DATA',
         '--psf-patch=4608',
-        '--kernel-width=64',
         '${ms}']
     lwimager_common = [
         'lwimager', 'ms=${ms}', 'npix=4608', 'cellsize={}arcsec'.format(pixel_size), 'wprojplanes=128', 'threshold=0.01Jy',
