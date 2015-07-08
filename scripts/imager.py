@@ -12,15 +12,7 @@ import tempfile
 import atexit
 import os
 import katsdpsigproc.accel as accel
-import katsdpimager.loader as loader
-import katsdpimager.parameters as parameters
-import katsdpimager.polarization as polarization
-import katsdpimager.preprocess as preprocess
-import katsdpimager.grid as grid
-import katsdpimager.io as io
-import katsdpimager.fft as fft
-import katsdpimager.clean as clean
-import katsdpimager.progress as progress
+from katsdpimager import loader, parameters, polarization, preprocess, grid, io, fft, clean, imaging, progress
 from contextlib import closing, contextmanager
 
 
@@ -96,7 +88,6 @@ def get_parser():
     group.add_argument('--write-dirty', metavar='FILE', help='Write dirty image to FITS file')
     group.add_argument('--write-model', metavar='FILE', help='Write model image to FITS file')
     group.add_argument('--write-residuals', metavar='FILE', help='Write image residuals to FITS file')
-    group.add_argument('--profile', action='store_true', help='Do profiling on GPU code')
     group.add_argument('--vis-limit', type=int, metavar='N', help='Use only the first N visibilities')
     return parser
 
@@ -147,24 +138,10 @@ def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, po
     return collector
 
 
-def timer(queue):
-    """Decorator that enqueues markers before and after the wrapped function, and
-    returns a function that, when called, returns the elapsed time."""
-    def decorator(fn):
-        @functools.wraps(fn)
-        def wrapper(*args, **kwargs):
-            def get_elapsed():
-                return end.time_since(start)
-            start = queue.enqueue_marker()
-            fn(*args, **kwargs)
-            end = queue.enqueue_marker()
-            return get_elapsed
-        return wrapper
-    return decorator
-
-
-def make_dirty(queue, reader, name, field, gridder, grid_to_image, mid_w, vis_block):
-    grid_to_image.clear()
+def make_dirty(queue, reader, name, field, imager, mid_w, vis_block):
+    imager.clear_dirty()
+    if queue:
+        queue.finish()
     for w_slice in range(reader.num_w_slices):
         N = reader.len(0, w_slice)
         if N == 0:
@@ -172,31 +149,23 @@ def make_dirty(queue, reader, name, field, gridder, grid_to_image, mid_w, vis_bl
             continue
         label = '{} {}/{}'.format(name, w_slice + 1, reader.num_w_slices)
         bar = progress.make_progressbar('Grid {}'.format(label), max=N)
-        gridder.clear()
-        grid_time = 0.0
+        imager.clear_grid()
+        if queue:
+            queue.finish()
         with progress.finishing(bar):
             for chunk in reader.iter_slice(0, w_slice, vis_block):
-                t = gridder.grid(chunk.uv, chunk.sub_uv, chunk.w_plane, chunk[field])
+                imager.grid(chunk.uv, chunk.sub_uv, chunk.w_plane, chunk[field])
                 if queue:
                     # Need to serialise calls to grid, since otherwise the next
                     # call will overwrite the incoming data before the previous
                     # iteration is done with it.
                     queue.finish()
-                if t is not None:
-                    grid_time += t()
                 bar.next(len(chunk))
-        if grid_time > 0.0:
-            logger.info("Gridded %d points in %.3fs (%.3g/s)", N, grid_time, N / grid_time)
 
         with progress.step('FFT {}'.format(label)):
-            grid_to_image.set_w(mid_w[w_slice])
-            grid_to_image()
+            imager.grid_to_image(mid_w[w_slice])
             if queue:
                 queue.finish()
-
-def psf_shape(image_parameters, clean_parameters):
-    psf_patch = min(image_parameters.pixels, clean_parameters.psf_patch)
-    return (len(image_parameters.polarizations), psf_patch, psf_patch)
 
 def extract_psf(image, psf):
     """Copy the central region of `image` to `psf`.
@@ -261,7 +230,7 @@ def main():
     context = None
     if not args.host:
         context = accel.create_some_context(device_filter=lambda x: x.is_cuda)
-        queue = context.create_command_queue(profile=args.profile)
+        queue = context.create_command_queue()
 
     with closing(loader.load(args.input_file, args.input_option)) as dataset:
         #### Determine parameters ####
@@ -297,6 +266,7 @@ def main():
             clean_mode = clean.CLEAN_SUMSQ
         else:
             raise ValueError('Unhandled --clean-mode {}'.format(args.clean_mode))
+        args.psf_patch = min(args.psf_patch, image_p.pixels)
         clean_p = parameters.CleanParameters(
             args.minor, args.loop_gain, clean_mode,
             args.psf_patch)
@@ -309,44 +279,17 @@ def main():
         lm_scale = float(image_p.pixel_size)
         lm_bias = -0.5 * image_p.pixels * lm_scale
         if args.host:
-            gridder = grid.GridderHost(image_p, grid_p)
-            grid_data = gridder.values
-            layer = np.empty(grid_data.shape, image_p.complex_dtype)
-            image = np.empty(grid_data.shape, image_p.real_dtype)
-            model = np.empty(grid_data.shape, image_p.real_dtype)
-            psf = np.empty(psf_shape(image_p, clean_p), image_p.real_dtype)
-            grid_to_image = fft.GridToImageHost(
-                grid_data, layer, image,
-                gridder.taper(image_p.pixels), lm_scale, lm_bias)
-            cleaner = clean.CleanHost(image_p, clean_p, image, psf, model)
+            imager = imaging.ImagingHost(image_p, grid_p, clean_p)
         else:
             allocator = accel.SVMAllocator(context)
-            # Gridder
-            gridder_template = grid.GridderTemplate(context, image_p, grid_p)
-            gridder = gridder_template.instantiate(queue, array_p, args.vis_block, allocator)
-            gridder.ensure_all_bound()
-            if args.profile:
-                grid.Gridder.__call__ = timer(queue)(grid.Gridder.__call__)
-            grid_data = gridder.buffer('grid')
-            # Grid to image
-            kernel1d = accel.SVMArray(context, (image_p.pixels,), image_p.real_dtype)
-            gridder_template.taper(image_p.pixels, kernel1d)
-            # TODO: allocate these from the operations, to ensure alignment
-            layer = accel.SVMArray(context, grid_data.shape, image_p.complex_dtype)
-            image = accel.SVMArray(context, grid_data.shape, image_p.real_dtype)
-            grid_to_image_template = fft.GridToImageTemplate(
-                queue, grid_data.shape, grid_data.padded_shape, image.shape, image.dtype)
-            grid_to_image = grid_to_image_template.instantiate(lm_scale, lm_bias, allocator)
-            grid_to_image.bind(grid=grid_data, layer=layer, image=image, kernel1d=kernel1d)
-            # CLEAN
-            cleaner_template = clean.CleanTemplate(
-                context, clean_p, image_p.real_dtype, len(output_polarizations))
-            cleaner = cleaner_template.instantiate(queue, image_p, allocator)
-            cleaner.bind(dirty=image)
-            cleaner.ensure_all_bound()
-            psf = cleaner.buffer('psf')
-            model = cleaner.buffer('model')
-            model[:] = 0
+            imager_template = imaging.ImagingTemplate(
+                queue, array_p, image_p, grid_p, clean_p)
+            imager = imager_template.instantiate(args.vis_block, allocator)
+            imager.ensure_all_bound()
+        psf = imager.buffer('psf')
+        dirty = imager.buffer('dirty')
+        model = imager.buffer('model')
+        grid_data = imager.buffer('grid')
 
         #### Preprocess visibilities ####
         collector = preprocess_visibilities(dataset, args, image_p, grid_p, polarization_matrix)
@@ -355,17 +298,20 @@ def main():
         #### Create dirty image ####
         slice_w_step = float(grid_p.max_w / image_p.wavelength / grid_p.w_slices)
         mid_w = np.arange(0.5, grid_p.w_slices) * slice_w_step
-        make_dirty(queue, reader, 'PSF', 'weights', gridder, grid_to_image, mid_w, args.vis_block)
-        # TODO: all this scaling is hacky. Move it into subroutines somewhere
-        scale = np.reciprocal(image[..., image.shape[1] // 2, image.shape[2] // 2])
-        scale = scale[:, np.newaxis, np.newaxis]
-        image *= scale
+        make_dirty(queue, reader, 'PSF', 'weights', imager, mid_w, args.vis_block)
+        # Normalization
+        scale = np.reciprocal(dirty[..., dirty.shape[1] // 2, dirty.shape[2] // 2])
+        imager.scale_dirty(scale)
+        if queue:
+            queue.finish()
         if args.write_psf is not None:
             with progress.step('Write PSF'):
-                io.write_fits_image(dataset, image, image_p, args.write_psf)
-        extract_psf(image, psf)
-        make_dirty(queue, reader, 'image', 'vis', gridder, grid_to_image, mid_w, args.vis_block)
-        image *= scale
+                io.write_fits_image(dataset, dirty, image_p, args.write_psf)
+        extract_psf(dirty, psf)
+        make_dirty(queue, reader, 'image', 'vis', imager, mid_w, args.vis_block)
+        imager.scale_dirty(scale)
+        if queue:
+            queue.finish()
         if args.write_grid is not None:
             with progress.step('Write grid'):
                 if args.host:
@@ -375,14 +321,17 @@ def main():
                                        image_p, args.write_grid)
         if args.write_dirty is not None:
             with progress.step('Write dirty image'):
-                io.write_fits_image(dataset, image, image_p, args.write_dirty)
+                io.write_fits_image(dataset, dirty, image_p, args.write_dirty)
 
         #### Deconvolution ####
         bar = progress.make_progressbar('CLEAN', max=clean_p.minor)
-        cleaner.reset()
+        imager.clean_reset()
+        imager.clear_model()
+        if queue:
+            queue.finish()
         with progress.finishing(bar):
             for i in bar.iter(range(clean_p.minor)):
-                cleaner()
+                imager.clean_cycle()
         if queue:
             queue.finish()
         # TODO: restoring beam
@@ -391,9 +340,10 @@ def main():
                 io.write_fits_image(dataset, model, image_p, args.write_model)
         if args.write_residuals is not None:
             with progress.step('Write residuals'):
-                io.write_fits_image(dataset, image, image_p, args.write_residuals)
+                io.write_fits_image(dataset, dirty, image_p, args.write_residuals)
         # Add residuals back in
-        model += image
+        # TODO: do on the GPU
+        model += dirty
         with progress.step('Write clean image'):
             io.write_fits_image(dataset, model, image_p, args.output_file)
 

@@ -542,10 +542,6 @@ class GridToImage(accel.OperationSequence):
     def set_w(self, w):
         self._taper_divide.set_w(w)
 
-    def clear(self):
-        """TODO: implement on GPU"""
-        self.buffer('image').fill(0)
-
 
 class GridToImageHost(object):
     """CPU-only equivalent to :class:`GridToHost`.

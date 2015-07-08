@@ -403,6 +403,8 @@ class Gridder(accel.Operation):
 
     .. rubric:: Slots
 
+    **grid** : array of pols × height × width, complex
+        Target grid
     **uv** : array of int16×4
         The first two elements for each visibility are the
         UV coordinates of the first grid cell to be updated. The other two are
@@ -440,10 +442,6 @@ class Gridder(accel.Operation):
             raise ValueError('Number of visibilities {} is out of range 0..{}'.format(
                 n, self.max_vis))
         self._num_vis = n
-
-    def clear(self):
-        """TODO: implement on GPU"""
-        self.buffer('grid').fill(0)
 
     def grid(self, uv, sub_uv, w_plane, vis):
         """Add visibilities to the grid, with convolutional gridding using the
