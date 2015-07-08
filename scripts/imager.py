@@ -302,8 +302,8 @@ def main():
         reader = collector.reader()
 
         #### Create dirty image ####
-        slice_w_step = float(grid_p.max_w / image_p.wavelength / grid_p.w_slices)
-        mid_w = np.arange(0.5, grid_p.w_slices) * slice_w_step
+        slice_w_step = float(grid_p.max_w / image_p.wavelength / (grid_p.w_slices - 0.5))
+        mid_w = np.arange(grid_p.w_slices) * slice_w_step
         make_dirty(queue, reader, 'PSF', 'weights', imager, mid_w, args.vis_block)
         # Normalization
         scale = np.reciprocal(dirty[..., dirty.shape[1] // 2, dirty.shape[2] // 2])

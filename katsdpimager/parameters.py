@@ -150,13 +150,15 @@ def w_slices(image_parameters, max_w, eps_w, kernel_width, antialias_width=0):
     # Each slice is corrected to its center, so maximum W deviation from the
     # slice center is only half the slice thickness.
     max_w = max_w * 0.5
-    # Find a number of slices that is definitely big enough
-    while w_kernel_width(image_parameters, max_w / hi, eps_w, antialias_width) > kernel_width:
+    # Find a number of slices that is definitely big enough. The first slice is
+    # only half-width, to allow the (possibly numerous) visibilities with small
+    # W to have better accuracy.
+    while w_kernel_width(image_parameters, max_w / (hi - 0.5), eps_w, antialias_width) > kernel_width:
         hi *= 2
     # Binary search
     while hi - lo > 1:
         mid = (lo + hi) // 2
-        if w_kernel_width(image_parameters, max_w / mid, eps_w, antialias_width) < kernel_width:
+        if w_kernel_width(image_parameters, max_w / (mid - 0.5), eps_w, antialias_width) < kernel_width:
             hi = mid
         else:
             lo = mid

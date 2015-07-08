@@ -86,7 +86,7 @@ def _convert_to_buffer(
     P = vis.shape[1]
     offset = np.float32(pixels // 2 - (kernel_width - 1) // 2)
     uv_scale = np.float32(1 / cell_size)
-    w_scale = float(w_slices * w_planes / max_w)
+    w_scale = float((w_slices - 0.5) * w_planes / max_w)
     max_slice_plane = w_slices * w_planes - 1
     for row in range(N):
         u = uvw[row, 0]
@@ -105,7 +105,9 @@ def _convert_to_buffer(
             out[row].vis[p] *= weights[row, p]
         u = u * uv_scale + offset
         v = v * uv_scale + offset
-        w = np.trunc(w * w_scale)
+        # The plane number is biased by half a slice, because the first slice
+        # is half-width and centered at w=0.
+        w = np.trunc(w * w_scale + w_planes / 2)
         w_slice_plane = int(min(w, max_slice_plane))
         w_slice = w_slice_plane // w_planes
         w_plane = w_slice_plane % w_planes
