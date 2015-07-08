@@ -110,6 +110,14 @@ def data_iter(dataset, args):
             if N == 0:
                 return
 
+
+class DummyCommandQueue(object):
+    """Stub equivalent to CUDA/OpenCL CommandQueue objects, that just provides
+    an empty :meth:`finish` method."""
+    def finish(self):
+        pass
+
+
 def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, polarization_matrix):
     bar = None
     if args.tmp_file:
@@ -140,8 +148,7 @@ def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, po
 
 def make_dirty(queue, reader, name, field, imager, mid_w, vis_block):
     imager.clear_dirty()
-    if queue:
-        queue.finish()
+    queue.finish()
     for w_slice in range(reader.num_w_slices):
         N = reader.len(0, w_slice)
         if N == 0:
@@ -150,22 +157,19 @@ def make_dirty(queue, reader, name, field, imager, mid_w, vis_block):
         label = '{} {}/{}'.format(name, w_slice + 1, reader.num_w_slices)
         bar = progress.make_progressbar('Grid {}'.format(label), max=N)
         imager.clear_grid()
-        if queue:
-            queue.finish()
+        queue.finish()
         with progress.finishing(bar):
             for chunk in reader.iter_slice(0, w_slice, vis_block):
                 imager.grid(chunk.uv, chunk.sub_uv, chunk.w_plane, chunk[field])
-                if queue:
-                    # Need to serialise calls to grid, since otherwise the next
-                    # call will overwrite the incoming data before the previous
-                    # iteration is done with it.
-                    queue.finish()
+                # Need to serialise calls to grid, since otherwise the next
+                # call will overwrite the incoming data before the previous
+                # iteration is done with it.
+                queue.finish()
                 bar.next(len(chunk))
 
         with progress.step('FFT {}'.format(label)):
             imager.grid_to_image(mid_w[w_slice])
-            if queue:
-                queue.finish()
+            queue.finish()
 
 def extract_psf(image, psf):
     """Copy the central region of `image` to `psf`.
@@ -231,6 +235,8 @@ def main():
     if not args.host:
         context = accel.create_some_context(device_filter=lambda x: x.is_cuda)
         queue = context.create_command_queue()
+    else:
+        queue = DummyCommandQueue()
 
     with closing(loader.load(args.input_file, args.input_option)) as dataset:
         #### Determine parameters ####
@@ -302,16 +308,14 @@ def main():
         # Normalization
         scale = np.reciprocal(dirty[..., dirty.shape[1] // 2, dirty.shape[2] // 2])
         imager.scale_dirty(scale)
-        if queue:
-            queue.finish()
+        queue.finish()
         if args.write_psf is not None:
             with progress.step('Write PSF'):
                 io.write_fits_image(dataset, dirty, image_p, args.write_psf)
         extract_psf(dirty, psf)
         make_dirty(queue, reader, 'image', 'vis', imager, mid_w, args.vis_block)
         imager.scale_dirty(scale)
-        if queue:
-            queue.finish()
+        queue.finish()
         if args.write_grid is not None:
             with progress.step('Write grid'):
                 if args.host:
@@ -327,13 +331,10 @@ def main():
         bar = progress.make_progressbar('CLEAN', max=clean_p.minor)
         imager.clean_reset()
         imager.clear_model()
-        if queue:
-            queue.finish()
         with progress.finishing(bar):
             for i in bar.iter(range(clean_p.minor)):
                 imager.clean_cycle()
-        if queue:
-            queue.finish()
+        queue.finish()
         # TODO: restoring beam
         if args.write_model is not None:
             with progress.step('Write model'):
