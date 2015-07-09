@@ -12,7 +12,8 @@ import tempfile
 import atexit
 import os
 import katsdpsigproc.accel as accel
-from katsdpimager import loader, parameters, polarization, preprocess, grid, io, fft, clean, imaging, progress
+from katsdpimager import \
+    loader, parameters, polarization, preprocess, grid, io, fft, clean, imaging, progress, beam
 from contextlib import closing, contextmanager
 
 
@@ -313,6 +314,7 @@ def main():
             with progress.step('Write PSF'):
                 io.write_fits_image(dataset, dirty, image_p, args.write_psf)
         extract_psf(dirty, psf)
+        restoring_beam = beam.fit_beam(psf[0])
         make_dirty(queue, reader, 'image', 'vis', imager, mid_w, args.vis_block)
         imager.scale_dirty(scale)
         queue.finish()
@@ -342,8 +344,8 @@ def main():
         if args.write_residuals is not None:
             with progress.step('Write residuals'):
                 io.write_fits_image(dataset, dirty, image_p, args.write_residuals)
-        # Add residuals back in
-        # TODO: do on the GPU
+        # Convolve with restoring beam, and add residuals back in
+        beam.convolve_beam(model, restoring_beam, model)
         model += dirty
         with progress.step('Write clean image'):
             io.write_fits_image(dataset, model, image_p, args.output_file)

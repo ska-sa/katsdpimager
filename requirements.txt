@@ -1,4 +1,5 @@
 numpy
+scipy
 python-casacore
 astropy
 progress

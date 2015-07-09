@@ -9,7 +9,7 @@ setup(
     packages=find_packages(),
     scripts=["scripts/imager.py"],
     install_requires=[
-        'numpy', 'katsdpsigproc', 'python-casacore', 'astropy', 'progress',
+        'numpy', 'scipy', 'katsdpsigproc', 'python-casacore', 'astropy', 'progress',
         'numba', 'pycuda', 'scikits.cuda>=0.5.0b1', 'h5py', 'ansicolors'
     ]
 )
