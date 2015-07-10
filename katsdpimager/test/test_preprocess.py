@@ -98,7 +98,7 @@ class BaseTestVisibilityCollector(object):
             [[2.4, 1.8, 2.5, 1.4], [0.5, 0.6, 0.7, 0.8]],
             [[1.97 + 0.75j, 6.78 + 11.88j, 11.7 - 2.04j, 4.76 + 7.84j],
              [0.75 + 0.65j, 0.66 + 1.62j, 0.7 - 1.4j, 2.0 + 0.8j]],
-            [1, 2]
+            [64, 65]
             ], dtype=collector.store_dtype)]])
 
 
