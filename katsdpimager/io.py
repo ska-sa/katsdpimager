@@ -73,7 +73,7 @@ def _fits_polarizations(header, axis, polarizations):
     return pol_permute
 
 
-def write_fits_image(dataset, image, image_parameters, filename):
+def write_fits_image(dataset, image, image_parameters, filename, beam=None):
     """Write an image to a FITS file.
 
     Parameters
@@ -87,6 +87,8 @@ def write_fits_image(dataset, image, image_parameters, filename):
         Metadata associated with the image
     filename : `str`
         File to write. It is silently overwritten if already present.
+    beam : :class:`katsdpimager.beam.Beam`, optional
+        Synthesized beam model to write to the header
 
     Raises
     ------
@@ -123,6 +125,12 @@ def write_fits_image(dataset, image, image_parameters, filename):
     header['CTYPE2'] = 'DEC--SIN'
     header['CRVAL1'] = phase_centre[0].to(units.deg).value
     header['CRVAL2'] = phase_centre[1].to(units.deg).value
+    if beam is not None:
+        major = beam.major * image_parameters.pixel_size * units.rad
+        minor = beam.minor * image_parameters.pixel_size * units.rad
+        header['BMAJ'] = major.to(units.deg).value
+        header['BMIN'] = minor.to(units.deg).value
+        header['BPA'] = beam.theta.to(units.deg).value
     pol_permute = _fits_polarizations(header, 3, image_parameters.polarizations)
 
     # l axis is reversed, because RA increases right-to-left.

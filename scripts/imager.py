@@ -310,11 +310,11 @@ def main():
         scale = np.reciprocal(dirty[..., dirty.shape[1] // 2, dirty.shape[2] // 2])
         imager.scale_dirty(scale)
         queue.finish()
-        if args.write_psf is not None:
-            with progress.step('Write PSF'):
-                io.write_fits_image(dataset, dirty, image_p, args.write_psf)
         extract_psf(dirty, psf)
         restoring_beam = beam.fit_beam(psf[0])
+        if args.write_psf is not None:
+            with progress.step('Write PSF'):
+                io.write_fits_image(dataset, dirty, image_p, args.write_psf, restoring_beam)
         make_dirty(queue, reader, 'image', 'vis', imager, mid_w, args.vis_block)
         imager.scale_dirty(scale)
         queue.finish()
@@ -327,7 +327,7 @@ def main():
                                        image_p, args.write_grid)
         if args.write_dirty is not None:
             with progress.step('Write dirty image'):
-                io.write_fits_image(dataset, dirty, image_p, args.write_dirty)
+                io.write_fits_image(dataset, dirty, image_p, args.write_dirty, restoring_beam)
 
         #### Deconvolution ####
         bar = progress.make_progressbar('CLEAN', max=clean_p.minor)
@@ -343,12 +343,12 @@ def main():
                 io.write_fits_image(dataset, model, image_p, args.write_model)
         if args.write_residuals is not None:
             with progress.step('Write residuals'):
-                io.write_fits_image(dataset, dirty, image_p, args.write_residuals)
+                io.write_fits_image(dataset, dirty, image_p, args.write_residuals, restoring_beam)
         # Convolve with restoring beam, and add residuals back in
         beam.convolve_beam(model, restoring_beam, model)
         model += dirty
         with progress.step('Write clean image'):
-            io.write_fits_image(dataset, model, image_p, args.output_file)
+            io.write_fits_image(dataset, model, image_p, args.output_file, restoring_beam)
 
 if __name__ == '__main__':
     main()
