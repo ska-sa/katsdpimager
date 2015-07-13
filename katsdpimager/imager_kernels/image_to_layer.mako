@@ -1,11 +1,11 @@
-<%include file="/port.mako">
+<%include file="/port.mako"/>
 <%namespace name="layer_image" file="layer_image.mako"/>
 
 <%call expr="layer_image.kernel('image_to_layer', 'const', '', real_type)">
-    Complex value[2][2];
+    Real value[2][2];
     for (int i = 0; i < 2; i++)
         for (int j = 0; j < 2; j++)
-            value[i][j] = in[addr[i][j]];
+            value[i][j] = image[addr[i][j]];
 
     ${layer_image.compute_lm()}
 
@@ -13,12 +13,12 @@
     for (int i = 0; i < 2; i++)
         for (int j = 0; j < 2; j++)
         {
-            ${layer_image.compute_n_rotate(i, j)}
+            ${layer_image.compute_n_rotate('i', 'j')}
             value[i][j] *= kernel_y[i] * kernel_x[j] / n;
             // Multiply by e^(-2pi i w (n-1))
             Complex rotated;
             rotated.x = value[i][j] * rotate.x;
             rotated.y = value[i][j] * -rotate.y;
-            out[addr[1 - i][1 - j]] = rotated;
+            layer[addr[1 - i][1 - j]] = rotated;
         }
 </%call>

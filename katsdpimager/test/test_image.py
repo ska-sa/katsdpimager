@@ -69,6 +69,44 @@ class TestLayerToImage(object):
         np.testing.assert_allclose(expected, actual, 1e-4)
 
 
+class TestImageToLayer(object):
+    @device_test
+    def test_3d(self, context, command_queue):
+        # Since LayerToImage is tested from first principles, we just check
+        # that ImageToLayer correctly inverts it
+        slices = 3
+        size = 102
+        shape = (slices, size, size)
+        lm_scale = 0.1 / size
+        lm_bias = -lm_scale * size / 3   # Off-centre, to check that it's working
+        w = 12.3
+        image_to_layer_template = image.ImageToLayerTemplate(context, np.float32)
+        image_to_layer = image_to_layer_template.instantiate(command_queue, shape, lm_scale, lm_bias)
+        image_to_layer.ensure_all_bound()
+        image_to_layer.set_w(w)
+        layer_to_image_template = image.LayerToImageTemplate(context, np.float32)
+        layer_to_image = layer_to_image_template.instantiate(command_queue, shape, lm_scale, lm_bias)
+        layer_to_image.set_w(w)
+        layer_to_image.bind(
+            image=image_to_layer.buffer('image'),
+            layer=image_to_layer.buffer('layer'),
+            kernel1d=image_to_layer.buffer('kernel1d'))
+        # Create random input data
+        rs = np.random.RandomState(1)
+        expected = rs.uniform(10.0, 100.0, shape).astype(np.float32)
+        kernel1d = rs.uniform(1.0, 2.0, size).astype(np.float32)
+        # Run test function
+        image_to_layer.buffer('image').set(command_queue, expected)
+        image_to_layer.buffer('kernel1d').set(command_queue, kernel1d)
+        image_to_layer()
+        # Wipe out the image, to make sure it gets written properly
+        image_to_layer.buffer('image').set(command_queue, np.zeros_like(expected))
+        # Convert back again
+        layer_to_image()
+        actual = layer_to_image.buffer('image').get(command_queue)
+        np.testing.assert_allclose(expected, actual, 1e-4)
+
+
 class TestScale(object):
     @device_test
     def test(self, context, command_queue):
