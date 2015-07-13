@@ -4,7 +4,7 @@ objects together."""
 from __future__ import print_function, division
 import numpy as np
 from katsdpsigproc import accel, fill
-from . import grid, fft, clean, types
+from . import grid, image, clean, types
 
 class ImagingTemplate(object):
     """Template holding all the other templates for imaging."""
@@ -24,12 +24,12 @@ class ImagingTemplate(object):
         # by deferring creating of the FFT plan until instantiation.
         padded_grid_shape = grid_shape
         self.gridder = grid.GridderTemplate(context, image_parameters, grid_parameters)
-        self.grid_to_image = fft.GridToImageTemplate(
+        self.grid_to_image = image.GridToImageTemplate(
             command_queue, grid_shape, padded_grid_shape,
             image_shape, image_parameters.real_dtype)
         self.clean = clean.CleanTemplate(
             context, clean_parameters, image_parameters.real_dtype, image_shape[0])
-        self.scale = fft.ScaleTemplate(
+        self.scale = image.ScaleTemplate(
             context, image_parameters.real_dtype, image_shape[0])
         self.clear_grid = fill.FillTemplate(
             context, image_parameters.complex_dtype,
@@ -145,7 +145,7 @@ class ImagingHost(object):
         self._dirty = np.empty(self._grid.shape, image_parameters.real_dtype)
         self._model = np.empty(self._grid.shape, image_parameters.real_dtype)
         self._psf = np.empty(psf_shape, image_parameters.real_dtype)
-        self._grid_to_image = fft.GridToImageHost(
+        self._grid_to_image = image.GridToImageHost(
             self._grid, self._layer, self._dirty,
             self._gridder.taper(image_parameters.pixels), lm_scale, lm_bias)
         self._clean = clean.CleanHost(image_parameters, clean_parameters,

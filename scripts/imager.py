@@ -13,7 +13,7 @@ import atexit
 import os
 import katsdpsigproc.accel as accel
 from katsdpimager import \
-    loader, parameters, polarization, preprocess, grid, io, fft, clean, imaging, progress, beam
+    loader, parameters, polarization, preprocess, io, clean, imaging, progress, beam
 from contextlib import closing, contextmanager
 
 
