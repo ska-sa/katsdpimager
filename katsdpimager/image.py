@@ -379,7 +379,7 @@ class GridToImageTemplate(object):
 
 
 class GridToImage(accel.OperationSequence):
-    """Instantiation of :class:`GridToImageTemplate`
+    """Instantiation of :class:`GridToImageTemplate`.
 
     Parameters
     ----------
@@ -414,8 +414,59 @@ class GridToImage(accel.OperationSequence):
         self._layer_to_image.set_w(w)
 
 
+class ImageToGridTemplate(object):
+    """Convert from a real image to a complex grid, for a single W layer.
+    Both the grid and the image have the DC term in the middle.
+
+    Because it uses :class:`~katsdpimager.fft.FftTemplate`, most of the
+    parameters are baked into the template rather than the instance.
+    """
+    def __init__(self, command_queue, shape, padded_shape_src, padded_shape_dest, real_dtype):
+        complex_dtype = katsdpimager.types.real_to_complex(real_dtype)
+        self.shift_complex = fft.FftshiftTemplate(command_queue.context, complex_dtype)
+        self.fft = fft.FftTemplate(command_queue, 2, shape, complex_dtype,
+                                   padded_shape_src, padded_shape_dest)
+        self.image_to_layer = ImageToLayerTemplate(command_queue.context, real_dtype)
+
+    def instantiate(self, *args, **kwargs):
+        return ImageToGrid(self, *args, **kwargs)
+
+
+class ImageToGrid(accel.OperationSequence):
+    """Instantiation of :class:`ImageToGridTemplate`.
+
+    Parameters
+    ----------
+    template : :class:`ImageToGridTemplate`
+        Operation template
+    lm_scale, lm_bias : float
+        See :class:`ImageToLayer`
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
+    """
+    def __init__(self, template, lm_scale, lm_bias, allocator=None):
+        command_queue = template.fft.command_queue
+        self._shift_grid = template.shift_complex.instantiate(
+            command_queue, template.fft.shape, allocator)
+        self._fft = template.fft.instantiate(fft.FFT_FORWARD, allocator)
+        self._image_to_layer = template.image_to_layer.instantiate(
+            command_queue, template.fft.shape, lm_scale, lm_bias, allocator)
+        operations = [
+            ('image_to_layer', self._image_to_layer),
+            ('fft', self._fft),
+            ('shift_grid', self._shift_grid)
+        ]
+        compounds = {
+            'grid': ['shift_grid:data', 'fft:dest'],
+            'layer': ['fft:src', 'image_to_layer:layer'],
+            'image': ['image_to_layer:image'],
+            'kernel1d': ['image_to_layer:kernel1d']
+        }
+        super(ImageToGrid, self).__init__(command_queue, operations, compounds, allocator=allocator)
+
+
 class GridToImageHost(object):
-    """CPU-only equivalent to :class:`GridToHost`.
+    """CPU-only equivalent to :class:`GridToImage`.
 
     The parameters specify which buffers the operation runs on, but the
     contents at construction time are irrelevant. The operation is
@@ -471,3 +522,52 @@ class GridToImageHost(object):
         image = np.fft.fftshift(image, axes=(1, 2))
         image /= np.outer(self.kernel1d, self.kernel1d)[np.newaxis, ...]
         self.image += image
+
+
+class ImageToGridHost(object):
+    """CPU-only equivalent to :class:`ImageToGrid`.
+
+    The parameters specify which buffers the operation runs on, but the
+    contents at construction time are irrelevant. The operation is
+    performed at call time.
+
+    Parameters
+    ----------
+    grid : ndarray, complex
+        Output grid
+    layer : ndarray, complex
+        Intermediate structure holding the complex FFT
+    image : ndarray, real
+        Input image
+    kernel1d : ndarray, real
+        Tapering function
+    lm_scale, lm_bias : real
+        Linear transformation from pixel coordinates to l/m values
+    """
+    def __init__(self, grid, layer, image, kernel1d, lm_scale, lm_bias):
+        assert image.shape[-1] == image.shape[-2]
+        assert image.shape[-1] % 2 == 0
+        self.grid = grid
+        self.layer = layer
+        self.image = image
+        self.kernel1d = kernel1d
+        self.lm_scale = lm_scale
+        self.lm_bias = lm_bias
+        self.w = 0
+
+    def set_w(self, w):
+        self.w = w
+
+    def __call__(self):
+        # TODO: rewrite most of this using numba
+        lm = np.arange(self.image.shape[1]).astype(self.image.dtype) * self.lm_scale + self.lm_bias
+        lm2 = lm * lm
+        n = np.sqrt(1 - (lm2[:, np.newaxis] + lm2[np.newaxis, :]))[np.newaxis, ...]
+        w_correct = np.exp(-2j * math.pi * self.w * (n - 1))
+        kernel = np.outer(self.kernel1d, self.kernel1d)[np.newaxis, ...]
+        self.layer[:] = self.image * kernel / n * w_correct
+        self.grid[:] = np.fft.fftshift(
+            np.fft.fft2(
+                np.fft.ifftshift(self.layer, axes=(1, 2)),
+                axes=(1, 2)),
+            axes=(1, 2))
