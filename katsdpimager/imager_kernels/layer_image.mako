@@ -16,8 +16,12 @@
 <%def name="compute_n_rotate(i, j)">
     Real n = sqrt(1 - m2[${i}] - l2[${j}]);
     Complex rotate;
-    // TODO: add sincospi wrapper for OpenCL
+#ifdef CUDA
     sincospi(w2 * (n - 1), &rotate.y, &rotate.x);
+#else
+    rotate.x = cospi(w2 * (n - 1));
+    rotate.y = sinpi(w2 * (n - 1));
+#endif
 </%def>
 
 <%def name="kernel(kernel_name, image_const, layer_const, real_type)">
