@@ -246,28 +246,37 @@ class Fft(accel.Operation):
                 context._pycuda_context.synchronize()
 
 
-class TaperDivideTemplate(object):
-    r"""Applies a W correction, extracts the real part of a complex image and
-    scales by a tapering function.
+class _TaperTemplate(object):
+    r"""Base class for :class:`TaperDivideTemplate` and :class:`TaperMultiplyTemplate`.
 
-    The function is the combination of a separable antialiasing function and
-    the 3rd direction cosine (n). Specifically, for input pixel coordinates x,
-    y, we calculate
+    These operations divide between a "layer" (the raw Fourier Transform from
+    the UV plane) and the "image". :class:`TaperDivideTemplate` converts from
+    layer to image, and :class:`TaperMultiplyTemplate` is the inverse.
+    :class:`TaperDivideTemplate` applies the following operations:
 
-    .. math::
+    - It reorders the elements to put the image centre at the centre (in the layer,
+      it is in the corners). This is the equivalent of `np.fft.fftshift`.
 
-       l(x) &= \text{lm_scale}\cdot x + \text{lm_bias}\\
-       m(y) &= \text{lm_scale}\cdot y + \text{lm_bias}\\
-       f(x, y) &= \frac{\text{kernel1d}[x] \cdot \text{kernel1d}[y]}{\sqrt{1-l(x)^2-m(y)^2}}
+    - It divides out an image tapering function.
 
-    and divide :math:`f` from the image. The W correction is to multiply the
-    (complex) image by
+      The function is the combination of a separable antialiasing function and
+      the 3rd direction cosine (n). Specifically, for input pixel coordinates x,
+      y, we calculate
 
-    .. math::
+      .. math::
 
-       e^{2\pi i w\left(\sqrt{1-l(x)^2-m(y)^2} - 1\right)}
+         l(x) &= \text{lm_scale}\cdot x + \text{lm_bias}\\
+         m(y) &= \text{lm_scale}\cdot y + \text{lm_bias}\\
+         f(x, y) &= \frac{\text{kernel1d}[x] \cdot \text{kernel1d}[y]}{\sqrt{1-l(x)^2-m(y)^2}}
 
-    before extracting the real component.
+    - It multiplies by a W correction term, namely
+
+      .. math::
+
+         e^{2\pi i w\left(\sqrt{1-l(x)^2-m(y)^2} - 1\right)}
+
+    In the forward direction, only the real component of the result is kept,
+    and the complex component is discarded.
 
     Further dimensions are supported e.g. for Stokes parameters, which occur
     before the l/m dimensions.
@@ -277,16 +286,18 @@ class TaperDivideTemplate(object):
     context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
         Context for which kernels will be compiled
     real_dtype : {`np.float32`, `np.float64`}
-        Output type
+        Image type
+    kernel_filename : str
+        Mako template containing the kernel
     tuning : dict, optional
         Tuning parameters (currently unused)
     """
-    def __init__(self, context, real_dtype, tuning=None):
+    def __init__(self, context, real_dtype, kernel_filename, tuning=None):
         self.real_dtype = np.dtype(real_dtype)
         self.wgs_x = 16  # TODO: autotuning
         self.wgs_y = 16
         self.program = accel.build(
-            context, "imager_kernels/taper_divide.mako",
+            context, kernel_filename,
             {
                 'real_type': katsdpimager.types.dtype_to_ctype(real_dtype),
                 'wgs_x': self.wgs_x,
@@ -294,25 +305,118 @@ class TaperDivideTemplate(object):
             },
             extra_dirs=[pkg_resources.resource_filename(__name__, '')])
 
-    def instantiate(self, *args, **kwargs):
-        return TaperDivide(self, *args, **kwargs)
 
-
-class TaperDivide(accel.Operation):
-    """Instantiation of :class:`TaperDivideTemplate`
+class _Taper(accel.Operation):
+    """Base class for instantiation of subclasses of :class:`_TaperTemplate`
 
     .. rubric:: Slots
 
-    **src** : array of complex values
-        Input
-    **dest** : array of real values
-        Output
+    **layer** : array of complex values
+        Input (for divide) / output (for multiply)
+    **image** : array of real values
+        Output (for divide) / input (for multiply)
     **kernel1d** : array of real values, 1D
         Antialiasing function
 
     Parameters
     ----------
-    template : :class:`TaperDivideTemplate`
+    template : :class:`_TaperTemplate`
+        Operation template
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+        Command queue for the operation
+    shape : tuple of int
+        Shape of the data (must be square)
+    lm_scale : float
+        Scale factor from pixel coordinates to l/m coordinates
+    lm_bias : float
+        Bias from scaled pixel coordinates to l/m coordinates
+    kernel_name : str
+        Number of the kernel function
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
+
+    Raises
+    ------
+    ValueError
+        if the last two elements of shape are not equal and even
+    """
+    def __init__(self, template, command_queue, shape, lm_scale, lm_bias, kernel_name, allocator=None):
+        if len(shape) < 2 or shape[-1] != shape[-2]:
+            raise ValueError('shape must be square, not {}'.format(shape))
+        if shape[-1] % 2 != 0:
+            raise ValueError('image size must be even, not {}'.format(shape[-1]))
+        super(_Taper, self).__init__(command_queue, allocator)
+        self.template = template
+        complex_dtype = katsdpimager.types.real_to_complex(template.real_dtype)
+        dims = [accel.Dimension(x) for x in shape]
+        self.slots['layer'] = accel.IOSlot(dims, complex_dtype)
+        self.slots['image'] = accel.IOSlot(dims, template.real_dtype)
+        self.slots['kernel1d'] = accel.IOSlot((shape[-1],), template.real_dtype)
+        self.kernel = template.program.get_kernel(kernel_name)
+        self.lm_scale = lm_scale
+        self.lm_bias = lm_bias
+        self.w = 0
+
+    def set_w(self, w):
+        """Set w (in wavelengths)."""
+        self.w = w
+
+    def _run(self):
+        layer = self.buffer('layer')
+        image = self.buffer('image')
+        assert(layer.padded_shape == image.padded_shape)
+        half_size = layer.shape[-1] // 2
+        row_stride = layer.padded_shape[-1]
+        slice_stride = row_stride * layer.padded_shape[-2]
+        batches = int(np.product(layer.padded_shape[:-2]))
+        kernel1d = self.buffer('kernel1d')
+        self.command_queue.enqueue_kernel(
+            self.kernel,
+            [
+                image.buffer,
+                layer.buffer,
+                np.int32(row_stride),
+                np.int32(slice_stride),
+                kernel1d.buffer,
+                self.template.real_dtype.type(self.lm_scale),
+                self.template.real_dtype.type(self.lm_bias),
+                np.int32(half_size),
+                np.int32(half_size * row_stride),
+                self.template.real_dtype.type(half_size * self.lm_scale),
+                self.template.real_dtype.type(2 * self.w)
+            ],
+            global_size=(accel.roundup(half_size, self.template.wgs_x),
+                         accel.roundup(half_size, self.template.wgs_y),
+                         batches),
+            local_size=(self.template.wgs_x, self.template.wgs_y, 1)
+        )
+
+
+class TaperDivideTemplate(_TaperTemplate):
+    """Convert layer to image. See :class:`_TaperTemplate` for details.
+
+    Parameters
+    ----------
+    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+        Context for which kernels will be compiled
+    real_dtype : {`np.float32`, `np.float64`}
+        Image type
+    tuning : dict, optional
+        Tuning parameters (currently unused)
+    """
+    def __init__(self, context, real_dtype, tuning=None):
+        super(TaperDivideTemplate, self).__init__(context, real_dtype, 'imager_kernels/taper_divide.mako', tuning)
+
+    def instantiate(self, *args, **kwargs):
+        return TaperDivide(self, *args, **kwargs)
+
+
+class TaperDivide(_Taper):
+    """Instantiation of :class:`TaperDivide`. See :class:`_Taper` for details.
+
+    Parameters
+    ----------
+    template : :class:`_TaperTemplate`
         Operation template
     command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
         Command queue for the operation
@@ -331,55 +435,8 @@ class TaperDivide(accel.Operation):
         if the last two elements of shape are not equal and even
     """
     def __init__(self, template, command_queue, shape, lm_scale, lm_bias, allocator=None):
-        if len(shape) < 2 or shape[-1] != shape[-2]:
-            raise ValueError('shape must be square, not {}'.format(shape))
-        if shape[-1] % 2 != 0:
-            raise ValueError('image size must be even, not {}'.format(shape[-1]))
-        super(TaperDivide, self).__init__(command_queue, allocator)
-        self.template = template
-        complex_dtype = katsdpimager.types.real_to_complex(template.real_dtype)
-        dims = [accel.Dimension(x) for x in shape]
-        self.slots['src'] = accel.IOSlot(dims, complex_dtype)
-        self.slots['dest'] = accel.IOSlot(dims, template.real_dtype)
-        self.slots['kernel1d'] = accel.IOSlot((shape[-1],), template.real_dtype)
-        self.kernel = template.program.get_kernel('taper_divide')
-        self.lm_scale = lm_scale
-        self.lm_bias = lm_bias
-        self.w = 0
-
-    def set_w(self, w):
-        """Set w (in wavelengths)."""
-        self.w = w
-
-    def _run(self):
-        src = self.buffer('src')
-        dest = self.buffer('dest')
-        assert(src.padded_shape == dest.padded_shape)
-        half_size = src.shape[-1] // 2
-        row_stride = src.padded_shape[-1]
-        slice_stride = row_stride * src.padded_shape[-2]
-        batches = int(np.product(src.padded_shape[:-2]))
-        kernel1d = self.buffer('kernel1d')
-        self.command_queue.enqueue_kernel(
-            self.kernel,
-            [
-                dest.buffer,
-                src.buffer,
-                np.int32(row_stride),
-                np.int32(slice_stride),
-                kernel1d.buffer,
-                self.template.real_dtype.type(self.lm_scale),
-                self.template.real_dtype.type(self.lm_bias),
-                np.int32(half_size),
-                np.int32(half_size * row_stride),
-                self.template.real_dtype.type(half_size * self.lm_scale),
-                self.template.real_dtype.type(2 * self.w)
-            ],
-            global_size=(accel.roundup(half_size, self.template.wgs_x),
-                         accel.roundup(half_size, self.template.wgs_y),
-                         batches),
-            local_size=(self.template.wgs_x, self.template.wgs_y, 1)
-        )
+        super(TaperDivide, self).__init__(
+            template, command_queue, shape, lm_scale, lm_bias, "taper_divide", allocator)
 
 
 class ScaleTemplate(object):
@@ -533,8 +590,8 @@ class GridToImage(accel.OperationSequence):
         ]
         compounds = {
             'grid': ['shift_grid:data', 'ifft:src'],
-            'layer': ['ifft:dest', 'taper_divide:src'],
-            'image': ['taper_divide:dest'],
+            'layer': ['ifft:dest', 'taper_divide:layer'],
+            'image': ['taper_divide:image'],
             'kernel1d': ['taper_divide:kernel1d']
         }
         super(GridToImage, self).__init__(command_queue, operations, compounds, allocator=allocator)

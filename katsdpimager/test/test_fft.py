@@ -62,8 +62,8 @@ class TestTaperDivide(object):
         src = (rs.uniform(10.0, 100.0, (size, size)) + 1j * rs.uniform(10.0, 100.0, (size, size))).astype(np.complex64)
         kernel1d = rs.uniform(1.0, 2.0, size).astype(np.float32)
         fn.buffer('kernel1d').set(command_queue, kernel1d)
-        fn.buffer('src').set(command_queue, src)
-        fn.buffer('dest').set(command_queue, np.zeros((size, size), np.float32))
+        fn.buffer('layer').set(command_queue, src)
+        fn.buffer('image').set(command_queue, np.zeros((size, size), np.float32))
         # Compute expected value
         lm = np.arange(size) * lm_scale + lm_bias
         lm2 = lm * lm
@@ -73,7 +73,7 @@ class TestTaperDivide(object):
         expected = corrected.real * n / np.outer(kernel1d, kernel1d)
         # Check it
         fn()
-        actual = fn.buffer('dest').get(command_queue)
+        actual = fn.buffer('image').get(command_queue)
         np.testing.assert_allclose(expected, actual, 1e-4)
 
     @device_test
@@ -93,8 +93,8 @@ class TestTaperDivide(object):
         src = (rs.uniform(10.0, 100.0, shape) + 1j * rs.uniform(10.0, 100.0, shape)).astype(np.complex64)
         kernel1d = rs.uniform(1.0, 2.0, size).astype(np.float32)
         fn.buffer('kernel1d').set(command_queue, kernel1d)
-        fn.buffer('src').set(command_queue, src)
-        fn.buffer('dest').set(command_queue, np.zeros(shape, np.float32))
+        fn.buffer('layer').set(command_queue, src)
+        fn.buffer('image').set(command_queue, np.zeros(shape, np.float32))
         # Compute expected value
         lm = np.arange(size) * lm_scale + lm_bias
         lm2 = lm * lm
@@ -104,7 +104,7 @@ class TestTaperDivide(object):
         expected = corrected.real * n / np.outer(kernel1d, kernel1d)[np.newaxis, ...]
         # Check it
         fn()
-        actual = fn.buffer('dest').get(command_queue)
+        actual = fn.buffer('image').get(command_queue)
         np.testing.assert_allclose(expected, actual, 1e-4)
 
 
