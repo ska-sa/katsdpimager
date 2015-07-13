@@ -1,7 +1,7 @@
 <%include file="/port.mako"/>
 <%namespace name="taper" file="taper.mako"/>
 
-<%call expr="taper.taper_kernel('', 'const', real_type)">
+<%call expr="taper.taper_kernel('taper_divide', '', 'const', real_type)">
     Complex value[2][2];
     for (int i = 0; i < 2; i++)
         for (int j = 0; j < 2; j++)

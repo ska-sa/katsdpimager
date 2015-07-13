@@ -20,7 +20,7 @@
     sincospi(w2 * (n - 1), &rotate.y, &rotate.x);
 </%def>
 
-<%def name="taper_kernel(image_const, layer_const, real_type)">
+<%def name="taper_kernel(kernel_name, image_const, layer_const, real_type)">
     typedef ${real_type} Real;
     typedef ${real_type}2 Complex;
 
@@ -36,7 +36,7 @@
      * @param w2        Twice the central W value for the slice
      */
     KERNEL REQD_WORK_GROUP_SIZE(${wgs_x}, ${wgs_y}, 1)
-    void taper_divide(
+    void ${kernel_name}(
         ${image_const} GLOBAL Real * RESTRICT image,
         ${layer_const} GLOBAL Complex * RESTRICT layer,
         int row_stride,

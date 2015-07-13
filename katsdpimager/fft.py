@@ -412,11 +412,12 @@ class TaperDivideTemplate(_TaperTemplate):
 
 
 class TaperDivide(_Taper):
-    """Instantiation of :class:`TaperDivide`. See :class:`_Taper` for details.
+    """Instantiation of :class:`TaperDivideTemplate`. See :class:`_Taper` for
+    details.
 
     Parameters
     ----------
-    template : :class:`_TaperTemplate`
+    template : :class:`TaperDivideTemplate`
         Operation template
     command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
         Command queue for the operation
@@ -437,6 +438,54 @@ class TaperDivide(_Taper):
     def __init__(self, template, command_queue, shape, lm_scale, lm_bias, allocator=None):
         super(TaperDivide, self).__init__(
             template, command_queue, shape, lm_scale, lm_bias, "taper_divide", allocator)
+
+
+class TaperMultiplyTemplate(_TaperTemplate):
+    """Convert image to layer. See :class:`_TaperTemplate` for details.
+
+    Parameters
+    ----------
+    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+        Context for which kernels will be compiled
+    real_dtype : {`np.float32`, `np.float64`}
+        Image type
+    tuning : dict, optional
+        Tuning parameters (currently unused)
+    """
+    def __init__(self, context, real_dtype, tuning=None):
+        super(TaperMultiplyTemplate, self).__init__(context, real_dtype, 'imager_kernels/taper_multiply.mako', tuning)
+
+    def instantiate(self, *args, **kwargs):
+        return TaperMultiply(self, *args, **kwargs)
+
+
+class TaperMultiply(_TaperTemplate):
+    """Instantiation of :class:`TaperMultiplyTemplate`. See :class:`_Taper` for
+    details.
+
+    Parameters
+    ----------
+    template : :class:`TaperMultiplyTemplate`
+        Operation template
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+        Command queue for the operation
+    shape : tuple of int
+        Shape of the data (must be square)
+    lm_scale : float
+        Scale factor from pixel coordinates to l/m coordinates
+    lm_bias : float
+        Bias from scaled pixel coordinates to l/m coordinates
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
+
+    Raises
+    ------
+    ValueError
+        if the last two elements of shape are not equal and even
+    """
+    def __init__(self, template, command_queue, shape, lm_scale, lm_bias, allocator=None):
+        super(TaperMultiply, self).__init__(
+            template, command_queue, shape, lm_scale, lm_bias, "taper_multiply", allocator)
 
 
 class ScaleTemplate(object):
