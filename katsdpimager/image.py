@@ -10,22 +10,22 @@ from . import fft
 import katsdpimager.types
 
 
-class _TaperTemplate(object):
-    r"""Base class for :class:`TaperDivideTemplate` and :class:`TaperMultiplyTemplate`.
+class _LayerImageTemplate(object):
+    r"""Base class for :class:`LayerToImageTemplate` and :class:`ImageToLayerTemplate`.
 
-    These operations divide between a "layer" (the raw Fourier Transform from
-    the UV plane) and the "image". :class:`TaperDivideTemplate` converts from
-    layer to image, and :class:`TaperMultiplyTemplate` is the inverse.
-    :class:`TaperDivideTemplate` applies the following operations:
+    These operations convert between a "layer" (the raw Fourier Transform from
+    the UV plane) and the "image". :class:`LayerToImageTemplate` converts from
+    layer to image (accumulating into the stacked image), and
+    :class:`ImageToLayerTemplate` is the inverse. :class:`LayerToImageTemplate`
+    applies the following operations:
 
     - It reorders the elements to put the image centre at the centre (in the layer,
       it is in the corners). This is the equivalent of `np.fft.fftshift`.
 
-    - It divides out an image tapering function.
-
-      The function is the combination of a separable antialiasing function and
-      the 3rd direction cosine (n). Specifically, for input pixel coordinates x,
-      y, we calculate
+    - It divides out an image tapering function. The function is the
+      combination of a separable antialiasing function and the 3rd direction
+      cosine (n). Specifically, for input pixel coordinates x, y, we
+      calculate
 
       .. math::
 
@@ -39,8 +39,7 @@ class _TaperTemplate(object):
 
          e^{2\pi i w\left(\sqrt{1-l(x)^2-m(y)^2} - 1\right)}
 
-    In the forward direction, only the real component of the result is kept,
-    and the complex component is discarded.
+         Only the real component of the result is kept in the image.
 
     Further dimensions are supported e.g. for Stokes parameters, which occur
     before the l/m dimensions.
@@ -70,8 +69,8 @@ class _TaperTemplate(object):
             extra_dirs=[pkg_resources.resource_filename(__name__, '')])
 
 
-class _Taper(accel.Operation):
-    """Base class for instantiation of subclasses of :class:`_TaperTemplate`
+class _LayerImage(accel.Operation):
+    """Base class for instantiation of subclasses of :class:`_LayerImageTemplate`
 
     .. rubric:: Slots
 
@@ -84,7 +83,7 @@ class _Taper(accel.Operation):
 
     Parameters
     ----------
-    template : :class:`_TaperTemplate`
+    template : :class:`_LayerImageTemplate`
         Operation template
     command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
         Command queue for the operation
@@ -95,7 +94,7 @@ class _Taper(accel.Operation):
     lm_bias : float
         Bias from scaled pixel coordinates to l/m coordinates
     kernel_name : str
-        Number of the kernel function
+        Name of the kernel function
     allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
         Allocator used to allocate unbound slots
 
@@ -109,7 +108,7 @@ class _Taper(accel.Operation):
             raise ValueError('shape must be square, not {}'.format(shape))
         if shape[-1] % 2 != 0:
             raise ValueError('image size must be even, not {}'.format(shape[-1]))
-        super(_Taper, self).__init__(command_queue, allocator)
+        super(_LayerImage, self).__init__(command_queue, allocator)
         self.template = template
         complex_dtype = katsdpimager.types.real_to_complex(template.real_dtype)
         dims = [accel.Dimension(x) for x in shape]
@@ -156,8 +155,8 @@ class _Taper(accel.Operation):
         )
 
 
-class TaperDivideTemplate(_TaperTemplate):
-    """Convert layer to image. See :class:`_TaperTemplate` for details.
+class LayerToImageTemplate(_LayerImageTemplate):
+    """Convert layer to image. See :class:`_LayerImageTemplate` for details.
 
     Parameters
     ----------
@@ -169,19 +168,20 @@ class TaperDivideTemplate(_TaperTemplate):
         Tuning parameters (currently unused)
     """
     def __init__(self, context, real_dtype, tuning=None):
-        super(TaperDivideTemplate, self).__init__(context, real_dtype, 'imager_kernels/taper_divide.mako', tuning)
+        super(LayerToImageTemplate, self).__init__(
+            context, real_dtype, 'imager_kernels/layer_to_image.mako', tuning)
 
     def instantiate(self, *args, **kwargs):
-        return TaperDivide(self, *args, **kwargs)
+        return LayerToImage(self, *args, **kwargs)
 
 
-class TaperDivide(_Taper):
-    """Instantiation of :class:`TaperDivideTemplate`. See :class:`_Taper` for
+class LayerToImage(_LayerImage):
+    """Instantiation of :class:`LayerToImageTemplate`. See :class:`_LayerImage` for
     details.
 
     Parameters
     ----------
-    template : :class:`TaperDivideTemplate`
+    template : :class:`LayerToImageTemplate`
         Operation template
     command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
         Command queue for the operation
@@ -200,12 +200,12 @@ class TaperDivide(_Taper):
         if the last two elements of shape are not equal and even
     """
     def __init__(self, template, command_queue, shape, lm_scale, lm_bias, allocator=None):
-        super(TaperDivide, self).__init__(
-            template, command_queue, shape, lm_scale, lm_bias, "taper_divide", allocator)
+        super(LayerToImage, self).__init__(
+            template, command_queue, shape, lm_scale, lm_bias, "layer_to_image", allocator)
 
 
-class TaperMultiplyTemplate(_TaperTemplate):
-    """Convert image to layer. See :class:`_TaperTemplate` for details.
+class ImageToLayerTemplate(_LayerImageTemplate):
+    """Convert image to layer. See :class:`_LayerImageTemplate` for details.
 
     Parameters
     ----------
@@ -217,19 +217,20 @@ class TaperMultiplyTemplate(_TaperTemplate):
         Tuning parameters (currently unused)
     """
     def __init__(self, context, real_dtype, tuning=None):
-        super(TaperMultiplyTemplate, self).__init__(context, real_dtype, 'imager_kernels/taper_multiply.mako', tuning)
+        super(ImageToLayerTemplate, self).__init__(
+            context, real_dtype, 'imager_kernels/image_to_layer.mako', tuning)
 
     def instantiate(self, *args, **kwargs):
-        return TaperMultiply(self, *args, **kwargs)
+        return ImageToLayer(self, *args, **kwargs)
 
 
-class TaperMultiply(_TaperTemplate):
-    """Instantiation of :class:`TaperMultiplyTemplate`. See :class:`_Taper` for
+class ImageToLayer(_LayerImage):
+    """Instantiation of :class:`ImageToLayerTemplate`. See :class:`_LayerImage` for
     details.
 
     Parameters
     ----------
-    template : :class:`TaperMultiplyTemplate`
+    template : :class:`ImageToLayerTemplate`
         Operation template
     command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
         Command queue for the operation
@@ -248,8 +249,8 @@ class TaperMultiply(_TaperTemplate):
         if the last two elements of shape are not equal and even
     """
     def __init__(self, template, command_queue, shape, lm_scale, lm_bias, allocator=None):
-        super(TaperMultiply, self).__init__(
-            template, command_queue, shape, lm_scale, lm_bias, "taper_multiply", allocator)
+        super(ImageToLayer, self).__init__(
+            template, command_queue, shape, lm_scale, lm_bias, "image_to_layer", allocator)
 
 
 class ScaleTemplate(object):
@@ -342,10 +343,10 @@ class Scale(accel.Operation):
 
 class GridToImageTemplate(object):
     """Template for a combined operation that converts from a complex grid to a
-    real image, including tapering correction.  The grid need not be conjugate
-    symmetric: it is put through a complex-to-complex transformation, and the
-    real part of the result is returned. Both the grid and the image have the
-    DC term in the middle.
+    real image, including layer-to-image conversion.  The grid need not be
+    conjugate symmetric: it is put through a complex-to-complex transformation,
+    and the real part of the result is returned. Both the grid and the image
+    have the DC term in the middle.
 
     This operation is destructive: the grid is modified in-place.
 
@@ -371,7 +372,7 @@ class GridToImageTemplate(object):
         self.shift_complex = fft.FftshiftTemplate(command_queue.context, complex_dtype)
         self.fft = fft.FftTemplate(command_queue, 2, shape, complex_dtype,
                                    padded_shape_src, padded_shape_dest)
-        self.taper_divide = TaperDivideTemplate(command_queue.context, real_dtype)
+        self.layer_to_image = LayerToImageTemplate(command_queue.context, real_dtype)
 
     def instantiate(self, *args, **kwargs):
         return GridToImage(self, *args, **kwargs)
@@ -385,7 +386,7 @@ class GridToImage(accel.OperationSequence):
     template : :class:`GridToImageTemplate`
         Operation template
     lm_scale, lm_bias : float
-        See :class:`TaperDivide`
+        See :class:`LayerToImage`
     allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
         Allocator used to allocate unbound slots
     """
@@ -394,23 +395,23 @@ class GridToImage(accel.OperationSequence):
         self._shift_grid = template.shift_complex.instantiate(
             command_queue, template.fft.shape, allocator)
         self._ifft = template.fft.instantiate(fft.FFT_INVERSE, allocator)
-        self._taper_divide = template.taper_divide.instantiate(
+        self._layer_to_image = template.layer_to_image.instantiate(
             command_queue, template.fft.shape, lm_scale, lm_bias, allocator)
         operations = [
             ('shift_grid', self._shift_grid),
             ('ifft', self._ifft),
-            ('taper_divide', self._taper_divide)
+            ('layer_to_image', self._layer_to_image)
         ]
         compounds = {
             'grid': ['shift_grid:data', 'ifft:src'],
-            'layer': ['ifft:dest', 'taper_divide:layer'],
-            'image': ['taper_divide:image'],
-            'kernel1d': ['taper_divide:kernel1d']
+            'layer': ['ifft:dest', 'layer_to_image:layer'],
+            'image': ['layer_to_image:image'],
+            'kernel1d': ['layer_to_image:kernel1d']
         }
         super(GridToImage, self).__init__(command_queue, operations, compounds, allocator=allocator)
 
     def set_w(self, w):
-        self._taper_divide.set_w(w)
+        self._layer_to_image.set_w(w)
 
 
 class GridToImageHost(object):

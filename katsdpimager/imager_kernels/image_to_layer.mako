@@ -1,19 +1,19 @@
 <%include file="/port.mako">
-<%namespace name="taper" file="taper.mako"/>
+<%namespace name="layer_image" file="layer_image.mako"/>
 
-<%call expr="taper.taper_kernel('taper_multiply', 'const', '', real_type)">
+<%call expr="layer_image.kernel('image_to_layer', 'const', '', real_type)">
     Complex value[2][2];
     for (int i = 0; i < 2; i++)
         for (int j = 0; j < 2; j++)
             value[i][j] = in[addr[i][j]];
 
-    ${taper.compute_lm()}
+    ${layer_image.compute_lm()}
 
     // Compute and write results
     for (int i = 0; i < 2; i++)
         for (int j = 0; j < 2; j++)
         {
-            ${taper.compute_n_rotate(i, j)}
+            ${layer_image.compute_n_rotate(i, j)}
             value[i][j] *= kernel_y[i] * kernel_x[j] / n;
             // Multiply by e^(-2pi i w (n-1))
             Complex rotated;

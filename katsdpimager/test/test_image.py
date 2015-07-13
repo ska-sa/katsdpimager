@@ -7,14 +7,14 @@ import katsdpsigproc.accel as accel
 from katsdpsigproc.test.test_accel import device_test
 
 
-class TestTaperDivide(object):
+class TestLayerToImage(object):
     @device_test
     def test_2d(self, context, command_queue):
         size = 102
         lm_scale = 0.1 / size
         lm_bias = -lm_scale * size / 3   # Off-centre, to check that it's working
         w = 12.3
-        template = image.TaperDivideTemplate(context, np.float32)
+        template = image.LayerToImageTemplate(context, np.float32)
         fn = template.instantiate(command_queue, (size, size), lm_scale, lm_bias)
         fn.set_w(w)
         fn.ensure_all_bound()
@@ -45,7 +45,7 @@ class TestTaperDivide(object):
         lm_scale = 0.1 / size
         lm_bias = -lm_scale * size / 3   # Off-centre, to check that it's working
         w = 12.3
-        template = image.TaperDivideTemplate(context, np.float32)
+        template = image.LayerToImageTemplate(context, np.float32)
         fn = template.instantiate(command_queue, shape, lm_scale, lm_bias)
         fn.set_w(w)
         fn.ensure_all_bound()

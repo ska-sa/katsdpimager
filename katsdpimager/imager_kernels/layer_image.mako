@@ -1,4 +1,4 @@
-## Helper functions for taper_divide and taper_multiply
+## Helper functions for layer_to_image and image_to_layer
 
 <%def name="compute_lm()">
     Real l2[2], m2[2];
@@ -20,7 +20,7 @@
     sincospi(w2 * (n - 1), &rotate.y, &rotate.x);
 </%def>
 
-<%def name="taper_kernel(kernel_name, image_const, layer_const, real_type)">
+<%def name="kernel(kernel_name, image_const, layer_const, real_type)">
     typedef ${real_type} Real;
     typedef ${real_type}2 Complex;
 
