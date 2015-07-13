@@ -13,9 +13,12 @@ Submodules
 
 .. toctree::
 
+   katsdpimager.beam
    katsdpimager.clean
    katsdpimager.fft
    katsdpimager.grid
+   katsdpimager.image
+   katsdpimager.imaging
    katsdpimager.io
    katsdpimager.loader
    katsdpimager.loader_core

@@ -1,4 +1,4 @@
-"""Tests for katsdpimager.fft"""
+"""Tests for :mod:`katsdpimager.fft`"""
 
 import numpy as np
 import math

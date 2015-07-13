@@ -350,8 +350,8 @@ class GridToImageTemplate(object):
 
     This operation is destructive: the grid is modified in-place.
 
-    Because it uses :class:`fft.FftTemplate`, most of the parameters are baked
-    into the template rather than the instance.
+    Because it uses :class:`~katsdpimager.fft.FftTemplate`, most of the
+    parameters are baked into the template rather than the instance.
 
     Parameters
     ----------

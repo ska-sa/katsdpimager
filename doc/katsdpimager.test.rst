@@ -8,6 +8,7 @@ Submodules
 
    katsdpimager.test.test_clean
    katsdpimager.test.test_fft
+   katsdpimager.test.test_image
    katsdpimager.test.test_polarization
    katsdpimager.test.test_preprocess
 

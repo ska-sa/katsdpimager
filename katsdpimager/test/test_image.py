@@ -1,4 +1,4 @@
-"""Tests for katsdpimager.image"""
+"""Tests for :mod:`katsdpimager.image`"""
 
 import numpy as np
 import math
