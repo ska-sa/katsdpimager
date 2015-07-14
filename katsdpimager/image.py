@@ -464,6 +464,9 @@ class ImageToGrid(accel.OperationSequence):
         }
         super(ImageToGrid, self).__init__(command_queue, operations, compounds, allocator=allocator)
 
+    def set_w(self, w):
+        self._image_to_layer.set_w(w)
+
 
 class GridToImageHost(object):
     """CPU-only equivalent to :class:`GridToImage`.

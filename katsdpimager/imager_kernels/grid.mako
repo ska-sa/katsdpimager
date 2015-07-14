@@ -23,7 +23,7 @@ typedef atomic_accum_${real_type}2 atomic_accum_Complex;
 #define atomic_accum_Complex_add atomic_accum_${real_type}2_add
 
 /// Computes a * b
-DEVICE_FN float2 complex_mul(float2 a, float2 b)
+DEVICE_FN float2 Complex_mul(float2 a, float2 b)
 {
     return make_float2(fma(a.x, b.x, -a.y * b.y),
                        fma(a.x, b.y, a.y * b.x));
@@ -154,7 +154,7 @@ void grid(
                     }
                     float2 weight_u = convolve_kernel[u + base_offset.x];
                     float2 weight_v = convolve_kernel[v + base_offset.y];
-                    float2 weight = complex_mul(weight_u, weight_v);
+                    float2 weight = Complex_mul(weight_u, weight_v);
                     for (int p = 0; p < NPOLS; p++)
                     {
                         // The weight is conjugated because the w kernel is
