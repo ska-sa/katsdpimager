@@ -62,5 +62,4 @@ class TestDegridder(object):
                 footprint = grid_data[j, uv[i, 1] : uv[i, 1] + kernel.shape[0],
                                          uv[i, 0] : uv[i, 0] + kernel.shape[1]]
                 expected[i, j] = np.dot(kernel.ravel(), footprint.ravel())
-        import matplotlib.pyplot as plt
         np.testing.assert_allclose(expected, vis, 1e-5)
