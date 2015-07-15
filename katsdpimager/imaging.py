@@ -43,6 +43,8 @@ class ImagingTemplate(object):
             types.dtype_to_ctype(image_parameters.real_dtype))
         self.taper1d = accel.SVMArray(context, (image_parameters.pixels,), image_parameters.real_dtype)
         self.gridder.convolve_kernel.taper(image_parameters.pixels, self.taper1d)
+        self.untaper1d = accel.SVMArray(context, (image_parameters.pixels,), image_parameters.real_dtype)
+        self.degridder.convolve_kernel.taper(image_parameters.pixels, self.untaper1d)
 
 
     def instantiate(self, *args, **kwargs):
@@ -75,6 +77,7 @@ class Imaging(accel.OperationSequence):
         self._clear_model = template.clear_image.instantiate(
             template.command_queue, image_shape, allocator)
         self._grid_to_image.bind(kernel1d=template.taper1d)
+        self._image_to_grid.bind(kernel1d=template.untaper1d)
         operations = [
             ('gridder', self._gridder),
             ('degridder', self._degridder),
