@@ -76,6 +76,7 @@ def get_parser():
     # TODO: compute from some heuristic if not specified, instead of a hard-coded default
     group.add_argument('--psf-patch', type=int, default=100, help='Pixels in beam patch for cleaning [%(default)s]')
     group.add_argument('--loop-gain', type=float, default=0.1, help='Loop gain for cleaning [%(default)s]')
+    group.add_argument('--major', type=int, default=1, help='Major cycles [%(default)s]')
     group.add_argument('--minor', type=int, default=1000, help='Minor cycles per major cycle [%(default)s]')
     group.add_argument('--clean-mode', choices=['I', 'IQUV'], default='IQUV', help='Stokes parameters to consider for peak-finding [%(default)s]')
     group = parser.add_argument_group('Performance tuning options')
@@ -147,7 +148,7 @@ def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, po
     return collector
 
 
-def make_dirty(queue, reader, name, field, imager, mid_w, vis_block):
+def make_dirty(queue, reader, name, field, imager, mid_w, vis_block, full_cycle=False):
     imager.clear_dirty()
     queue.finish()
     for w_slice in range(reader.num_w_slices):
@@ -156,11 +157,21 @@ def make_dirty(queue, reader, name, field, imager, mid_w, vis_block):
             logger.info("Skipping slice %d which has no visibilities", w_slice + 1)
             continue
         label = '{} {}/{}'.format(name, w_slice + 1, reader.num_w_slices)
+        if full_cycle:
+            with progress.step('FFT {}'.format(label)):
+                imager.model_to_grid(mid_w[w_slice])
         bar = progress.make_progressbar('Grid {}'.format(label), max=N)
         imager.clear_grid()
         queue.finish()
         with progress.finishing(bar):
             for chunk in reader.iter_slice(0, w_slice, vis_block):
+                if full_cycle:
+                    # TODO: this will transfer the coordinate data twice. Also,
+                    # it makes unnecessary copies of the visibilities, which
+                    # should ideally stay on the GPU.
+                    predicted = np.empty_like(chunk[field])
+                    imager.degrid(chunk.uv, chunk.sub_uv, chunk.w_plane, predicted)
+                    chunk[field] -= predicted * chunk.weights
                 imager.grid(chunk.uv, chunk.sub_uv, chunk.w_plane, chunk[field])
                 # Need to serialise calls to grid, since otherwise the next
                 # call will overwrite the incoming data before the previous
@@ -168,7 +179,7 @@ def make_dirty(queue, reader, name, field, imager, mid_w, vis_block):
                 queue.finish()
                 bar.next(len(chunk))
 
-        with progress.step('FFT {}'.format(label)):
+        with progress.step('IFFT {}'.format(label)):
             imager.grid_to_image(mid_w[w_slice])
             queue.finish()
 
@@ -315,29 +326,32 @@ def main():
         if args.write_psf is not None:
             with progress.step('Write PSF'):
                 io.write_fits_image(dataset, dirty, image_p, args.write_psf, restoring_beam)
-        make_dirty(queue, reader, 'image', 'vis', imager, mid_w, args.vis_block)
-        imager.scale_dirty(scale)
-        queue.finish()
-        if args.write_grid is not None:
-            with progress.step('Write grid'):
-                if args.host:
-                    io.write_fits_grid(grid_data, image_p, args.write_grid)
-                else:
-                    io.write_fits_grid(np.fft.fftshift(grid_data, axes=(1, 2)),
-                                       image_p, args.write_grid)
-        if args.write_dirty is not None:
-            with progress.step('Write dirty image'):
-                io.write_fits_image(dataset, dirty, image_p, args.write_dirty, restoring_beam)
 
-        #### Deconvolution ####
-        bar = progress.make_progressbar('CLEAN', max=clean_p.minor)
-        imager.clean_reset()
         imager.clear_model()
-        with progress.finishing(bar):
-            for i in bar.iter(range(clean_p.minor)):
-                imager.clean_cycle()
-        queue.finish()
-        # TODO: restoring beam
+        for i in range(args.major):
+            logger.info("Starting major cycle %d/%d", i + 1, args.major)
+            make_dirty(queue, reader, 'image', 'vis', imager, mid_w, args.vis_block, i != 0)
+            imager.scale_dirty(scale)
+            queue.finish()
+            if i == 0 and args.write_grid is not None:
+                with progress.step('Write grid'):
+                    if args.host:
+                        io.write_fits_grid(grid_data, image_p, args.write_grid)
+                    else:
+                        io.write_fits_grid(np.fft.fftshift(grid_data, axes=(1, 2)),
+                                           image_p, args.write_grid)
+            if i == 0 and args.write_dirty is not None:
+                with progress.step('Write dirty image'):
+                    io.write_fits_image(dataset, dirty, image_p, args.write_dirty, restoring_beam)
+
+            #### Deconvolution ####
+            bar = progress.make_progressbar('CLEAN', max=clean_p.minor)
+            imager.clean_reset()
+            with progress.finishing(bar):
+                for j in bar.iter(range(clean_p.minor)):
+                    imager.clean_cycle()
+            queue.finish()
+
         if args.write_model is not None:
             with progress.step('Write model'):
                 io.write_fits_image(dataset, model, image_p, args.write_model)
