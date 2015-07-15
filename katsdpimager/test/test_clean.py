@@ -6,7 +6,7 @@ import scipy.signal
 import katsdpimager.clean as clean
 import katsdpimager.parameters as parameters
 import katsdpimager.polarization as polarization
-from katsdpsigproc.test.test_accel import device_test, cuda_test
+from katsdpsigproc.test.test_accel import device_test
 import mock
 from nose.tools import *
 
