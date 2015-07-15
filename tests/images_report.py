@@ -202,7 +202,7 @@ def main():
               ],
               clean_globs=['*-mfs1.img*']),
         Image('katsdpimager (GPU)', 'katsdpimager-gpu', 'image-gpu.fits', 'dirty-gpu.fits',
-              [katsdpimager_common + ['--write-dirty=${output_dir}/dirty-gpu.fits', '${output_dir}/image-gpu.fits']]),
+              [katsdpimager_common + ['--major=5', '--eps-w=0.001', '--write-dirty=${output_dir}/dirty-gpu.fits', '${output_dir}/image-gpu.fits']]),
         Image('katsdpimager (CPU)', 'katsdpimager-cpu', 'image-cpu.fits', 'dirty-cpu.fits',
               [katsdpimager_common + ['--host', '--write-dirty=${output_dir}/dirty-cpu.fits', '${output_dir}/image-cpu.fits']])
     ]
