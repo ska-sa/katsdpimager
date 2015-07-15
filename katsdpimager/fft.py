@@ -1,9 +1,9 @@
-"""Utilities to wrap scikits.cuda.fft for imaging purposes"""
+"""Utilities to wrap skcuda.fft for imaging purposes"""
 
 from __future__ import print_function, division
 import numpy as np
 import pkg_resources
-import scikits.cuda.fft
+import skcuda.fft
 from katsdpsigproc import accel
 import katsdpimager.types
 
@@ -14,7 +14,7 @@ FFT_INVERSE = 1
 
 
 class _Gpudata(object):
-    """Adapter to allow scikits.cuda.fft to work with managed memory
+    """Adapter to allow skcuda.fft to work with managed memory
     allocations. Add it as a `gpudata` member on an arbitrary object, to allow
     that object to be passed instead of a :py:class`pycuda.gpuarray.GPUArray`.
     """
@@ -35,7 +35,7 @@ class _Gpudata(object):
 class _GpudataWrapper(object):
     """Forwarding wrapper around a :py:class:`katsdpsigproc.accel.SVMArray` or
     :py:class:`katsdpsigproc.accel.DeviceArray` that allows it to be passed
-    to scikits.cuda.fft.
+    to skcuda.fft.
     """
     def __init__(self, wrapped):
         self._wrapped = wrapped
@@ -186,7 +186,7 @@ class FftTemplate(object):
         self.needs_synchronize_workaround = any(x <= 1920 for x in shape[:N])
         batches = int(np.product(padded_shape_src[:-N]))
         with command_queue.context:
-            self.plan = scikits.cuda.fft.Plan(
+            self.plan = skcuda.fft.Plan(
                 shape[-N:], dtype, dtype, batches,
                 stream=command_queue._pycuda_stream,
                 inembed=np.array(padded_shape_src[-N:], np.int32),
@@ -236,10 +236,10 @@ class Fft(accel.Operation):
         context = self.template.command_queue.context
         with context:
             if self.mode == FFT_FORWARD:
-                scikits.cuda.fft.fft(_GpudataWrapper(src_buffer), _GpudataWrapper(dest_buffer),
+                skcuda.fft.fft(_GpudataWrapper(src_buffer), _GpudataWrapper(dest_buffer),
                                      self.template.plan)
             else:
-                scikits.cuda.fft.ifft(_GpudataWrapper(src_buffer), _GpudataWrapper(dest_buffer),
+                skcuda.fft.ifft(_GpudataWrapper(src_buffer), _GpudataWrapper(dest_buffer),
                                       self.template.plan)
             if self.template.needs_synchronize_workaround:
                 context._pycuda_context.synchronize()
