@@ -40,6 +40,6 @@ def complex_to_real(dtype):
     if dtype == np.complex64:
         return np.float32
     elif dtype == np.complex128:
-        return np.complex64
+        return np.float64
     else:
         raise ValueError('Unrecognised dtype {}'.format(dtype))
