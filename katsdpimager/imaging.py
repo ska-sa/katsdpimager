@@ -46,13 +46,13 @@ class ImagingTemplate(object):
         self.untaper1d = accel.SVMArray(context, (image_parameters.pixels,), image_parameters.real_dtype)
         self.degridder.convolve_kernel.taper(image_parameters.pixels, self.untaper1d)
 
-
     def instantiate(self, *args, **kwargs):
         return Imaging(self, *args, **kwargs)
 
 
 class Imaging(accel.OperationSequence):
     def __init__(self, template, max_vis, allocator=None):
+        self.template = template
         lm_scale = float(template.image_parameters.pixel_size)
         lm_bias = -0.5 * template.image_parameters.pixels * lm_scale
         image_shape = (len(template.image_parameters.polarizations),
