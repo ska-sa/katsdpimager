@@ -81,7 +81,7 @@ void degrid(
     // Index for first grid point to update
     LOCAL_DECL int2 batch_min_uv[SUBGROUPS][BATCH_SIZE];
     // Accumulated output visibilities
-    LOCAL_DECL float2 batch_vis[SUBGROUPS][NPOLS][BATCH_SIZE];
+    LOCAL_DECL Complex batch_vis[SUBGROUPS][NPOLS][BATCH_SIZE];
     // Scratch area for reductions
     LOCAL_DECL scratch_t scratch[SUBGROUPS];
     // Last-known UV coordinates
@@ -187,7 +187,13 @@ void degrid(
             {
                 // TODO: could improve this using float4s where appropriate
                 int idx = vis_id * NPOLS + p;
+% if real_type == 'float':
                 vis[idx] = batch_vis[subgroup][p][lid];
+% else:
+                vis[idx] = make_float2(
+                    batch_vis[subgroup][p][lid].x,
+                    batch_vis[subgroup][p][lid].y);
+% endif
             }
         }
 
