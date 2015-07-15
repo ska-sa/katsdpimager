@@ -14,7 +14,7 @@
         for (int j = 0; j < 2; j++)
         {
             ${layer_image.compute_n_rotate('i', 'j')}
-            value[i][j] *= kernel_y[i] * kernel_x[j] / n;
+            value[i][j] /= kernel_y[i] * kernel_x[j] * n;
             // Multiply by e^(-2pi i w (n-1))
             Complex rotated;
             rotated.x = value[i][j] * rotate.x;

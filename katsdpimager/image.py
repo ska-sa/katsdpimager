@@ -33,6 +33,11 @@ class _LayerImageTemplate(object):
          m(y) &= \text{lm_scale}\cdot y + \text{lm_bias}\\
          f(x, y) &= \frac{\text{kernel1d}[x] \cdot \text{kernel1d}[y]}{\sqrt{1-l(x)^2-m(y)^2}}
 
+      This function is also *divided* in the reverse direction, making the two
+      operations not actually inverses of each other. This is necessary because
+      the transform of the tapering function is convolved with visibilities in
+      both directions.
+
     - It multiplies by a W correction term, namely
 
       .. math::

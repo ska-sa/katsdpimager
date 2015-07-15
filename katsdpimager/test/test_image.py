@@ -95,15 +95,16 @@ class TestImageToLayer(object):
         rs = np.random.RandomState(1)
         expected = rs.uniform(10.0, 100.0, shape).astype(np.float32)
         kernel1d = rs.uniform(1.0, 2.0, size).astype(np.float32)
+        kernel = np.outer(kernel1d, kernel1d)[np.newaxis, ...]
         # Run test function
-        image_to_layer.buffer('image').set(command_queue, expected)
+        image_to_layer.buffer('image').set(command_queue, expected * kernel)
         image_to_layer.buffer('kernel1d').set(command_queue, kernel1d)
         image_to_layer()
         # Wipe out the image, to make sure it gets written properly
         image_to_layer.buffer('image').set(command_queue, np.zeros_like(expected))
         # Convert back again
         layer_to_image()
-        actual = layer_to_image.buffer('image').get(command_queue)
+        actual = layer_to_image.buffer('image').get(command_queue) * kernel
         np.testing.assert_allclose(expected, actual, 1e-4)
 
 
