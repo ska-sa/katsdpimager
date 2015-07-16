@@ -1,8 +1,8 @@
 <%include file="/port.mako"/>
 <%namespace name="wg_reduce" file="/wg_reduce.mako"/>
 
-<%wg_reduce:define_scratch type="${real_type}" size="${wgs_x * wgs_y}" scratch_type="scratch_t"/>
-<%wg_reduce:define_function type="${real_type}" size="${wgs_x * wgs_y}" function="reduce_add" scratch_type="scratch_t"/>
+<%wg_reduce:define_scratch type="${real_type}" size="${wgs_x * wgs_y}" scratch_type="scratch_t" allow_shuffle="${True}"/>
+<%wg_reduce:define_function type="${real_type}" size="${wgs_x * wgs_y}" function="reduce_add" scratch_type="scratch_t" allow_shuffle="${True}" broadcast="${False}"/>
 
 typedef ${real_type} Real;
 typedef ${real_type}2 Complex;
@@ -159,7 +159,6 @@ void degrid(
                         }
                     for (int p = 0; p < NPOLS; p++)
                     {
-                        // TODO: replace with Kepler shuffle where possible
                         // TODO: result could be kept in a register instead of
                         // shared memory.
                         Complex reduced = make_Complex(

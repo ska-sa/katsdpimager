@@ -592,7 +592,7 @@ class DegridderTemplate(object):
         self.wgs_x = 8
         self.wgs_y = 4
         self.wgs_z = 4
-        self.multi_x = 1
+        self.multi_x = 2
         self.multi_y = 2
         self.tile_x = self.wgs_x * self.multi_x
         self.tile_y = self.wgs_y * self.multi_y
