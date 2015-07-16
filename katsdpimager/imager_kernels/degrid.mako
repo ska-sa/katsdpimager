@@ -81,7 +81,7 @@ void degrid(
     // Index for first grid point to update
     LOCAL_DECL int2 batch_min_uv[SUBGROUPS][BATCH_SIZE];
     // Accumulated output visibilities
-    LOCAL_DECL Complex batch_vis[SUBGROUPS][NPOLS][BATCH_SIZE];
+    LOCAL_DECL Complex batch_vis[NPOLS][SUBGROUPS][BATCH_SIZE];
     // Scratch area for reductions
     LOCAL_DECL scratch_t scratch[SUBGROUPS];
     // Last-known UV coordinates
@@ -102,8 +102,6 @@ void degrid(
 
     int batch_start = batch_id * vis_per_subgroup;
     int batch_end = min(nvis, batch_start + vis_per_subgroup);
-    // TODO: restructure this whole loop so that local memory addresses
-    // aren't split up into subgroup/vis_id.
     for (; batch_start < batch_end; batch_start += BATCH_SIZE)
     {
         // Load batch
@@ -114,7 +112,7 @@ void degrid(
             short4 sample_uv = uv[vis_id];
             short sample_w_plane = w_plane[vis_id];
             for (int p = 0; p < NPOLS; p++)
-                batch_vis[subgroup][p][lid] = make_Complex(0, 0);
+                batch_vis[p][subgroup][lid] = make_Complex(0, 0);
 
             int2 min_uv = make_int2(sample_uv.x, sample_uv.y);
             int offset_w = sample_w_plane * CONVOLVE_KERNEL_W_STRIDE;
@@ -166,10 +164,10 @@ void degrid(
                             reduce_add(contrib[p].y, lid, &scratch[subgroup]));
                         if (lid == 0)
                         {
-                            Complex old = batch_vis[subgroup][p][vis_id];
+                            Complex old = batch_vis[p][subgroup][vis_id];
                             reduced.x += old.x;
                             reduced.y += old.y;
-                            batch_vis[subgroup][p][vis_id] = reduced;
+                            batch_vis[p][subgroup][vis_id] = reduced;
                         }
                     }
                 }
@@ -187,11 +185,11 @@ void degrid(
                 // TODO: could improve this using float4s where appropriate
                 int idx = vis_id * NPOLS + p;
 % if real_type == 'float':
-                vis[idx] = batch_vis[subgroup][p][lid];
+                vis[idx] = batch_vis[p][subgroup][lid];
 % else:
                 vis[idx] = make_float2(
-                    batch_vis[subgroup][p][lid].x,
-                    batch_vis[subgroup][p][lid].y);
+                    batch_vis[p][subgroup][lid].x,
+                    batch_vis[p][subgroup][lid].y);
 % endif
             }
         }
