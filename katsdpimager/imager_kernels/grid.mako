@@ -87,7 +87,8 @@ void grid(
     // In-register sums
     Complex sums[MULTI_Y][MULTI_X][NPOLS];
     // Last-known UV coordinates
-    int2 cur_uv[MULTI_Y][MULTI_X];
+    int cur_u[MULTI_X];
+    int cur_v[MULTI_Y];
 
     // Zero-initialize things
     for (int y = 0; y < MULTI_Y; y++)
@@ -95,8 +96,11 @@ void grid(
         {
             for (int p = 0; p < NPOLS; p++)
                 sums[y][x][p] = make_Complex(0.0f, 0.0f);
-            cur_uv[y][x] = make_int2(0, 0);
         }
+    for (int x = 0; x < MULTI_X; x++)
+        cur_u[x] = 0;
+    for (int y = 0; y < MULTI_Y; y++)
+        cur_v[y] = 0;
 
     int u_phase = get_group_id(1) * TILE_X + get_local_id(0) * MULTI_X;
     int v_phase = get_group_id(2) * TILE_Y + get_local_id(1) * MULTI_Y;
@@ -137,23 +141,25 @@ void grid(
                 sample_vis[p] = batch_vis[p][vis_id];
             int2 min_uv = batch_min_uv[vis_id];
             int2 base_offset = batch_offset[vis_id];
+            int u[MULTI_X], v[MULTI_Y];
+            // TODO: expand convolution kernel footprint such that
+            // multi-xy block is emitted as a unit, instead of separate
+            // cur_uv for each element.
+            for (int x = 0; x < MULTI_X; x++)
+                u[x] = wrap(min_uv.x, CONVOLVE_KERNEL_SIZE_X, u_phase + x);
+            for (int y = 0; y < MULTI_Y; y++)
+                v[y] = wrap(min_uv.y, CONVOLVE_KERNEL_SIZE_Y, v_phase + y);
             for (int y = 0; y < MULTI_Y; y++)
                 for (int x = 0; x < MULTI_X; x++)
                 {
-                    // TODO: expand convolution kernel footprint such that
-                    // multi-xy block is emitted as a unit, instead of separate
-                    // cur_uv for each element.
-                    int u = wrap(min_uv.x, CONVOLVE_KERNEL_SIZE_X, u_phase + x);
-                    int v = wrap(min_uv.y, CONVOLVE_KERNEL_SIZE_Y, v_phase + y);
-                    if (u != cur_uv[y][x].x || v != cur_uv[y][x].y)
+                    if (u[x] != cur_u[x] || v[y] != cur_v[y])
                     {
-                        writeback(out, out_row_stride, out_pol_stride, cur_uv[y][x].x, cur_uv[y][x].y, sums[y][x]);
-                        cur_uv[y][x] = make_int2(u, v);
+                        writeback(out, out_row_stride, out_pol_stride, cur_u[x], cur_v[y], sums[y][x]);
                         for (int p = 0; p < NPOLS; p++)
                             sums[y][x][p] = make_Complex(0.0f, 0.0f);
                     }
-                    float2 weight_u = convolve_kernel[u + base_offset.x];
-                    float2 weight_v = convolve_kernel[v + base_offset.y];
+                    float2 weight_u = convolve_kernel[u[x] + base_offset.x];
+                    float2 weight_v = convolve_kernel[v[y] + base_offset.y];
                     float2 weight = Complex_mul(weight_u, weight_v);
                     for (int p = 0; p < NPOLS; p++)
                     {
@@ -162,6 +168,10 @@ void grid(
                         sums[y][x][p] = Complex_madc(sample_vis[p], weight, sums[y][x][p]);
                     }
                 }
+            for (int x = 0; x < MULTI_X; x++)
+                cur_u[x] = u[x];
+            for (int y = 0; y < MULTI_Y; y++)
+                cur_v[y] = v[y];
         }
 
         // Necessary to prevent the next batch overwriting data for the current
@@ -172,5 +182,5 @@ void grid(
     // Write back final internal values
     for (int y = 0; y < MULTI_Y; y++)
         for (int x = 0; x < MULTI_X; x++)
-            writeback(out, out_row_stride, out_pol_stride, cur_uv[y][x].x, cur_uv[y][x].y, sums[y][x]);
+            writeback(out, out_row_stride, out_pol_stride, cur_u[x], cur_v[y], sums[y][x]);
 }
