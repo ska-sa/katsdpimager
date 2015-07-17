@@ -18,7 +18,7 @@ class BaseTest(object):
         w_planes = 32
         oversample = 8
         n_vis = 1000
-        kernel_width = 32
+        kernel_width = 28
         self.image_parameters = parameters.ImageParameters(
             q_fov=1.0,
             image_oversample=None,
@@ -47,14 +47,16 @@ class BaseTest(object):
         for i in range(0, n_vis):
             if i % 73 == 0:
                 # Add an occasional total jump
-                self.uv[i, :] = rs.randint(0, pixels - kernel_width, (2,))
+                self.uv[i, :] = rs.randint(kernel_width, pixels - 2 * kernel_width, (2,))
                 self.sub_uv[i, :] = rs.randint(0, oversample, (2,))
                 self.w_plane[i] = rs.randint(0, w_planes)
             else:
                 for j in range(2):
-                    self.uv[i, j] = (self.uv[i - 1, j] + rs.random_integers(-1, 1)) % (pixels - kernel_width)
+                    self.uv[i, j] = (self.uv[i - 1, j] + rs.random_integers(-1, 1) - kernel_width) % (pixels - 3 * kernel_width) + kernel_width
                     self.sub_uv[i, j] = (self.sub_uv[i - 1, j] + rs.random_integers(-1, 1)) % oversample
                 self.w_plane[i] = (self.w_plane[i - 1] + rs.random_integers(-1, 1)) % w_planes
+        self.convolve_kernel = grid.ConvolutionKernel(
+            self.image_parameters, self.grid_parameters)
 
 
 class TestGridder(BaseTest):
@@ -77,13 +79,16 @@ class TestGridder(BaseTest):
         fn.grid(self.uv, self.sub_uv, self.w_plane, vis)
         command_queue.finish()
         expected = np.zeros_like(grid_data)
+        uv_bias = (self.convolve_kernel.data.shape[-1] - 1) // 2
         for i in range(n_vis):
-            kernel = np.outer(template.convolve_kernel.data[self.w_plane[i], self.sub_uv[i, 1], :],
-                              template.convolve_kernel.data[self.w_plane[i], self.sub_uv[i, 0], :])
+            kernel = np.outer(self.convolve_kernel.data[self.w_plane[i], self.sub_uv[i, 1], :],
+                              self.convolve_kernel.data[self.w_plane[i], self.sub_uv[i, 0], :])
             kernel = np.conj(kernel, kernel)
+            u = self.uv[i, 0] - uv_bias
+            v = self.uv[i, 1] - uv_bias
             for j in range(4):
-                footprint = expected[j, self.uv[i, 1] : self.uv[i, 1] + kernel.shape[0],
-                                        self.uv[i, 0] : self.uv[i, 0] + kernel.shape[1]]
+                footprint = expected[j, v : v + kernel.shape[0],
+                                        u : u + kernel.shape[1]]
                 footprint[:] += vis[i, j].astype(np.complex128) * kernel
         np.testing.assert_allclose(expected, grid_data, 1e-5, 1e-12)
 
@@ -107,11 +112,14 @@ class TestDegridder(BaseTest):
         vis = np.zeros((n_vis, 4), np.complex128)
         fn.degrid(self.uv, self.sub_uv, self.w_plane, vis)
         expected = np.zeros_like(vis)
+        uv_bias = (self.convolve_kernel.data.shape[-1] - 1) // 2
         for i in range(n_vis):
             kernel = np.outer(template.convolve_kernel.data[self.w_plane[i], self.sub_uv[i, 1], :],
                               template.convolve_kernel.data[self.w_plane[i], self.sub_uv[i, 0], :])
+            u = self.uv[i, 0] - uv_bias
+            v = self.uv[i, 1] - uv_bias
             for j in range(4):
-                footprint = grid_data[j, self.uv[i, 1] : self.uv[i, 1] + kernel.shape[0],
-                                         self.uv[i, 0] : self.uv[i, 0] + kernel.shape[1]]
+                footprint = grid_data[j, v : v + kernel.shape[0],
+                                         u : u + kernel.shape[1]]
                 expected[i, j] = np.dot(kernel.ravel(), footprint.ravel())
         np.testing.assert_allclose(expected, vis, 1e-5)

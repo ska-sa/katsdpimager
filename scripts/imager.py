@@ -70,7 +70,7 @@ def get_parser():
     group.add_argument('--w-step', type=parse_quantity, default='1.0', help='Separation between W planes, in subgrid cells or a distance [%(default)s]'),
     group.add_argument('--max-w', type=parse_quantity, help='Largest w, as either distance or wavelengths [longest baseline]')
     group.add_argument('--aa-width', type=float, default=7, help='Support of anti-aliasing kernel [%(default)s]')
-    group.add_argument('--kernel-width', type=int, default=64, help='Support of combined anti-aliasing + w kernel [computed]')
+    group.add_argument('--kernel-width', type=int, default=60, help='Support of combined anti-aliasing + w kernel [computed]')
     group.add_argument('--eps-w', type=float, default=0.01, help='Level at which to truncate W kernel [%(default)s]')
     group = parser.add_argument_group('Cleaning options')
     # TODO: compute from some heuristic if not specified, instead of a hard-coded default

@@ -321,19 +321,15 @@ class ConvolutionKernel(object):
         Command-line parameters with image properties
     grid_parameters : :class:`katsdpimager.parameters.GridParameters`
         Gridding parameters
-    kernel_size : int
-        Actual kernel size (overrides the value in `grid_parameters`). In
-        future, this might only determine the memory allocation, while the
-        value in `grid_parameters` would determine the function.
     data : array-like
         If specified, used as a backing data store. Otherwise, a plain numpy
         array is used.
     """
-    def __init__(self, image_parameters, grid_parameters, kernel_size, data=None):
+    def __init__(self, image_parameters, grid_parameters, data=None):
         self.grid_parameters = grid_parameters
         if data is None:
             self.data = np.empty(
-                (grid_parameters.w_planes, grid_parameters.oversample, kernel_size),
+                (grid_parameters.w_planes, grid_parameters.oversample, grid_parameters.kernel_width),
                 np.complex64)
         else:
             self.data = data
@@ -354,20 +350,20 @@ class ConvolutionKernel(object):
         max_w_wavelengths = (w_slice_wavelengths - w_plane_wavelengths) * 0.5
         for i, w in enumerate(np.linspace(-max_w_wavelengths, max_w_wavelengths, grid_parameters.w_planes)):
             antialias_w_kernel(
-                cell_wavelengths, w, kernel_size,
+                cell_wavelengths, w, grid_parameters.kernel_width,
                 grid_parameters.oversample,
                 grid_parameters.antialias_width,
                 grid_parameters.image_oversample,
                 self.beta, out=self.data[i, ...])
 
     @classmethod
-    def aligned_size(cls, grid_parameters, tile_x, tile_y):
-        """Determine appropriate kernel size given alignment restrictions."""
+    def bin_size(cls, grid_parameters, tile_x, tile_y, pad):
+        """Determine appropriate bin size given alignment restrictions."""
         size = max(tile_x, tile_y)
         # Round up to a power of 2
-        while size < grid_parameters.kernel_width:
+        while size < grid_parameters.kernel_width + pad:
             size *= 2
-        if size != grid_parameters.kernel_width:
+        if size != grid_parameters.kernel_width + pad:
             logger.info("kernel size rounded up to %d", size)
         assert size % tile_x == 0
         assert size % tile_y == 0
@@ -387,29 +383,38 @@ class ConvolutionKernel(object):
         x = np.arange(N) / N - 0.5
         return kaiser_bessel_fourier(x, self.grid_parameters.antialias_width, self.beta, out)
 
+
+class ConvolutionKernelDevice(ConvolutionKernel):
+    """A :class:`ConvolutionKernel` that stores data in a device SVM array."""
+    def __init__(self, context, image_parameters, grid_parameters, pad=0):
+        out = accel.SVMArray(context,
+            (grid_parameters.w_planes,
+             grid_parameters.oversample,
+             grid_parameters.kernel_width + 2 * pad),
+            np.complex64)
+        out.fill(0)
+        super(ConvolutionKernelDevice, self).__init__(
+            image_parameters, grid_parameters, out[:, :, pad:grid_parameters.kernel_width + pad])
+        self.padded_data = out
+        self.pad = pad
+
+    @property
+    def bin_size(self):
+        return self.data.shape[-1] + self.pad
+
     def parameters(self):
         """Parameters for templating CUDA/OpenCL kernels"""
         w_scale = float(units.m / self.grid_parameters.max_w) * (self.grid_parameters.w_planes - 1)
         return {
             'convolve_kernel_slice_stride':
-                self.data.padded_shape[2],
+                self.padded_data.padded_shape[2],
             'convolve_kernel_oversample': self.data.shape[1],
-            'convolve_kernel_w_stride': np.product(self.data.padded_shape[1:]),
+            'convolve_kernel_w_stride': np.product(self.padded_data.padded_shape[1:]),
             'convolve_kernel_w_scale': w_scale,
             'convolve_kernel_max_w': float(self.grid_parameters.max_w / units.m),
-            'convolve_kernel_size_x': self.data.shape[2],
-            'convolve_kernel_size_y': self.data.shape[2]
+            'bin_x': self.bin_size,
+            'bin_y': self.bin_size,
         }
-
-
-class ConvolutionKernelDevice(ConvolutionKernel):
-    """A :class:`ConvolutionKernel` that stores data in a device SVM array."""
-    def __init__(self, context, image_parameters, grid_parameters, kernel_size):
-        super(ConvolutionKernelDevice, self).__init__(
-            image_parameters, grid_parameters, kernel_size,
-            accel.SVMArray(context,
-                (grid_parameters.w_planes, grid_parameters.oversample, kernel_size),
-                np.complex64))
 
 
 class GridderTemplate(object):
@@ -427,11 +432,14 @@ class GridderTemplate(object):
         self.wgs_y = 16
         self.multi_x = 2
         self.multi_y = 2
+        min_pad = max(self.multi_x, self.multi_y) - 1
         self.tile_x = self.wgs_x * self.multi_x
         self.tile_y = self.wgs_y * self.multi_y
-        kernel_size = ConvolutionKernel.aligned_size(grid_parameters, self.tile_x, self.tile_y)
+        bin_size = ConvolutionKernel.bin_size(grid_parameters,
+            self.tile_x, self.tile_y, min_pad)
+        pad = bin_size - grid_parameters.kernel_width
         self.convolve_kernel = ConvolutionKernelDevice(
-            context, image_parameters, grid_parameters, kernel_size)
+            context, image_parameters, grid_parameters, pad)
         real_dtype = katsdpimager.types.complex_to_real(image_parameters.complex_dtype)
         parameters = {
             'real_type': katsdpimager.types.dtype_to_ctype(real_dtype),
@@ -496,7 +504,7 @@ class GridDegrid(accel.Operation):
         super(GridDegrid, self).__init__(command_queue, allocator)
         # Check that longest baseline won't cause an out-of-bounds access
         max_uv_src = float(array_parameters.longest_baseline / template.image_parameters.cell_size)
-        convolve_kernel_size = template.convolve_kernel.data.shape[-1]
+        convolve_kernel_size = template.convolve_kernel.padded_data.shape[-1]
         max_uv = max_uv_src + convolve_kernel_size / 2
         if max_uv >= template.image_parameters.pixels // 2 - 1 - 1e-3:
             raise ValueError('image_oversample is too small to capture all visibilities in the UV plane')
@@ -561,9 +569,11 @@ class Gridder(GridDegrid):
         grid = self.buffer('grid')
         workgroups = 256  # TODO: tune this in some way
         vis_per_workgroup = accel.divup(self.num_vis, workgroups)
-        convolve_kernel_size = self.template.convolve_kernel.data.shape[-1]
-        tiles_x = convolve_kernel_size // self.template.tile_x
-        tiles_y = convolve_kernel_size // self.template.tile_y
+        kernel_width = self.template.grid_parameters.kernel_width
+        bin_size = self.template.convolve_kernel.bin_size
+        tiles_x = bin_size // self.template.tile_x
+        tiles_y = bin_size // self.template.tile_y
+        uv_bias = (kernel_width - 1) // 2 + self.template.convolve_kernel.pad
         self.command_queue.enqueue_kernel(
             self._kernel,
             [
@@ -573,7 +583,8 @@ class Gridder(GridDegrid):
                 self.buffer('uv').buffer,
                 self.buffer('w_plane').buffer,
                 self.buffer('vis').buffer,
-                self.template.convolve_kernel.data.buffer,
+                self.template.convolve_kernel.padded_data.buffer,
+                np.int32(uv_bias),
                 np.int32(vis_per_workgroup),
                 np.int32(self.num_vis)
             ],
@@ -596,13 +607,15 @@ class DegridderTemplate(object):
         self.multi_y = 2
         self.tile_x = self.wgs_x * self.multi_x
         self.tile_y = self.wgs_y * self.multi_y
-        kernel_size = ConvolutionKernel.aligned_size(grid_parameters, self.tile_x, self.tile_y)
+        min_pad = max(self.multi_x, self.multi_y)
+        bin_size = ConvolutionKernel.bin_size(grid_parameters, self.tile_x, self.tile_y, min_pad)
+        pad = bin_size - grid_parameters.kernel_width
         # Note: we can't necessarily use the same kernel as for gridding,
         # because different tuning parameters will affect the kernel size.
         # TODO: fix this so that the memory support is decoupled from the
         # mathematical support.
         self.convolve_kernel = ConvolutionKernelDevice(
-            context, image_parameters, grid_parameters, kernel_size)
+            context, image_parameters, grid_parameters, pad)
         real_dtype = katsdpimager.types.complex_to_real(image_parameters.complex_dtype)
         parameters = {
             'real_type': katsdpimager.types.dtype_to_ctype(real_dtype),
@@ -651,6 +664,9 @@ class Degridder(GridDegrid):
         workgroups = 256   # TODO: tune this in some way
         subgroups = workgroups * self.template.wgs_z
         vis_per_subgroup = accel.divup(self.num_vis, subgroups)
+        kernel_width = self.template.grid_parameters.kernel_width
+        bin_size = self.template.convolve_kernel.bin_size
+        uv_bias = (kernel_width - 1) // 2 + self.template.convolve_kernel.pad
         self.command_queue.enqueue_kernel(
             self._kernel,
             [
@@ -660,7 +676,8 @@ class Degridder(GridDegrid):
                 self.buffer('uv').buffer,
                 self.buffer('w_plane').buffer,
                 self.buffer('vis').buffer,
-                self.template.convolve_kernel.data.buffer,
+                self.template.convolve_kernel.padded_data.buffer,
+                np.int32(uv_bias),
                 np.int32(vis_per_subgroup),
                 np.int32(self.num_vis)
             ],
@@ -677,8 +694,10 @@ def _grid(kernel, values, uv, sub_uv, w_plane, vis, sample):
     Numba can JIT it.
     """
     ksize = kernel.shape[2]
+    uv_bias = (ksize - 1) // 2
     for row in range(uv.shape[0]):
-        u0, v0 = uv[row]
+        u0 = uv[row, 0] - uv_bias
+        v0 = uv[row, 1] - uv_bias
         sub_u, sub_v = sub_uv[row]
         for i in range(vis.shape[1]):
             sample[i] = vis[row, i]

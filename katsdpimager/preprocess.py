@@ -78,13 +78,13 @@ def _make_fapl(cache_entries, cache_size, w0):
 @numba.jit(nopython=True)
 def _convert_to_buffer(
     channel, uvw, weights, baselines, vis, out,
-    pixels, cell_size, max_w, w_slices, w_planes, kernel_width, oversample):
+    pixels, cell_size, max_w, w_slices, w_planes, oversample):
     """Implementation of :meth:`VisibilityCollector._convert_to_buffer`,
     split out as a function for numba acceleration.
     """
     N = uvw.shape[0]
     P = vis.shape[1]
-    offset = np.float32(pixels // 2 - (kernel_width - 1) // 2)
+    offset = np.float32(pixels // 2)
     uv_scale = np.float32(1 / cell_size)
     w_scale = float((w_slices - 0.5) * w_planes / max_w)
     max_slice_plane = w_slices * w_planes - 1
@@ -254,7 +254,6 @@ class VisibilityCollector(object):
             self.grid_parameters.max_w.to(units.m).value,
             self.grid_parameters.w_slices,
             self.grid_parameters.w_planes,
-            self.grid_parameters.kernel_width,
             self.grid_parameters.oversample)
 
     def add(self, channel, uvw, weights, baselines, vis, polarization_matrix=None):

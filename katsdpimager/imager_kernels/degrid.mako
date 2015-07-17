@@ -14,8 +14,8 @@ typedef ${real_type}2 Complex;
 #define MULTI_X ${multi_x}
 #define MULTI_Y ${multi_y}
 #define SUBGROUPS ${wgs_z}
-#define CONVOLVE_KERNEL_SIZE_X ${convolve_kernel_size_x}
-#define CONVOLVE_KERNEL_SIZE_Y ${convolve_kernel_size_y}
+#define BIN_X ${bin_x}
+#define BIN_Y ${bin_y}
 #define CONVOLVE_KERNEL_OVERSAMPLE ${convolve_kernel_oversample}
 #define CONVOLVE_KERNEL_OVERSAMPLE_MASK ${convolve_kernel_oversample - 1}
 #define CONVOLVE_KERNEL_OVERSAMPLE_SHIFT ${int.bit_length(convolve_kernel_oversample) - 1}
@@ -55,12 +55,14 @@ DEVICE_FN void load(
     const GLOBAL Complex * RESTRICT grid,
     int grid_row_stride,
     int grid_pol_stride,
-    int u, int v, Complex values[NPOLS])
+    int u0, int v0, Complex values[MULTI_Y][MULTI_X][NPOLS])
 {
-    int offset = (v * grid_row_stride + u);
+    int offset = (v0 * grid_row_stride + u0);
     for (int p = 0; p < NPOLS; p++)
     {
-        values[p] = grid[offset];
+        for (int y = 0; y < MULTI_Y; y++)
+            for (int x = 0; x < MULTI_X; x++)
+                values[y][x][p] = grid[offset + y * grid_row_stride + x];
         offset += grid_pol_stride;
     }
 }
@@ -85,13 +87,14 @@ void degrid(
     const GLOBAL short * RESTRICT w_plane,
     GLOBAL float2 * RESTRICT vis,
     const GLOBAL float2 * RESTRICT convolve_kernel,
+    int uv_bias,
     int vis_per_subgroup,
     int nvis)
 {
     LOCAL_DECL subgroup_local lcl[SUBGROUPS];
     // Last-known UV coordinates
-    int cur_u[MULTI_X];
-    int cur_v[MULTI_Y];
+    int cur_u0 = -1;
+    int cur_v0 = -1;
     // Cached grid data
     Complex cached_grid[MULTI_Y][MULTI_X][NPOLS];
 
@@ -99,14 +102,6 @@ void degrid(
     const int subgroup = get_local_id(2);
     const int batch_id = get_group_id(0) * SUBGROUPS + subgroup;
     LOCAL subgroup_local *lclp = &lcl[subgroup];
-
-    // Initialize things
-    for (int y = 0; y < MULTI_Y; y++)
-        for (int x = 0; x < MULTI_X; x++)
-        {
-            cur_u[x] = -1;
-            cur_v[y] = -1;
-        }
 
     int batch_start = batch_id * vis_per_subgroup;
     int batch_end = min(nvis, batch_start + vis_per_subgroup);
@@ -122,7 +117,7 @@ void degrid(
             for (int p = 0; p < NPOLS; p++)
                 lclp->batch_vis[p][lid] = make_Complex(0, 0);
 
-            int2 min_uv = make_int2(sample_uv.x, sample_uv.y);
+            int2 min_uv = make_int2(sample_uv.x - uv_bias, sample_uv.y - uv_bias);
             int offset_w = sample_w_plane * CONVOLVE_KERNEL_W_STRIDE;
             lclp->batch_min_uv[lid] = min_uv;
             lclp->batch_offset[lid] = make_int2(
@@ -133,8 +128,8 @@ void degrid(
         BARRIER();
 
         // Process batch
-        for (int tile_y = 0; tile_y < CONVOLVE_KERNEL_SIZE_Y; tile_y += TILE_Y)
-            for (int tile_x = 0; tile_x < CONVOLVE_KERNEL_SIZE_X; tile_x += TILE_X)
+        for (int tile_y = 0; tile_y < BIN_Y; tile_y += TILE_Y)
+            for (int tile_x = 0; tile_x < BIN_X; tile_x += TILE_X)
             {
                 const int u_phase = tile_x + get_local_id(0) * MULTI_X;
                 const int v_phase = tile_y + get_local_id(1) * MULTI_Y;
@@ -143,30 +138,24 @@ void degrid(
                     int2 min_uv = lclp->batch_min_uv[vis_id];
                     int2 base_offset = lclp->batch_offset[vis_id];
                     Complex contrib[NPOLS];
-                    int u[MULTI_X], v[MULTI_Y];
-                    // TODO: expand convolution kernel footprint such that
-                    // multi-xy block is emitted as a unit, instead of separate
-                    // cur_uv for each element.
-                    for (int x = 0; x < MULTI_X; x++)
-                        u[x] = wrap(min_uv.x, CONVOLVE_KERNEL_SIZE_X, u_phase + x);
-                    for (int y = 0; y < MULTI_Y; y++)
-                        v[y] = wrap(min_uv.y, CONVOLVE_KERNEL_SIZE_Y, v_phase + y);
+                    int u0 = wrap(min_uv.x, BIN_X, u_phase);
+                    int v0 = wrap(min_uv.y, BIN_Y, v_phase);
+                    if (u0 != cur_u0 || v0 != cur_v0)
+                    {
+                        load(grid, grid_row_stride, grid_pol_stride, u0, v0, cached_grid);
+                        cur_u0 = u0;
+                        cur_v0 = v0;
+                    }
                     for (int y = 0; y < MULTI_Y; y++)
                         for (int x = 0; x < MULTI_X; x++)
                         {
-                            if (u[x] != cur_u[x] || v[y] != cur_v[y])
-                                load(grid, grid_row_stride, grid_pol_stride, u[x], v[y], cached_grid[y][x]);
-                            float2 weight_u = convolve_kernel[u[x] + base_offset.x];
-                            float2 weight_v = convolve_kernel[v[y] + base_offset.y];
+                            float2 weight_u = convolve_kernel[u0 + base_offset.x + x];
+                            float2 weight_v = convolve_kernel[v0 + base_offset.y + y];
                             float2 weight = complex_mul(weight_u, weight_v);
                             for (int p = 0; p < NPOLS; p++)
                                 contrib[p] = Complex_mad(weight, cached_grid[y][x][p],
                                                          (x || y) ? contrib[p] : make_Complex(0, 0));
                         }
-                    for (int x = 0; x < MULTI_X; x++)
-                        cur_u[x] = u[x];
-                    for (int y = 0; y < MULTI_Y; y++)
-                        cur_v[y] = v[y];
                     for (int p = 0; p < NPOLS; p++)
                     {
                         // TODO: result could be kept in a register instead of

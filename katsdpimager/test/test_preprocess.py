@@ -93,7 +93,7 @@ class BaseTestVisibilityCollector(object):
         with closing(self.factory(self.image_parameters, self.grid_parameters, 64)) as collector:
             collector.add(0, uvw, weights, baselines, vis)
         self.check(collector, [[np.rec.fromarrays([
-            [[1089, 1011], [951, 908]],
+            [[1120, 1042], [982, 939]],
             [[6, 3], [3, 1]],
             [[2.4, 1.8, 2.5, 1.4], [0.5, 0.6, 0.7, 0.8]],
             [[1.97 + 0.75j, 6.78 + 11.88j, 11.7 - 2.04j, 4.76 + 7.84j],
