@@ -65,6 +65,17 @@ DEVICE_FN void load(
     }
 }
 
+struct subgroup_local
+{
+    int2 batch_offset[BATCH_SIZE];
+    // Index for first grid point to update
+    int2 batch_min_uv[BATCH_SIZE];
+    // Accumulated output visibilities
+    Complex batch_vis[NPOLS][BATCH_SIZE];
+    // Scratch area for reductions
+    scratch_t scratch;
+};
+
 KERNEL REQD_WORK_GROUP_SIZE(${wgs_x}, ${wgs_y}, ${wgs_z})
 void degrid(
     const GLOBAL Complex* RESTRICT grid,
@@ -77,13 +88,7 @@ void degrid(
     int vis_per_subgroup,
     int nvis)
 {
-    LOCAL_DECL int2 batch_offset[SUBGROUPS][BATCH_SIZE];
-    // Index for first grid point to update
-    LOCAL_DECL int2 batch_min_uv[SUBGROUPS][BATCH_SIZE];
-    // Accumulated output visibilities
-    LOCAL_DECL Complex batch_vis[NPOLS][SUBGROUPS][BATCH_SIZE];
-    // Scratch area for reductions
-    LOCAL_DECL scratch_t scratch[SUBGROUPS];
+    LOCAL_DECL subgroup_local lcl[SUBGROUPS];
     // Last-known UV coordinates
     int2 cur_uv[MULTI_Y][MULTI_X];
     // Cached grid data
@@ -92,6 +97,7 @@ void degrid(
     const int lid = get_local_id(1) * ${wgs_x} + get_local_id(0);
     const int subgroup = get_local_id(2);
     const int batch_id = get_group_id(0) * SUBGROUPS + subgroup;
+    LOCAL subgroup_local *lclp = &lcl[subgroup];
 
     // Initialize things
     for (int y = 0; y < MULTI_Y; y++)
@@ -112,12 +118,12 @@ void degrid(
             short4 sample_uv = uv[vis_id];
             short sample_w_plane = w_plane[vis_id];
             for (int p = 0; p < NPOLS; p++)
-                batch_vis[p][subgroup][lid] = make_Complex(0, 0);
+                lclp->batch_vis[p][lid] = make_Complex(0, 0);
 
             int2 min_uv = make_int2(sample_uv.x, sample_uv.y);
             int offset_w = sample_w_plane * CONVOLVE_KERNEL_W_STRIDE;
-            batch_min_uv[subgroup][lid] = min_uv;
-            batch_offset[subgroup][lid] = make_int2(
+            lclp->batch_min_uv[lid] = min_uv;
+            lclp->batch_offset[lid] = make_int2(
                 offset_w + sample_uv.z * CONVOLVE_KERNEL_SLICE_STRIDE - min_uv.x,
                 offset_w + sample_uv.w * CONVOLVE_KERNEL_SLICE_STRIDE - min_uv.y);
         }
@@ -132,8 +138,8 @@ void degrid(
                 const int v_phase = tile_y + get_local_id(1) * MULTI_Y;
                 for (int vis_id = 0; vis_id < batch_size; vis_id++)
                 {
-                    int2 min_uv = batch_min_uv[subgroup][vis_id];
-                    int2 base_offset = batch_offset[subgroup][vis_id];
+                    int2 min_uv = lclp->batch_min_uv[vis_id];
+                    int2 base_offset = lclp->batch_offset[vis_id];
                     Complex contrib[NPOLS];
                     for (int y = 0; y < MULTI_Y; y++)
                         for (int x = 0; x < MULTI_X; x++)
@@ -160,14 +166,14 @@ void degrid(
                         // TODO: result could be kept in a register instead of
                         // shared memory.
                         Complex reduced = make_Complex(
-                            reduce_add(contrib[p].x, lid, &scratch[subgroup]),
-                            reduce_add(contrib[p].y, lid, &scratch[subgroup]));
+                            reduce_add(contrib[p].x, lid, &lclp->scratch),
+                            reduce_add(contrib[p].y, lid, &lclp->scratch));
                         if (lid == 0)
                         {
-                            Complex old = batch_vis[p][subgroup][vis_id];
+                            Complex old = lclp->batch_vis[p][vis_id];
                             reduced.x += old.x;
                             reduced.y += old.y;
-                            batch_vis[p][subgroup][vis_id] = reduced;
+                            lclp->batch_vis[p][vis_id] = reduced;
                         }
                     }
                 }
@@ -185,11 +191,11 @@ void degrid(
                 // TODO: could improve this using float4s where appropriate
                 int idx = vis_id * NPOLS + p;
 % if real_type == 'float':
-                vis[idx] = batch_vis[p][subgroup][lid];
+                vis[idx] = lclp->batch_vis[p][lid];
 % else:
                 vis[idx] = make_float2(
-                    batch_vis[p][subgroup][lid].x,
-                    batch_vis[p][subgroup][lid].y);
+                    lclp->batch_vis[p][lid].x,
+                    lclp->batch_vis[p][lid].y);
 % endif
             }
         }
