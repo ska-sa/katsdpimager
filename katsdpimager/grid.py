@@ -607,7 +607,7 @@ class DegridderTemplate(object):
         self.multi_y = 2
         self.tile_x = self.wgs_x * self.multi_x
         self.tile_y = self.wgs_y * self.multi_y
-        min_pad = max(self.multi_x, self.multi_y)
+        min_pad = max(self.multi_x, self.multi_y) - 1
         bin_size = ConvolutionKernel.bin_size(grid_parameters, self.tile_x, self.tile_y, min_pad)
         pad = bin_size - grid_parameters.kernel_width
         # Note: we can't necessarily use the same kernel as for gridding,
