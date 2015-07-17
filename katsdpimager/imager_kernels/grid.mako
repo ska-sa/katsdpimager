@@ -152,12 +152,16 @@ void grid(
                 cur_u0 = u0;
                 cur_v0 = v0;
             }
+            float2 weight_u[MULTI_X];
+            float2 weight_v[MULTI_Y];
+            for (int x = 0; x < MULTI_X; x++)
+                weight_u[x] = convolve_kernel[u0 + base_offset.x + x];
+            for (int y = 0; y < MULTI_Y; y++)
+                weight_v[y] = convolve_kernel[v0 + base_offset.y + y];
             for (int y = 0; y < MULTI_Y; y++)
                 for (int x = 0; x < MULTI_X; x++)
                 {
-                    float2 weight_u = convolve_kernel[u0 + base_offset.x + x];
-                    float2 weight_v = convolve_kernel[v0 + base_offset.y + y];
-                    float2 weight = Complex_mul(weight_u, weight_v);
+                    float2 weight = Complex_mul(weight_u[x], weight_v[y]);
                     for (int p = 0; p < NPOLS; p++)
                     {
                         // The weight is conjugated because the w kernel is
