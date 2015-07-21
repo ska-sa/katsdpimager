@@ -614,9 +614,9 @@ class DegridderTemplate(object):
         bin_size = ConvolutionKernel.bin_size(grid_parameters, self.tile_x, self.tile_y, min_pad)
         pad = bin_size - grid_parameters.kernel_width
         # Note: we can't necessarily use the same kernel as for gridding,
-        # because different tuning parameters will affect the kernel size.
-        # TODO: fix this so that the memory support is decoupled from the
-        # mathematical support.
+        # because different tuning parameters will affect the kernel padding.
+        # TODO: should still reuse the work done to compute the function, and
+        # simply adjust the padding.
         self.convolve_kernel = ConvolutionKernelDevice(
             context, image_parameters, grid_parameters, pad)
         real_dtype = katsdpimager.types.complex_to_real(image_parameters.complex_dtype)
