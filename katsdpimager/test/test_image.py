@@ -20,7 +20,8 @@ class TestLayerToImage(object):
         fn.ensure_all_bound()
         # Create random input data
         rs = np.random.RandomState(1)
-        src = (rs.uniform(10.0, 100.0, (size, size)) + 1j * rs.uniform(10.0, 100.0, (size, size))).astype(np.complex64)
+        src = (rs.uniform(10.0, 100.0, (size, size)) +
+               1j * rs.uniform(10.0, 100.0, (size, size))).astype(np.complex64)
         kernel1d = rs.uniform(1.0, 2.0, size).astype(np.float32)
         fn.buffer('kernel1d').set(command_queue, kernel1d)
         fn.buffer('layer').set(command_queue, src)
@@ -51,7 +52,8 @@ class TestLayerToImage(object):
         fn.ensure_all_bound()
         # Create random input data
         rs = np.random.RandomState(1)
-        src = (rs.uniform(10.0, 100.0, shape) + 1j * rs.uniform(10.0, 100.0, shape)).astype(np.complex64)
+        src = (rs.uniform(10.0, 100.0, shape) +
+               1j * rs.uniform(10.0, 100.0, shape)).astype(np.complex64)
         kernel1d = rs.uniform(1.0, 2.0, size).astype(np.float32)
         fn.buffer('kernel1d').set(command_queue, kernel1d)
         fn.buffer('layer').set(command_queue, src)
@@ -81,11 +83,13 @@ class TestImageToLayer(object):
         lm_bias = -lm_scale * size / 3   # Off-centre, to check that it's working
         w = 12.3
         image_to_layer_template = image.ImageToLayerTemplate(context, np.float32)
-        image_to_layer = image_to_layer_template.instantiate(command_queue, shape, lm_scale, lm_bias)
+        image_to_layer = image_to_layer_template.instantiate(
+            command_queue, shape, lm_scale, lm_bias)
         image_to_layer.ensure_all_bound()
         image_to_layer.set_w(w)
         layer_to_image_template = image.LayerToImageTemplate(context, np.float32)
-        layer_to_image = layer_to_image_template.instantiate(command_queue, shape, lm_scale, lm_bias)
+        layer_to_image = layer_to_image_template.instantiate(
+            command_queue, shape, lm_scale, lm_bias)
         layer_to_image.set_w(w)
         layer_to_image.bind(
             image=image_to_layer.buffer('image'),

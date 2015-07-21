@@ -101,6 +101,7 @@ def fit_beam(psf, step=1.0, threshold=0.05):
     model = fit(init, indices[0], indices[1], picked)
     return Beam(model)
 
+
 def convolve_beam(model, beam, out=None):
     """Convolve a model image with a restoring beam.
 

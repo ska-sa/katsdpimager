@@ -6,6 +6,7 @@ import numpy as np
 from katsdpsigproc import accel, fill
 from . import grid, image, clean, types
 
+
 class ImagingTemplate(object):
     """Template holding all the other templates for imaging."""
 
@@ -17,7 +18,9 @@ class ImagingTemplate(object):
         self.grid_parameters = grid_parameters
         self.clean_parameters = clean_parameters
         context = command_queue.context
-        image_shape = (len(image_parameters.polarizations), image_parameters.pixels, image_parameters.pixels)
+        image_shape = (len(image_parameters.polarizations),
+                       image_parameters.pixels,
+                       image_parameters.pixels)
         grid_shape = image_shape
         # Currently none of the kernels accessing the grid need any padding.
         # It would be nice if there was a cleaner way to handle this; possibly
@@ -41,9 +44,11 @@ class ImagingTemplate(object):
         self.clear_image = fill.FillTemplate(
             context, image_parameters.real_dtype,
             types.dtype_to_ctype(image_parameters.real_dtype))
-        self.taper1d = accel.SVMArray(context, (image_parameters.pixels,), image_parameters.real_dtype)
+        self.taper1d = accel.SVMArray(
+            context, (image_parameters.pixels,), image_parameters.real_dtype)
         self.gridder.convolve_kernel.taper(image_parameters.pixels, self.taper1d)
-        self.untaper1d = accel.SVMArray(context, (image_parameters.pixels,), image_parameters.real_dtype)
+        self.untaper1d = accel.SVMArray(
+            context, (image_parameters.pixels,), image_parameters.real_dtype)
         self.degridder.convolve_kernel.taper(image_parameters.pixels, self.untaper1d)
 
     def instantiate(self, *args, **kwargs):
@@ -105,7 +110,8 @@ class Imaging(accel.OperationSequence):
             'peak_pos': ['clean:peak_pos'],
             'peak_pixel': ['clean:peak_pixel']
         }
-        super(Imaging, self).__init__(template.command_queue, operations, compounds, allocator=allocator)
+        super(Imaging, self).__init__(
+            template.command_queue, operations, compounds, allocator=allocator)
 
     def __call__(self):
         raise NotImplementedError()

@@ -65,11 +65,13 @@ class RunOnce(object):
             self.run = True
             self.wrapped(*args, **kwargs)
 
+
 def run_once(func):
     """Decorator that modifies a function to only run the first time."""
     wrapper = RunOnce(func)
     functools.update_wrapper(wrapper, func)
     return wrapper
+
 
 @contextmanager
 def finishing(bar):

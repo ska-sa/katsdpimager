@@ -77,8 +77,8 @@ def _make_fapl(cache_entries, cache_size, w0):
 
 @numba.jit(nopython=True)
 def _convert_to_buffer(
-    channel, uvw, weights, baselines, vis, out,
-    pixels, cell_size, max_w, w_slices, w_planes, oversample):
+        channel, uvw, weights, baselines, vis, out,
+        pixels, cell_size, max_w, w_slices, w_planes, oversample):
     """Implementation of :meth:`VisibilityCollector._convert_to_buffer`,
     split out as a function for numba acceleration.
     """
@@ -143,14 +143,14 @@ def _compress_buffer(buffer):
                element.uv[0], element.uv[1],
                element.sub_uv[0], element.sub_uv[1],
                element.w_plane)
-        if (last_valid
-                and element.channel == last.channel
-                and element.w_slice == last.w_slice
-                and element.uv[0] == last.uv[0]
-                and element.uv[1] == last.uv[1]
-                and element.sub_uv[0] == last.sub_uv[0]
-                and element.sub_uv[1] == last.sub_uv[1]
-                and element.w_plane == last.w_plane):
+        if (last_valid and
+                element.channel == last.channel and
+                element.w_slice == last.w_slice and
+                element.uv[0] == last.uv[0] and
+                element.uv[1] == last.uv[1] and
+                element.sub_uv[0] == last.sub_uv[0] and
+                element.sub_uv[1] == last.sub_uv[1] and
+                element.w_plane == last.w_plane):
             for p in range(P):
                 last.vis[p] += element.vis[p]
             for p in range(P):
@@ -428,10 +428,10 @@ class VisibilityCollectorHDF5(VisibilityCollector):
             expected = self.store_dtype.itemsize * np.sum(self._length)
             if expected > 0:
                 logger.info("Wrote %d bytes to %s (%.2f%% compression)",
-                    filesize, self._file.filename, 100.0 * filesize / expected)
+                            filesize, self._file.filename, 100.0 * filesize / expected)
             else:
                 logger.info("Wrote %d bytes to %s (no visibilities)",
-                    filesize, self._file.filename)
+                            filesize, self._file.filename)
         self._file.close()
         self._file = None
 
@@ -447,7 +447,7 @@ class VisibilityCollectorMem(VisibilityCollector):
     def __init__(self, *args, **kwargs):
         super(VisibilityCollectorMem, self).__init__(*args, **kwargs)
         self.datasets = [
-            [ [] for w_slice in range(self.num_w_slices) ] for channel in range(self.num_channels)]
+            [[] for w_slice in range(self.num_w_slices)] for channel in range(self.num_channels)]
 
     def _emit(self, elements):
         dataset = self.datasets[elements[0].channel][elements[0].w_slice]

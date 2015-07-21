@@ -35,7 +35,8 @@ the same amount as the bin padding.
    \foreach \i in {4,5, 12, 13}
        \foreach \j in {2,3, 10,11}
        {
-           \node[shift={(\i,\j)},circle,inner sep=0pt, minimum size=0.2cm,fill=red] at (0.5, 0.5) {};
+           \node[shift={(\i,\j)},circle,inner sep=0pt, minimum size=0.2cm,fill=red]
+               at (0.5, 0.5) {};
        }
    \draw[help lines] (0, 0) grid[step=0.5cm] (16, 16);
    \draw[very thick] (0, 0) grid[step=4cm] (16, 16);
@@ -272,7 +273,8 @@ def antialias_w_kernel(
         # The kaiser_bessel function is designed around units of cells rather
         # than wavelengths. We thus want the Fourier transform of
         # kaiser_bessel(u / cell_wavelengths).
-        aa_factor = cell_wavelengths * kaiser_bessel_fourier(l * cell_wavelengths, antialias_width, beta)
+        scale_l = l * cell_wavelengths
+        aa_factor = cell_wavelengths * kaiser_bessel_fourier(scale_l, antialias_width, beta)
         shift_arg = shift_by * l
         w_arg = -w * (np.sqrt(1 - l*l) - 1)
         return aa_factor * np.exp(2j * math.pi * (w_arg + shift_arg))
@@ -390,7 +392,8 @@ class ConvolutionKernel(object):
 class ConvolutionKernelDevice(ConvolutionKernel):
     """A :class:`ConvolutionKernel` that stores data in a device SVM array."""
     def __init__(self, context, image_parameters, grid_parameters, pad=0):
-        out = accel.SVMArray(context,
+        out = accel.SVMArray(
+            context,
             (grid_parameters.w_planes,
              grid_parameters.oversample,
              grid_parameters.kernel_width + 2 * pad),
@@ -438,8 +441,8 @@ class GridderTemplate(object):
         min_pad = max(self.multi_x, self.multi_y) - 1
         self.tile_x = self.wgs_x * self.multi_x
         self.tile_y = self.wgs_y * self.multi_y
-        bin_size = ConvolutionKernel.bin_size(grid_parameters,
-            self.tile_x, self.tile_y, min_pad)
+        bin_size = ConvolutionKernel.bin_size(
+            grid_parameters, self.tile_x, self.tile_y, min_pad)
         pad = bin_size - grid_parameters.kernel_width
         self.convolve_kernel = ConvolutionKernelDevice(
             context, image_parameters, grid_parameters, pad)

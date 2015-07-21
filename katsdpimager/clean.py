@@ -535,6 +535,7 @@ def _tile_peak(y0, x0, y1, x1, image, mode, zero):
                     best_pos = (y, x)
     return best_pos, best_value
 
+
 class CleanHost(object):
     """CPU-only equivalent to :class:`Clean`. The class keeps references to
     the provided arrays, and only examines modifies them when :meth:`reset`
@@ -605,7 +606,8 @@ class CleanHost(object):
             psf_y1 -= (y1 - image_size_y)
             y1 = image_size_y
         scale = self.clean_parameters.loop_gain * self.image[:, y, x]
-        self.image[..., y0:y1, x0:x1] -= scale[:, np.newaxis, np.newaxis] * self.psf[..., psf_y0:psf_y1, psf_x0:psf_x1]
+        self.image[..., y0:y1, x0:x1] -= (
+            scale[:, np.newaxis, np.newaxis] * self.psf[..., psf_y0:psf_y1, psf_x0:psf_x1])
         self.model[..., y, x] += scale
         return (y0, x0, y1, x1)
 

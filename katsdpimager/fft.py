@@ -237,12 +237,9 @@ class Fft(accel.Operation):
         with context:
             if self.mode == FFT_FORWARD:
                 skcuda.fft.fft(_GpudataWrapper(src_buffer), _GpudataWrapper(dest_buffer),
-                                     self.template.plan)
+                               self.template.plan)
             else:
                 skcuda.fft.ifft(_GpudataWrapper(src_buffer), _GpudataWrapper(dest_buffer),
-                                      self.template.plan)
+                                self.template.plan)
             if self.template.needs_synchronize_workaround:
                 context._pycuda_context.synchronize()
-
-
-
