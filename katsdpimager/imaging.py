@@ -163,7 +163,9 @@ class ImagingHost(object):
         psf_shape = (len(image_parameters.polarizations),
                      clean_parameters.psf_patch, clean_parameters.psf_patch)
         self._gridder = grid.GridderHost(image_parameters, grid_parameters)
+        self._degridder = grid.DegridderHost(image_parameters, grid_parameters)
         self._grid = self._gridder.values
+        self._degrid = self._degridder.values
         self._layer = np.empty(self._grid.shape, image_parameters.complex_dtype)
         self._dirty = np.empty(self._grid.shape, image_parameters.real_dtype)
         self._model = np.empty(self._grid.shape, image_parameters.real_dtype)
@@ -171,13 +173,17 @@ class ImagingHost(object):
         self._grid_to_image = image.GridToImageHost(
             self._grid, self._layer, self._dirty,
             self._gridder.kernel.taper(image_parameters.pixels), lm_scale, lm_bias)
+        self._image_to_grid = image.ImageToGridHost(
+            self._degrid, self._layer, self._model,
+            self._degridder.kernel.taper(image_parameters.pixels), lm_scale, lm_bias)
         self._clean = clean.CleanHost(image_parameters, clean_parameters,
                                       self._dirty, self._psf, self._model)
         self._buffer = {
             'psf': self._psf,
             'dirty': self._dirty,
             'model': self._model,
-            'grid': self._grid
+            'grid': self._grid,
+            'degrid': self._degrid
         }
 
     def buffer(self, name):

@@ -701,7 +701,6 @@ def _grid(kernel, values, uv, sub_uv, w_plane, vis, sample):
         sub_u, sub_v = sub_uv[row]
         for i in range(vis.shape[1]):
             sample[i] = vis[row, i]
-        # u and v are converted to cells, w to planes
         for j in range(ksize):
             for k in range(ksize):
                 kernel_sample = kernel[w_plane[row], sub_v, j] * kernel[w_plane[row], sub_u, k]
@@ -715,7 +714,7 @@ class GridderHost(object):
         self.image_parameters = image_parameters
         self.grid_parameters = grid_parameters
         kernel_size = int(math.ceil(grid_parameters.kernel_width))
-        self.kernel = ConvolutionKernel(image_parameters, grid_parameters, kernel_size)
+        self.kernel = ConvolutionKernel(image_parameters, grid_parameters)
         pixels = image_parameters.pixels
         shape = (len(image_parameters.polarizations), pixels, pixels)
         self.values = np.empty(shape, image_parameters.complex_dtype)
@@ -741,3 +740,41 @@ class GridderHost(object):
         _grid(self.kernel.data, self.values,
               uv, sub_uv, w_plane, vis,
               np.empty((vis.shape[1],), self.values.dtype))
+
+
+@numba.jit(nopython=True)
+def _degrid(kernel, values, uv, sub_uv, w_plane, vis, sample):
+    ksize = kernel.shape[2]
+    uv_bias = (ksize - 1) // 2
+    for row in range(uv.shape[0]):
+        u0 = uv[row, 0] - uv_bias
+        v0 = uv[row, 1] - uv_bias
+        sub_u, sub_v = sub_uv[row]
+        for i in range(vis.shape[1]):
+            sample[i] = 0
+        for j in range(ksize):
+            for k in range(ksize):
+                weight = kernel[w_plane[row], sub_v, j] * kernel[w_plane[row], sub_u, k]
+                for pol in range(values.shape[0]):
+                    sample[pol] += weight * values[pol, v0 + j, u0 + k]
+        for i in range(vis.shape[1]):
+            vis[row, i] = sample[i]
+
+
+class DegridderHost(object):
+    def __init__(self, image_parameters, grid_parameters):
+        self.image_parameters = image_parameters
+        self.grid_parameters = grid_parameters
+        kernel_size = int(math.ceil(grid_parameters.kernel_width))
+        self.kernel = ConvolutionKernel(image_parameters, grid_parameters)
+        pixels = image_parameters.pixels
+        shape = (len(image_parameters.polarizations), pixels, pixels)
+        self.values = np.empty(shape, image_parameters.complex_dtype)
+
+    def degrid(self, uv, sub_uv, w_plane, vis):
+        """Compute visibilities from the grid. See :meth:`GridderHost.grid`
+        for details of the parameters.
+        """
+        _degrid(self.kernel.data, self.values,
+                uv, sub_uv, w_plane, vis,
+                np.empty((vis.shape[1],), self.values.dtype))

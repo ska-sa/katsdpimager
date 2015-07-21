@@ -573,7 +573,7 @@ class ImageToGridHost(object):
         n = np.sqrt(1 - (lm2[:, np.newaxis] + lm2[np.newaxis, :]))[np.newaxis, ...]
         w_correct = np.exp(-2j * math.pi * self.w * (n - 1))
         kernel = np.outer(self.kernel1d, self.kernel1d)[np.newaxis, ...]
-        self.layer[:] = self.image * kernel / n * w_correct
+        self.layer[:] = self.image / (kernel * n) * w_correct
         self.grid[:] = np.fft.fftshift(
             np.fft.fft2(
                 np.fft.ifftshift(self.layer, axes=(1, 2)),

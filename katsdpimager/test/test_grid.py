@@ -58,27 +58,15 @@ class BaseTest(object):
         self.convolve_kernel = grid.ConvolutionKernel(
             self.image_parameters, self.grid_parameters)
 
-
-class TestGridder(BaseTest):
-    """Tests for :class:`grid.Gridder`"""
-    @device_test
-    @cuda_test
-    def test(self, context, command_queue):
+    def do_grid(self, callback):
         max_vis = 1280
         n_vis = len(self.w_plane)
         pixels = self.image_parameters.pixels
-        template = grid.GridderTemplate(context, self.image_parameters, self.grid_parameters)
-        fn = template.instantiate(command_queue, self.array_parameters, max_vis,
-            allocator=accel.SVMAllocator(context))
-        fn.ensure_all_bound()
         rs = np.random.RandomState(seed=2)
         vis = (rs.uniform(-1, 1, size=(n_vis, 4))
                + 1j * rs.uniform(-1, 1, size=(n_vis, 4))).astype(np.complex128)
-        grid_data = fn.buffer('grid')
-        grid_data.fill(0)
-        fn.grid(self.uv, self.sub_uv, self.w_plane, vis)
-        command_queue.finish()
-        expected = np.zeros_like(grid_data)
+        actual = callback(max_vis, vis)
+        expected = np.zeros_like(actual)
         uv_bias = (self.convolve_kernel.data.shape[-1] - 1) // 2
         for i in range(n_vis):
             kernel = np.outer(self.convolve_kernel.data[self.w_plane[i], self.sub_uv[i, 1], :],
@@ -90,32 +78,21 @@ class TestGridder(BaseTest):
                 footprint = expected[j, v : v + kernel.shape[0],
                                         u : u + kernel.shape[1]]
                 footprint[:] += vis[i, j].astype(np.complex128) * kernel
-        np.testing.assert_allclose(expected, grid_data, 1e-5, 1e-12)
+        np.testing.assert_allclose(expected, actual, 1e-5, 1e-12)
 
-
-class TestDegridder(BaseTest):
-    """Tests for :class:`grid.Degridder`"""
-    @device_test
-    @cuda_test
-    def test(self, context, command_queue):
+    def do_degrid(self, callback):
         max_vis = 1280
         n_vis = len(self.w_plane)
         pixels = self.image_parameters.pixels
-        template = grid.DegridderTemplate(context, self.image_parameters, self.grid_parameters)
-        fn = template.instantiate(command_queue, self.array_parameters, max_vis,
-            allocator=accel.SVMAllocator(context))
-        fn.ensure_all_bound()
         shape = (4, pixels, pixels)
         rs = np.random.RandomState(seed=2)
         grid_data = (rs.uniform(-1, 1, size=shape) + 1j * rs.uniform(-1, 1, size=shape)).astype(np.complex128)
-        fn.buffer('grid').set(command_queue, grid_data)
-        vis = np.zeros((n_vis, 4), np.complex128)
-        fn.degrid(self.uv, self.sub_uv, self.w_plane, vis)
+        vis = callback(max_vis, grid_data)
         expected = np.zeros_like(vis)
         uv_bias = (self.convolve_kernel.data.shape[-1] - 1) // 2
         for i in range(n_vis):
-            kernel = np.outer(template.convolve_kernel.data[self.w_plane[i], self.sub_uv[i, 1], :],
-                              template.convolve_kernel.data[self.w_plane[i], self.sub_uv[i, 0], :])
+            kernel = np.outer(self.convolve_kernel.data[self.w_plane[i], self.sub_uv[i, 1], :],
+                              self.convolve_kernel.data[self.w_plane[i], self.sub_uv[i, 0], :])
             u = self.uv[i, 0] - uv_bias
             v = self.uv[i, 1] - uv_bias
             for j in range(4):
@@ -123,3 +100,63 @@ class TestDegridder(BaseTest):
                                          u : u + kernel.shape[1]]
                 expected[i, j] = np.dot(kernel.ravel(), footprint.ravel())
         np.testing.assert_allclose(expected, vis, 1e-5)
+
+
+class TestGridder(BaseTest):
+    """Tests for :class:`grid.Gridder`"""
+    @device_test
+    @cuda_test
+    def test(self, context, command_queue):
+        def callback(max_vis, vis):
+            template = grid.GridderTemplate(context, self.image_parameters, self.grid_parameters)
+            fn = template.instantiate(command_queue, self.array_parameters, max_vis,
+                allocator=accel.SVMAllocator(context))
+            fn.ensure_all_bound()
+            grid_data = fn.buffer('grid')
+            grid_data.fill(0)
+            fn.grid(self.uv, self.sub_uv, self.w_plane, vis)
+            command_queue.finish()
+            return grid_data
+        self.do_grid(callback)
+
+
+class TestGridderHost(BaseTest):
+    """Tests for :Class:`grid.GridderHost`"""
+    def test(self):
+        def callback(max_vis, vis):
+            gridder = grid.GridderHost(self.image_parameters, self.grid_parameters)
+            gridder.clear()
+            gridder.grid(self.uv, self.sub_uv, self.w_plane, vis)
+            return gridder.values
+        self.do_grid(callback)
+
+
+class TestDegridder(BaseTest):
+    """Tests for :class:`grid.Degridder`"""
+    @device_test
+    @cuda_test
+    def test(self, context, command_queue):
+        def callback(max_vis, grid_data):
+            n_vis = len(self.w_plane)
+            vis = np.zeros((n_vis, 4), np.complex128)
+            template = grid.DegridderTemplate(context, self.image_parameters, self.grid_parameters)
+            fn = template.instantiate(command_queue, self.array_parameters, max_vis,
+                allocator=accel.SVMAllocator(context))
+            fn.ensure_all_bound()
+            fn.buffer('grid').set(command_queue, grid_data)
+            fn.degrid(self.uv, self.sub_uv, self.w_plane, vis)
+            return vis
+        self.do_degrid(callback)
+
+
+class TestDegridderHost(BaseTest):
+    """Tests for :class:`grid.DegridderHost`"""
+    def test(self):
+        def callback(max_vis, grid_data):
+            n_vis = len(self.w_plane)
+            vis = np.zeros((n_vis, 4), np.complex128)
+            degridder = grid.DegridderHost(self.image_parameters, self.grid_parameters)
+            degridder.values[:] = grid_data
+            degridder.degrid(self.uv, self.sub_uv, self.w_plane, vis)
+            return vis
+        self.do_degrid(callback)
