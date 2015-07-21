@@ -1,5 +1,5 @@
-..
-==
+katsdpimager
+============
 
 .. toctree::
    :maxdepth: 4
