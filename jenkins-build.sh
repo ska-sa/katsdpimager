@@ -4,6 +4,7 @@ set -e -x
 pip install -U pip setuptools wheel
 pip install numpy enum34  # Some requirements need these already installed
 pip install -r requirements.txt
+pip install -e .
 if [ "$1" = "" ]; then
     pip install coverage
     nosetests --with-xunit --with-coverage --cover-erase --cover-package=katsdpimager --cover-xml
@@ -13,7 +14,6 @@ if [ "$1" = "" ]; then
            coverage.xml
 elif [ "$1" = "images" ]; then
     pip install astropy aplpy mako matplotlib
-    pip install -e .
     cd tests
     rm -rf simple.ms simple.ms_p0 simple.lsm.html report
     makems
