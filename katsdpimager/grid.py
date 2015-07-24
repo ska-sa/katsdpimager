@@ -594,9 +594,9 @@ class Gridder(GridDegrid):
                 np.int32(vis_per_workgroup),
                 np.int32(self.num_vis)
             ],
-            global_size=(self.template.wgs_x * workgroups,
-                         self.template.wgs_y * tiles_x,
-                         tiles_y),
+            global_size=(self.template.wgs_x * tiles_x,
+                         self.template.wgs_y * tiles_y,
+                         workgroups),
             local_size=(self.template.wgs_x, self.template.wgs_y, 1)
         )
 

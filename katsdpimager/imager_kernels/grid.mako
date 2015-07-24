@@ -101,11 +101,11 @@ void grid(
                 sums[y][x][p] = make_Complex(0.0f, 0.0f);
         }
 
-    int u_phase = get_group_id(1) * TILE_X + get_local_id(0) * MULTI_X;
-    int v_phase = get_group_id(2) * TILE_Y + get_local_id(1) * MULTI_Y;
+    int u_phase = get_group_id(0) * TILE_X + get_local_id(0) * MULTI_X;
+    int v_phase = get_group_id(1) * TILE_Y + get_local_id(1) * MULTI_Y;
 
     const int lid = get_local_id(1) * ${wgs_x} + get_local_id(0);
-    int batch_start = get_group_id(0) * vis_per_workgroup;
+    int batch_start = get_group_id(2) * vis_per_workgroup;
     int batch_end = min(nvis, batch_start + vis_per_workgroup);
     for (; batch_start < batch_end; batch_start += BATCH_SIZE)
     {
