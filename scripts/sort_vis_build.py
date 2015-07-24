@@ -63,6 +63,6 @@ for i in range(1, 5):
 source += """
 } // extern "C"
 """
-ffi.set_source("_sort_vis", source, source_extension='.cpp')
+ffi.set_source("katsdpimager._sort_vis", source, source_extension='.cpp')
 if __name__ == '__main__':
     ffi.compile()

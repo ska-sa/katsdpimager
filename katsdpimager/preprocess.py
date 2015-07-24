@@ -31,8 +31,8 @@ import math
 import logging
 import katsdpimager.polarization as polarization
 import katsdpimager.grid as grid
+from katsdpimager._sort_vis import ffi, lib
 import astropy.units as units
-from _sort_vis import ffi, lib
 
 
 logger = logging.getLogger(__name__)
