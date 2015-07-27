@@ -29,8 +29,7 @@ import numpy as np
 import numba
 import math
 import logging
-import katsdpimager.polarization as polarization
-import katsdpimager.grid as grid
+from katsdpimager import polarization, grid, types
 from katsdpimager._sort_vis import ffi, lib
 import astropy.units as units
 
@@ -50,15 +49,19 @@ def _make_dtype(num_polarizations, internal):
         If True, the structure will include extra fields for baseline, w slice
         and channel.
     """
-    fields = [
-        ('uv', np.int16, (2,)),
-        ('sub_uv', np.int16, (2,)),
-        ('weights', np.float32, (num_polarizations,)),
-        ('vis', np.complex64, (num_polarizations,)),
-        ('w_plane', np.int16)
-    ]
     if internal:
-        fields += [('w_slice', np.int16), ('channel', np.int32), ('baseline', np.int32)]
+        return types.cffi_ctype_to_dtype(
+            ffi,
+            ffi.typeof('vis_{}_t'.format(num_polarizations)),
+            {'vis': np.dtype((np.complex64, (num_polarizations,)))})
+    else:
+        fields = [
+            ('uv', np.int16, (2,)),
+            ('sub_uv', np.int16, (2,)),
+            ('weights', np.float32, (num_polarizations,)),
+            ('vis', np.complex64, (num_polarizations,)),
+            ('w_plane', np.int16)
+        ]
     return np.dtype(fields)
 
 
