@@ -45,7 +45,18 @@ def complex_to_real(dtype):
         raise ValueError('Unrecognised dtype {}'.format(dtype))
 
 
-def cffi_ctype_to_dtype(ffi, ctype, override_fields=None):
+_FLOAT_TYPES = set(['float', 'double', 'long double'])
+
+
+def _sub_overrides(overrides, prefix):
+    out = {}
+    for (key, value) in overrides.iteritems():
+        if key.startswith(prefix):
+            out[key[len(prefix):]] = value
+    return out
+
+
+def cffi_ctype_to_dtype(ffi, ctype, overrides=None):
     """Convert a CFFI ctype representing a struct to a numpy dtype.
 
     This does not necessarily handle all possible cases, but should correctly
@@ -57,38 +68,52 @@ def cffi_ctype_to_dtype(ffi, ctype, override_fields=None):
         cffi object imported from the library module
     ctype : `CType`
         Type object created from CFFI
-    override_fields : dict, optional
-        For each key matching a field in `ctype`, the corresponding value is
-        used as the dtype instead of a recursive calls. This only applies at
-        the top level.
+    overrides : dict, optional
+        Map elements of the type to specified numpy types. The keys are
+        strings. To specify an element of a structure, use ``.name``. To
+        specify the elements of an array type, use ``[]``. These strings can
+        be concatenated (with no whitespace) to select sub-elements.
     """
+    if overrides is None:
+        overrides = {}
+    try:
+        return overrides['']
+    except KeyError:
+        pass
+
     if ctype.kind == 'primitive':
-        if ctype.cname in ['int8_t', 'int16_t', 'int32_t', 'int64_t', 'int', 'ptrdiff_t']:
-            return np.dtype('i' + str(ffi.sizeof(ctype)))
-        elif ctype.cname in ['uint8_t', 'uint16_t', 'uint32_t', 'uint64_t', 'unsigned int', 'size_t']:
-            return np.dtype('u' + str(ffi.sizeof(ctype)))
-        elif ctype.cname in ['float', 'double', 'long double']:
+        if ctype.cname in _FLOAT_TYPES:
             return np.dtype('f' + str(ffi.sizeof(ctype)))
+        elif ctype.cname == 'char':
+            return np.dtype('c')
+        elif ctype.cname == '_Bool':
+            return np.dtype(np.bool_)
         else:
-            raise ValueError('Unhandled primitive type {}'.format(ctype.cname))
+            test = int(ffi.cast(ctype, -1))
+            if test == -1:
+                return np.dtype('i' + str(ffi.sizeof(ctype)))
+            else:
+                return np.dtype('u' + str(ffi.sizeof(ctype)))
     elif ctype.kind == 'struct':
         names = []
         formats = []
         offsets = []
         for field in ctype.fields:
+            if field[1].bitsize != -1:
+                raise ValueError('bitfields are not supported')
             names.append(field[0])
-            if override_fields is not None and field[0] in override_fields:
-                dtype = override_fields[field[0]]
-            else:
-                dtype = cffi_ctype_to_dtype(ffi, field[1].type)
-            formats.append(dtype)
+            sub_overrides = _sub_overrides(overrides, '.' + field[0])
+            formats.append(cffi_ctype_to_dtype(ffi, field[1].type, sub_overrides))
             offsets.append(field[1].offset)
         return np.dtype(dict(names=names, formats=formats, offsets=offsets, itemsize=ffi.sizeof(ctype)))
     elif ctype.kind == 'array':
         shape = []
-        while ctype.kind == 'array':
+        prefix = ''
+        while ctype.kind == 'array' and prefix not in overrides:
             shape.append(ctype.length)
             ctype = ctype.item
-        return np.dtype((cffi_ctype_to_dtype(ffi, ctype), tuple(shape)))
+            prefix += '[]'
+        sub_overrides = _sub_overrides(overrides, prefix)
+        return np.dtype((cffi_ctype_to_dtype(ffi, ctype, sub_overrides), tuple(shape)))
     else:
         raise ValueError('Unhandled kind {}'.format(ctype.kind))

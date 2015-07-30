@@ -53,7 +53,7 @@ def _make_dtype(num_polarizations, internal):
         return types.cffi_ctype_to_dtype(
             ffi,
             ffi.typeof('vis_{}_t'.format(num_polarizations)),
-            {'vis': np.dtype((np.complex64, (num_polarizations,)))})
+            {'.vis[]': np.dtype(np.complex64)})
     else:
         fields = [
             ('uv', np.int16, (2,)),
