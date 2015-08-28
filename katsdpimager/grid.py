@@ -378,6 +378,11 @@ class ConvolutionKernel(object):
         """Return the Fourier transform of the antialiasing kernel for
         an N-pixel 1D image.
 
+        The combined filter is sampled and then applied as a piecewise constant
+        function, which corresponds to convolution with a rect. In image space,
+        this corresponds to aliasing, then multiplication by a sinc. We need to
+        include the sinc in the Fourier transform.
+
         Parameters
         ----------
         N : int
@@ -386,7 +391,9 @@ class ConvolutionKernel(object):
             If provided, is used to store the result
         """
         x = np.arange(N) / N - 0.5
-        return kaiser_bessel_fourier(x, self.grid_parameters.antialias_width, self.beta, out)
+        out = kaiser_bessel_fourier(x, self.grid_parameters.antialias_width, self.beta, out)
+        out *= np.sinc(x / self.grid_parameters.oversample)
+        return out
 
 
 class ConvolutionKernelDevice(ConvolutionKernel):
