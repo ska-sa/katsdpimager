@@ -276,7 +276,9 @@ def antialias_w_kernel(
         scale_l = l * cell_wavelengths
         aa_factor = cell_wavelengths * kaiser_bessel_fourier(scale_l, antialias_width, beta)
         shift_arg = shift_by * l
-        w_arg = -w * (np.sqrt(1 - l*l) - 1)
+        l2 = l * l
+        l4 = l2 * l2
+        w_arg = -w * (-0.5 * l2 - 5.0/24.0 * l4)
         return aa_factor * np.exp(2j * math.pi * (w_arg + shift_arg))
 
     out_pixels = oversample * width
