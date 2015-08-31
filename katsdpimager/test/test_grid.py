@@ -80,7 +80,7 @@ class BaseTest(object):
             for j in range(4):
                 footprint = expected[j, v : v + kernel.shape[0], u : u + kernel.shape[1]]
                 footprint[:] += vis[i, j].astype(np.complex128) * kernel
-        np.testing.assert_allclose(expected, actual, 1e-5, 1e-12)
+        np.testing.assert_allclose(expected, actual, 1e-5, 1e-8)
 
     def do_degrid(self, callback):
         max_vis = 1280
