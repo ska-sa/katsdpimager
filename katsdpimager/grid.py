@@ -229,11 +229,11 @@ def antialias_w_kernel(
     The format of the returned kernel is similar to :func:`antialias_kernel`.
     In particular, only a 1D kernel is returned.  Note that while the W kernel
     is not truly separable, the small-angle approximation
-    :math:`\sqrt{1-l^2-m^2}-1 \approx (\sqrt{1-l^2}-1) + (\sqrt{1-m^2}-1)`
-    makes it makes it very close to separable [#]_.
+    :math:`\sqrt{1-l^2-m^2}-1 \approx -\frac{1}{2}(l^2+m^2)-\frac{5}{24}(l^4+m^4)`
+    makes it very close to separable [#]_.
 
-    .. [#] The error in the approximation above is on the order of :math:`10^{-8}`
-       for a 1 degree field of view.
+    .. [#] The error in the approximation above is on the order of :math:`5\times 10^{-6}`
+       for a 10 degree field of view, and less than :math:`10^{-8}` for a 2 degree FOV.
 
     We multiply the inverse Fourier transform of the (idealised) antialiasing
     kernel with the W correction in image space, to obtain a closed-form
