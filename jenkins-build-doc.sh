@@ -1,9 +1,10 @@
 #!/bin/bash
 set -e -x
 pip install -U pip setuptools wheel
-pip install numpy  # Some requirements need it already installed
-pip install -r requirements.txt
-pip install sphinxcontrib-napoleon sphinxcontrib-tikz
-pip install 'sphinx>=1.3.0'  # napoleon forces an older version of sphinx
+install-requirements.py -d ~/docker-base/base-requirements.txt -d ~/docker-base/gpu-requirements.txt \
+    -r requirements.txt
+install-requirements.py -d ~/docker-base/base-requirements.txt -d ~/docker-base/gpu-requirements.txt \
+    -r doc-requirements.txt
+pip install --no-index '.[doc]'
 rm -rf doc/_build
 make -C doc html
