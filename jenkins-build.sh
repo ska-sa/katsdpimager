@@ -7,7 +7,7 @@ install-requirements.py -d ~/docker-base/base-requirements.txt -d ~/docker-base/
 if [ "$1" = "" ]; then
     install-requirements.py -d ~/docker-base/base-requirements.txt -d ~/docker-base/gpu-requirements.txt \
         -r test-requirements.txt
-    pip install -e --no-index '.[test]'
+    pip install --no-index -e '.[test]'
     nosetests --with-xunit --with-coverage --cover-erase --cover-package=katsdpimager --cover-xml
     # Hack to make Jenkins Cobertura plugin find the source
     sed -i -e 's!katsdppipelines/katsdpimager</source>!katsdppipelines</source>!' \
@@ -16,7 +16,7 @@ if [ "$1" = "" ]; then
 elif [ "$1" = "images" ]; then
     install-requirements.py -d ~/docker-base/base-requirements.txt -d ~/docker-base/gpu-requirements.txt \
         -r report-requirements.txt
-    pip install -e --no-index '.[report]'
+    pip install --no-index -e '.[report]'
     cd tests
     rm -rf simple.ms simple.ms_p0 simple.lsm.html report
     makems
