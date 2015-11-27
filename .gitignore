@@ -1,2 +1,5 @@
-katsdpimager.egg-info
+/katsdpimager.egg-info
 *.fits
+*.pyc
+/build
+/doc/_build
