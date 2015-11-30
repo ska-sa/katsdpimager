@@ -1,7 +1,6 @@
 ansicolors
 appdirs
 astropy==1.0.6
-cffi
 Cython
 decorator
 enum34

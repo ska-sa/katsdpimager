@@ -42,11 +42,10 @@ setup(
     scripts=["scripts/imager.py"],
     ext_package='katsdpimager',
     ext_modules=extensions,
-    setup_requires=['numpy', 'cffi'],
-    cffi_modules=['scripts/sort_vis_build.py:ffi'],
+    setup_requires=['numpy'],
     install_requires=[
         'numpy', 'scipy', 'katsdpsigproc', 'python-casacore', 'astropy', 'progress',
-        'numba', 'pycuda', 'scikit-cuda', 'h5py', 'ansicolors', 'cffi'
+        'numba', 'pycuda', 'scikit-cuda', 'h5py', 'ansicolors'
     ],
     tests_require=tests_require,
     extras_require={
