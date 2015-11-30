@@ -26,7 +26,6 @@ There is also a memory-based backend to simplify testing.
 from __future__ import print_function, division
 import h5py
 import numpy as np
-from katsdpimager import numba
 import math
 import logging
 from katsdpimager import polarization, grid, types, _preprocess
@@ -67,99 +66,6 @@ def _make_fapl(cache_entries, cache_size, w0):
     fapl.set_fclose_degree(h5py.h5f.CLOSE_STRONG)
     fapl.set_libver_bounds(h5py.h5f.LIBVER_LATEST, h5py.h5f.LIBVER_LATEST)
     return fapl
-
-
-@numba.jit(nopython=True)
-def _convert_to_buffer(
-        channel, uvw, weights, baselines, vis, out,
-        pixels, cell_size, max_w, w_slices, w_planes, oversample):
-    """Implementation of :meth:`VisibilityCollector._convert_to_buffer`,
-    split out as a function for numba acceleration.
-    """
-    N = uvw.shape[0]
-    P = vis.shape[1]
-    offset = np.float32(pixels // 2)
-    uv_scale = np.float32(1 / cell_size)
-    w_scale = float((w_slices - 0.5) * w_planes / max_w)
-    max_slice_plane = w_slices * w_planes - 1
-    for row in range(N):
-        u = uvw[row, 0]
-        v = uvw[row, 1]
-        w = uvw[row, 2]
-        if w < 0:
-            u = -u
-            v = -v
-            w = -w
-            for p in range(P):
-                out[row].vis[p] = np.conj(vis[row, p])
-        else:
-            for p in range(P):
-                out[row].vis[p] = vis[row, p]
-        for p in range(P):
-            out[row].vis[p] *= weights[row, p]
-        u = u * uv_scale + offset
-        v = v * uv_scale + offset
-        # The plane number is biased by half a slice, because the first slice
-        # is half-width and centered at w=0.
-        w = np.trunc(w * w_scale + w_planes / 2)
-        w_slice_plane = int(min(w, max_slice_plane))
-        w_slice = w_slice_plane // w_planes
-        w_plane = w_slice_plane % w_planes
-        u0, sub_u = grid.subpixel_coord(u, oversample)
-        v0, sub_v = grid.subpixel_coord(v, oversample)
-        out[row].channel = channel
-        out[row].uv[0] = u0
-        out[row].uv[1] = v0
-        out[row].sub_uv[0] = sub_u
-        out[row].sub_uv[1] = sub_v
-        out[row].w_plane = w_plane
-        out[row].w_slice = w_slice
-        for p in range(P):
-            out[row].weights[p] = weights[row, p]
-        out[row].baseline = baselines[row]
-
-
-@numba.jit(nopython=True)
-def _compress_buffer(buffer):
-    """Core loop of :meth:`VisibilityCollector._process_buffer, split into a
-    free function for numba acceleration.
-    """
-    out_pos = 0
-    last = buffer[0]    # Value irrelevant, but needed for type inference
-    last_valid = False
-    P = buffer[0].vis.shape[0]
-    for element in buffer:
-        if element.baseline < 0:
-            continue       # Autocorrelation
-        # Here uv and sub_uv are converted to lists because == gives
-        # elementwise results on arrays.
-        key = (element.channel, element.w_slice,
-               element.uv[0], element.uv[1],
-               element.sub_uv[0], element.sub_uv[1],
-               element.w_plane)
-        if (last_valid and
-                element.channel == last.channel and
-                element.w_slice == last.w_slice and
-                element.uv[0] == last.uv[0] and
-                element.uv[1] == last.uv[1] and
-                element.sub_uv[0] == last.sub_uv[0] and
-                element.sub_uv[1] == last.sub_uv[1] and
-                element.w_plane == last.w_plane):
-            for p in range(P):
-                last.vis[p] += element.vis[p]
-            for p in range(P):
-                last.weights[p] += element.weights[p]
-        else:
-            if last_valid:
-                buffer[out_pos] = last
-                out_pos += 1
-            prev_key = key
-            last = element
-            last_valid = True
-    if last_valid:
-        buffer[out_pos] = last
-        out_pos += 1
-    return out_pos
 
 
 class VisibilityCollector(_preprocess.VisibilityCollector):
