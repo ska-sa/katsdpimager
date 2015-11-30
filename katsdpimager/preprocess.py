@@ -230,6 +230,11 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
             matrix.
         """
 
+        # Force to single precision, since that's what the C++ code demands.
+        # Note: this is true even when gridding at double precision, as
+        # individual visibilities are very noisy.
+        weights = weights.astype(np.float32)
+        vis = vis.astype(np.complex64)
         if polarization_matrix is not None:
             weights = polarization.apply_polarization_matrix_weights(weights, polarization_matrix)
             vis = polarization.apply_polarization_matrix(vis, polarization_matrix)
