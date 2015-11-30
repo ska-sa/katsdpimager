@@ -45,7 +45,7 @@ setup(
     setup_requires=['numpy'],
     install_requires=[
         'numpy', 'scipy', 'katsdpsigproc', 'python-casacore', 'astropy', 'progress',
-        'numba', 'pycuda', 'scikit-cuda', 'h5py', 'ansicolors'
+        'pycuda', 'scikit-cuda', 'h5py', 'ansicolors'
     ],
     tests_require=tests_require,
     extras_require={
