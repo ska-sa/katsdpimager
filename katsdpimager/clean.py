@@ -15,7 +15,7 @@ minor cycles if the launch overheads become an issue.
 
 from __future__ import division, print_function
 import numpy as np
-import numba
+from katsdpimager import numba
 import katsdpsigproc.accel as accel
 import katsdpimager.types
 import pkg_resources

@@ -26,7 +26,7 @@ There is also a memory-based backend to simplify testing.
 from __future__ import print_function, division
 import h5py
 import numpy as np
-import numba
+from katsdpimager import numba
 import math
 import logging
 from katsdpimager import polarization, grid, types

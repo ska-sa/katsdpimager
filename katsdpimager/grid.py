@@ -115,7 +115,7 @@ import astropy.units as units
 import katsdpsigproc.accel as accel
 import katsdpsigproc.tune as tune
 import katsdpimager.types
-import numba
+from katsdpimager import numba
 import logging
 
 
