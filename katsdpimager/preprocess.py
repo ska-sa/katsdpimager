@@ -235,6 +235,7 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
         # individual visibilities are very noisy.
         weights = weights.astype(np.float32)
         vis = vis.astype(np.complex64)
+        uvw = uvw.astype(np.float32)
         if polarization_matrix is not None:
             weights = polarization.apply_polarization_matrix_weights(weights, polarization_matrix)
             vis = polarization.apply_polarization_matrix(vis, polarization_matrix)
