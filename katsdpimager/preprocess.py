@@ -29,15 +29,14 @@ import numpy as np
 from katsdpimager import numba
 import math
 import logging
-from katsdpimager import polarization, grid, types
-from katsdpimager._sort_vis import ffi, lib
+from katsdpimager import polarization, grid, types, _preprocess
 import astropy.units as units
 
 
 logger = logging.getLogger(__name__)
 
 
-def _make_dtype(num_polarizations, internal):
+def _make_dtype(num_polarizations):
     """Creates a numpy structured dtype to hold a preprocessed visibility with
     associated metadata.
 
@@ -45,23 +44,14 @@ def _make_dtype(num_polarizations, internal):
     ----------
     num_polarizations : int
         Number of polarizations in the visibility.
-    internal : bool
-        If True, the structure will include extra fields for baseline, w slice
-        and channel.
     """
-    if internal:
-        return types.cffi_ctype_to_dtype(
-            ffi,
-            ffi.typeof('vis_{}_t'.format(num_polarizations)),
-            {'.vis[]': np.dtype(np.complex64)})
-    else:
-        fields = [
-            ('uv', np.int16, (2,)),
-            ('sub_uv', np.int16, (2,)),
-            ('weights', np.float32, (num_polarizations,)),
-            ('vis', np.complex64, (num_polarizations,)),
-            ('w_plane', np.int16)
-        ]
+    fields = [
+        ('uv', np.int16, (2,)),
+        ('sub_uv', np.int16, (2,)),
+        ('weights', np.float32, (num_polarizations,)),
+        ('vis', np.complex64, (num_polarizations,)),
+        ('w_plane', np.int16)
+    ]
     return np.dtype(fields)
 
 
@@ -172,7 +162,7 @@ def _compress_buffer(buffer):
     return out_pos
 
 
-class VisibilityCollector(object):
+class VisibilityCollector(_preprocess.VisibilityCollector):
     """Base class that accepts a stream of visibility data and stores it. The
     subclasses provide the storage backends. Multiple channels are supported.
 
@@ -187,17 +177,17 @@ class VisibilityCollector(object):
         Number of visibilities to buffer, prior to compression
     """
     def __init__(self, image_parameters, grid_parameters, buffer_size):
+        num_polarizations = len(image_parameters[0].polarizations)
+        super(VisibilityCollector, self).__init__(
+            num_polarizations,
+            grid_parameters.max_w.to(units.m).value,
+            grid_parameters.w_slices,
+            grid_parameters.w_planes,
+            grid_parameters.oversample,
+            self._emit, buffer_size)
         self.image_parameters = image_parameters
         self.grid_parameters = grid_parameters
-        num_polarizations = len(image_parameters[0].polarizations)
-        self.store_dtype = _make_dtype(num_polarizations, False)
-        self.buffer_dtype = _make_dtype(num_polarizations, True)
-        self._buffer = np.rec.recarray(buffer_size, self.buffer_dtype)
-        #: Number of valid elements in buffer
-        self._used = 0
-        self.num_input = 0
-        self.num_output = 0
-        self._sort_func = getattr(lib, "sort_vis_{}".format(num_polarizations))
+        self.store_dtype = _make_dtype(num_polarizations)
 
     @property
     def num_channels(self):
@@ -207,59 +197,11 @@ class VisibilityCollector(object):
     def num_w_slices(self):
         return self.grid_parameters.w_slices
 
-    def _process_buffer(self):
-        """Sort and compress the buffer, and write the results to file.
-
-        The buffer is sorted, then compressed in-place. It is then split into
-        regions that have the same channel and w slice, each of which is
-        appended to the relevant dataset in the file.
-        """
-        if self._used == 0:
-            return
-        buffer = self._buffer[:self._used]
-        # mergesort is stable, so will preserve ordering by time
-        self._sort_func(ffi.from_buffer(buffer), self._used)
-        N = _compress_buffer(buffer)
-        # Write regions to file
-        if N > 0:
-            key = buffer[:N][['channel', 'w_slice']]
-            prev = 0
-            for split in np.nonzero(key[1:] != key[:-1])[0]:
-                end = split + 1
-                self._emit(buffer[prev:end])
-                prev = end
-            self._emit(buffer[prev:N])
-        self.num_input += self._used
-        self.num_output += N
-        self._used = 0
-
     def _emit(self, elements):
         """Write an array of compressed elements with the same channel and w
         slice to the backing store. The caller must provide a non-empty
         array."""
         raise NotImplementedError()
-
-    def _convert_to_buffer(self, channel, uvw, weights, baselines, vis, out):
-        """Apply element-wise preprocessing to a number of elements and write
-        the results to `out`, which will be a view of a range from the buffer.
-
-        Parameters
-        ----------
-        channel : int
-            Channel number for all the provided visibilities
-        uvw, weights, baselines, vis : array
-            See :meth:`add`
-        out : record array
-            N-element view of portion of the buffer to write
-        """
-        _convert_to_buffer(
-            channel, uvw.to(units.m).value, weights, baselines, vis, out,
-            self.image_parameters[channel].pixels,
-            self.image_parameters[channel].cell_size.to(units.m).value,
-            self.grid_parameters.max_w.to(units.m).value,
-            self.grid_parameters.w_slices,
-            self.grid_parameters.w_planes,
-            self.grid_parameters.oversample)
 
     def add(self, channel, uvw, weights, baselines, vis, polarization_matrix=None):
         """Add a set of visibilities to the collector. Each of the provided
@@ -287,51 +229,16 @@ class VisibilityCollector(object):
             If specified, the input visibilities are transformed by this
             matrix.
         """
-        N = uvw.shape[0]
-        if len(uvw.shape) != 2:
-            raise ValueError('uvw has wrong number of dimensions')
-        if len(weights.shape) != 2:
-            raise ValueError('weights has wrong number of dimensions')
-        if len(baselines.shape) != 1:
-            raise ValueError('baselines has wrong number of dimensions')
-        if len(vis.shape) != 2:
-            raise ValueError('vis has wrong number of dimensions')
-        if weights.shape[0] != N or baselines.shape[0] != N or vis.shape[0] != N:
-            raise ValueError('Arrays have different shapes')
-        if uvw.shape[1] != 3:
-            raise ValueError('uvw has invalid shape')
-        ip = self.image_parameters[channel]
 
         if polarization_matrix is not None:
             weights = polarization.apply_polarization_matrix_weights(weights, polarization_matrix)
             vis = polarization.apply_polarization_matrix(vis, polarization_matrix)
-        if weights.shape[1] != len(ip.polarizations):
-            raise ValueError('weights has invalid shape')
-        if vis.shape[1] != len(ip.polarizations):
-            raise ValueError('vis has invalid shape')
 
-        # Copy data to the buffer
-        start = 0
-        while start < N:
-            M = min(N - start, len(self._buffer) - self._used)
-            end = start + M
-            self._convert_to_buffer(
-                channel,
-                uvw[start : end],
-                weights[start : end],
-                baselines[start : end],
-                vis[start : end],
-                self._buffer[self._used : self._used + M])
-            self._used += M
-            start += M
-            if self._used == len(self._buffer):
-                self._process_buffer()
-
-    def close(self):
-        """Finalize processing and close any resources. This must be called before
-        :meth:`reader`. Subclasses may overload this method.
-        """
-        self._process_buffer()
+        ip = self.image_parameters[channel]
+        super(VisibilityCollector, self).add(
+            channel,
+            ip.pixels, ip.cell_size.to(units.m).value,
+            uvw, weights, baselines, vis)
 
     def reader(self):
         """Create and return a reader object that can be used to iterate over
@@ -413,8 +320,8 @@ class VisibilityCollectorHDF5(VisibilityCollector):
 
     def _emit(self, elements):
         N = elements.shape[0]
-        channel = elements[0].channel
-        w_slice = elements[0].w_slice
+        channel = elements[0]['channel']
+        w_slice = elements[0]['w_slice']
         old_length = self._length[channel, w_slice]
         self._length[channel, w_slice] += N
         if self._length[channel, w_slice] > self._dataset.shape[2]:
@@ -455,7 +362,7 @@ class VisibilityCollectorMem(VisibilityCollector):
             [[] for w_slice in range(self.num_w_slices)] for channel in range(self.num_channels)]
 
     def _emit(self, elements):
-        dataset = self.datasets[elements[0].channel][elements[0].w_slice]
+        dataset = self.datasets[elements[0]['channel']][elements[0]['w_slice']]
         dataset.append(elements.astype(self.store_dtype))
 
     def reader(self):

@@ -31,7 +31,7 @@ class BaseTestVisibilityCollector(object):
                 pixels=2048))
         self.grid_parameters = parameters.GridParameters(
             antialias_width=7.0,
-            oversample=8.0,
+            oversample=8,
             image_oversample=4.0,
             w_slices=1,
             w_planes=128,
