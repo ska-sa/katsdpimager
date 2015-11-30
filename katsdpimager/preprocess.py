@@ -315,7 +315,6 @@ class VisibilityCollector(object):
         while start < N:
             M = min(N - start, len(self._buffer) - self._used)
             end = start + M
-            fill = self._buffer[self._used : self._used + M]
             self._convert_to_buffer(
                 channel,
                 uvw[start : end],

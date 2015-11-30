@@ -1,4 +1,5 @@
 /katsdpimager.egg-info
+/katsdpimager/_preprocess.so
 *.fits
 *.pyc
 /build
