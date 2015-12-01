@@ -26,3 +26,5 @@ scipy
 singledispatch
 six
 git+ssh://git@github.com/ska-sa/katsdpsigproc@imager-support#egg=katsdpsigproc
+traceback2
+unittest2
