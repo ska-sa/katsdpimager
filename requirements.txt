@@ -17,7 +17,6 @@ numpy
 pbr
 progress==1.2
 py
-pycparser
 pycuda
 pytest
 python-casacore
@@ -26,6 +25,4 @@ scikit-cuda
 scipy
 singledispatch
 six
-traceback2
-unittest2
 git+ssh://git@github.com/ska-sa/katsdpsigproc@imager-support#egg=katsdpsigproc
