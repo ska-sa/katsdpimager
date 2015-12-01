@@ -1,9 +1,17 @@
+/**
+ * @file
+ *
+ * Implementation of the core preprocessing functions from preprocess.py.
+ *
+ * Most of the functionality is documented in the wrappers in preprocess.py.
+ */
+
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 #include <numpy/arrayobject.h>
 #include <boost/python.hpp>
 #include <boost/make_shared.hpp>
 #include <cstddef>
-#include <stdint.h>
+#include <cstdint>
 #include <string>
 #include <stdexcept>
 #include <algorithm>
@@ -15,26 +23,36 @@ namespace py = boost::python;
 namespace
 {
 
+/**
+ * Data for a visibility with @a P polarizations.
+ */
 template<int P>
 struct vis_t
 {
-    int16_t uv[2];
-    int16_t sub_uv[2];
+    std::int16_t uv[2];
+    std::int16_t sub_uv[2];
     float weights[P];
     float vis[P][2];
-    int16_t w_plane;
-    int16_t w_slice;
-    int32_t channel;
-    int32_t baseline;
+    std::int16_t w_plane;    ///< Plane within W slice
+    std::int16_t w_slice;    ///< W-stacking slice
+    std::int32_t channel;
+    std::int32_t baseline;   ///< Baseline ID
+    std::uint32_t index;     ///< Original position, for sort stability
 };
 
+/**
+ * Abstract base class. This is the type exposed to Python, but a subclass
+ * specialized for the number of polarizations is actually instantiated.
+ */
 class visibility_collector_base
 {
 protected:
+    // Gridding parameters
     float max_w;
     int w_slices;
     int w_planes;
     int oversample;
+    /// Callback function called with compressed data as a numpy array
     py::object emit_callback;
 
 public:
@@ -72,19 +90,25 @@ template<int P>
 class visibility_collector : public visibility_collector_base
 {
 private:
+    /// Storage for buffered visibilities
     std::unique_ptr<vis_t<P>[]> buffer;
+    /// Allocated memory for @ref buffer
     std::size_t buffer_capacity;
+    /// Number of valid entries in @ref buffer
     std::size_t buffer_size;
+    /// numpy dtype for passing data in @ref buffer to Python
     py::object buffer_descr;
 
+    /**
+     * Wrapper around @ref visibility_collector_base::emit. It constructs the
+     * numpy object to wrap the memory.
+     */
     void emit(vis_t<P> data[], std::size_t N);
 
-    void add_contiguous(
-        int channel, int pixels, float cell_size, std::size_t N,
-        const float uvw[][3], const float weights[][P],
-        const int32_t baselines[], const float vis[][P][2],
-        vis_t<P> out[]);
-
+    /**
+     * Sort and compress the buffer, and call emit for each contiguous
+     * portion that belongs to the same w plane and channel.
+     */
     void compress();
 
 public:
@@ -137,73 +161,30 @@ T *array_data(const py::object &array)
     return reinterpret_cast<T *>(PyArray_BYTES((PyArrayObject *) array.ptr()));
 }
 
-// TODO: optimise for oversample being a power of 2, in which case this is just a
-// shift and mask.
-void subpixel_coord(float x, int32_t oversample, int16_t &quo, int16_t &rem)
+/**
+ * Compute pixel and subpixel coordinates in grid. See grid.py for details.
+ * TODO: optimise for oversample being a power of 2, in which case this is just
+ * a shift and mask.
+ */
+void subpixel_coord(float x, std::int32_t oversample, std::int16_t &pixel, std::int16_t &subpixel)
 {
-    int32_t xs = int32_t(floor(x * oversample));
-    quo = xs / oversample;
-    rem = xs % oversample;
-    if (rem < 0)
+    std::int32_t xs = std::int32_t(std::floor(x * oversample));
+    pixel = xs / oversample;
+    subpixel = xs % oversample;
+    if (subpixel < 0)
     {
-        quo--;
-        rem += oversample;
+        pixel--;
+        subpixel += oversample;
     }
 }
 
-template<int P>
-void visibility_collector<P>::add_contiguous(
-    int channel, int pixels, float cell_size,
-    std::size_t N,
-    const float uvw[][3], const float weights[][P],
-    const int32_t baselines[], const float vis[][P][2],
-    vis_t<P> out[])
-{
-    float offset = pixels * 0.5f;
-    float uv_scale = 1.0 / cell_size;
-    float w_scale = (w_slices - 0.5f) * w_planes / max_w;
-    int max_slice_plane = w_slices * w_planes - 1; // TODO: check for overflow?
-    for (std::size_t row = 0; row < N; row++)
-    {
-        float u = uvw[row][0];
-        float v = uvw[row][1];
-        float w = uvw[row][2];
-        if (w < 0.0f)
-        {
-            u = -u;
-            v = -v;
-            w = -w;
-            for (int p = 0; p < P; p++)
-            {
-                out[row].vis[p][0] = vis[row][p][0];
-                out[row].vis[p][1] = -vis[row][p][1]; // conjugate
-            }
-        }
-        else
-            std::memcpy(&out[row].vis, &vis[row], sizeof(vis[row]));
-        for (int p = 0; p < P; p++)
-        {
-            float weight = weights[row][p];
-            out[row].vis[p][0] *= weight;
-            out[row].vis[p][1] *= weight;
-        }
-        u = u * uv_scale + offset;
-        v = v * uv_scale + offset;
-        // The plane number is biased by half a slice, because the first slice
-        // is half-width and centered at w=0.
-        w = trunc(w * w_scale + w_planes * 0.5f);
-        int w_slice_plane = std::min(int(w), max_slice_plane);
-        // TODO convert from here
-        subpixel_coord(u, oversample, out[row].uv[0], out[row].sub_uv[0]);
-        subpixel_coord(v, oversample, out[row].uv[1], out[row].sub_uv[1]);
-        out[row].channel = channel;
-        out[row].w_plane = w_slice_plane % w_planes;
-        out[row].w_slice = w_slice_plane / w_planes;
-        std::memcpy(&out[row].weights, &weights[row], sizeof(weights[row]));
-        out[row].baseline = baselines[row];
-    }
-}
-
+/**
+ * Sort comparison operator for visibilities. It sorts first by channel and w
+ * slice, then by baseline, then by original position (i.e., making it
+ * stable). This is done rather than using std::stable_sort, because the
+ * std::stable_sort in libstdc++ uses a temporary memory allocation while
+ * std::sort is in-place.
+ */
 template<typename T>
 struct compare
 {
@@ -213,8 +194,10 @@ struct compare
             return a.channel < b.channel;
         else if (a.w_slice != b.w_slice)
             return a.w_slice < b.w_slice;
-        else
+        else if (a.baseline != b.baseline)
             return a.baseline < b.baseline;
+        else
+            return a.index < b.index;
     }
 };
 
@@ -228,30 +211,39 @@ void visibility_collector<P>::emit(vis_t<P> data[], std::size_t N)
         &PyArray_Type, (PyArray_Descr *) buffer_descr.ptr(), 1, dims, NULL, data,
         NPY_ARRAY_CARRAY, NULL));
     py::object obj{py::handle<>(array)};
+    num_output += N;
     emit_callback(obj);
 }
 
 template<int P>
 void visibility_collector<P>::compress()
 {
-    std::stable_sort(buffer.get(), buffer.get() + buffer_size, compare<vis_t<P> >());
+    if (buffer_size == 0)
+        return;  // some code will break on an empty buffer
+    std::sort(buffer.get(), buffer.get() + buffer_size, compare<vis_t<P> >());
     std::size_t out_pos = 0;
-    vis_t<P> last;
-    bool last_valid = false;
-    for (std::size_t i = 0; i < buffer_size; i++)
+    // Currently accumulating visibility
+    vis_t<P> last = buffer[0];
+    for (std::size_t i = 1; i < buffer_size; i++)
     {
         const vis_t<P> &element = buffer[i];
-        if (element.baseline < 0)
-            continue;       // Autocorrelation
-        if (last_valid
-            && element.channel == last.channel
-            && element.w_slice == last.w_slice
-            && element.uv[0] == last.uv[0]
+        if (element.channel != last.channel
+            || element.w_slice != last.w_slice)
+        {
+            // Moved to the next channel/slice, so pass what we have
+            // back to Python
+            buffer[out_pos++] = last;
+            emit(buffer.get(), out_pos);
+            out_pos = 0;
+            last = element;
+        }
+        else if (element.uv[0] == last.uv[0]
             && element.uv[1] == last.uv[1]
             && element.sub_uv[0] == last.sub_uv[0]
             && element.sub_uv[1] == last.sub_uv[1]
             && element.w_plane == last.w_plane)
         {
+            // Continue accumulating the current visibility
             for (int p = 0; p < P; p++)
                 for (int j = 0; j < 2; j++)
                     last.vis[p][j] += element.vis[p][j];
@@ -260,72 +252,88 @@ void visibility_collector<P>::compress()
         }
         else
         {
-            if (last_valid)
-            {
-                buffer[out_pos] = last;
-                out_pos++;
-            }
+            // Moved to the next output visibility
+            buffer[out_pos++] = last;
             last = element;
-            last_valid = true;
         }
     }
-    if (last_valid)
-    {
-        buffer[out_pos] = last;
-        out_pos++;
-    }
-    num_input += buffer_size;
-    buffer_size = out_pos;
-
-    // Identify ranges with the same channel and slice
-    std::size_t prev = 0;
-    int32_t last_channel = -1;
-    int16_t last_w_slice = -1;
-    for (std::size_t i = 0; i < buffer_size; i++)
-    {
-        if (buffer[i].channel != last_channel
-            || buffer[i].w_slice != last_w_slice)
-        {
-            if (i != prev)
-                emit(buffer.get() + prev, i - prev);
-            prev = i;
-            last_channel = buffer[i].channel;
-            last_w_slice = buffer[i].w_slice;
-        }
-    }
-    if (prev != buffer_size)
-        emit(buffer.get() + prev, buffer_size - prev);
-    num_output += buffer_size;
+    // Emit the final batch
+    buffer[out_pos++] = last;
+    emit(buffer.get(), out_pos);
     buffer_size = 0;
 }
 
 template<int P>
 void visibility_collector<P>::add(
     int channel, int pixels, float cell_size,
-    const py::object &uvw_, const py::object &weights_,
-    const py::object &baselines_, const py::object &vis_)
+    const py::object &uvw_obj, const py::object &weights_obj,
+    const py::object &baselines_obj, const py::object &vis_obj)
 {
-    py::object uvw = get_array(uvw_, NPY_FLOAT32, -1, 3);
-    const std::size_t N = PyArray_DIMS((PyArrayObject *) uvw.ptr())[0];
-    py::object weights = get_array(weights_, NPY_FLOAT32, N, P);
-    py::object baselines = get_array(baselines_, NPY_INT32, N, -1);
-    py::object vis = get_array(vis_, NPY_COMPLEX64, N, P);
+    // Coerce objects to proper arrays and validate types and dimensions
+    py::object uvw_array = get_array(uvw_obj, NPY_FLOAT32, -1, 3);
+    const std::size_t N = PyArray_DIMS((PyArrayObject *) uvw_array.ptr())[0];
+    py::object weights_array = get_array(weights_obj, NPY_FLOAT32, N, P);
+    py::object baselines_array = get_array(baselines_obj, NPY_INT32, N, -1);
+    py::object vis_array = get_array(vis_obj, NPY_COMPLEX64, N, P);
 
-    std::size_t start = 0;
-    while (start < N)
+    auto uvw = array_data<const float[3]>(uvw_array);
+    auto weights = array_data<const float[P]>(weights_array);
+    auto baselines = array_data<const int32_t>(baselines_array);
+    auto vis = array_data<const float[P][2]>(vis_array);
+
+    float offset = pixels * 0.5f;
+    float uv_scale = 1.0f / cell_size;
+    float w_scale = (w_slices - 0.5f) * w_planes / max_w;
+    int max_slice_plane = w_slices * w_planes - 1; // TODO: check for overflow? precompute?
+    for (std::size_t i = 0; i < N; i++)
     {
-        std::size_t M = std::min(N - start, buffer_capacity - buffer_size);
-        add_contiguous(channel, pixels, cell_size, M,
-            array_data<const float[3]>(uvw) + start,
-            array_data<const float[P]>(weights) + start,
-            array_data<const int32_t>(baselines) + start,
-            array_data<const float[P][2]>(vis) + start,
-            buffer.get() + buffer_size);
-        buffer_size += M;
-        start += M;
+        if (baselines[i] < 0)
+            continue; // autocorrelation
         if (buffer_size == buffer_capacity)
             compress();
+        vis_t<P> &out = buffer[buffer_size];
+        float u = uvw[i][0];
+        float v = uvw[i][1];
+        float w = uvw[i][2];
+        if (w < 0.0f)
+        {
+            u = -u;
+            v = -v;
+            w = -w;
+            for (int p = 0; p < P; p++)
+            {
+                out.vis[p][0] = vis[i][p][0];
+                out.vis[p][1] = -vis[i][p][1]; // conjugate
+            }
+        }
+        else
+            std::memcpy(&out.vis, &vis[i], sizeof(vis[i]));
+        for (int p = 0; p < P; p++)
+        {
+            float weight = weights[i][p];
+            out.vis[p][0] *= weight;
+            out.vis[p][1] *= weight;
+        }
+        u = u * uv_scale + offset;
+        v = v * uv_scale + offset;
+        // The plane number is biased by half a slice, because the first slice
+        // is half-width and centered at w=0.
+        w = trunc(w * w_scale + w_planes * 0.5f);
+        int w_slice_plane = std::min(int(w), max_slice_plane);
+        // TODO convert from here
+        subpixel_coord(u, oversample, out.uv[0], out.sub_uv[0]);
+        subpixel_coord(v, oversample, out.uv[1], out.sub_uv[1]);
+        out.channel = channel;
+        out.w_plane = w_slice_plane % w_planes;
+        out.w_slice = w_slice_plane / w_planes;
+        std::memcpy(&out.weights, &weights[i], sizeof(weights[i]));
+        out.baseline = baselines[i];
+        // This could wrap if the buffer has > 4 billion elements, but that
+        // can only affect efficiency, not correctness.
+        out.index = (std::uint32_t) buffer_size;
+        buffer_size++;
     }
+    num_input += N;
 }
 
 template<int P>

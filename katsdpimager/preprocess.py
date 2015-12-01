@@ -13,14 +13,15 @@ The following transformations are done:
 - Visibilities with the same UVW coordinates (after quantisation) are merged
   ("compressed").
 
-The resulting visibilities are stored in HDF5 (:class:`VisibilityCollectorHDF5`)
-or numpy arrays (:class:`VisibilityCollectorMem`).
+The resulting visibilities are stored in HDF5
+(:class:`VisibilityCollectorHDF5`) or numpy arrays
+(:class:`VisibilityCollectorMem`). The latter is used mainly for testing.
 
 Partial sorting by baseline is implemented by buffering up a reasonably large
 number of visibilities and sorting them. The merging is also partial, since
 only adjacent visibilities are candidates for merging.
 
-There is also a memory-based backend to simplify testing.
+The core pieces are implemented in C++ for speed (see preprocess.cpp).
 """
 
 from __future__ import print_function, division
@@ -106,7 +107,12 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
     def _emit(self, elements):
         """Write an array of compressed elements with the same channel and w
         slice to the backing store. The caller must provide a non-empty
-        array."""
+        array.
+
+        Overrides of this function *must not* hold a reference to `elements`.
+        The memory underneath is not reference-counted and is invalid once
+        this function returns.
+        """
         raise NotImplementedError()
 
     def add(self, channel, uvw, weights, baselines, vis, polarization_matrix=None):
