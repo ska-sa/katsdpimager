@@ -13,7 +13,7 @@ import atexit
 import os
 import katsdpsigproc.accel as accel
 from katsdpimager import \
-    loader, parameters, polarization, preprocess, io, clean, imaging, progress, beam
+    loader, parameters, polarization, preprocess, io, clean, imaging, progress, beam, numba
 from contextlib import closing, contextmanager
 
 
@@ -249,6 +249,8 @@ def main():
         queue = context.create_command_queue()
     else:
         queue = DummyCommandQueue()
+        if not numba.have_numba:
+            logger.warn('could not import numba: --host mode will be VERY slow')
 
     with closing(loader.load(args.input_file, args.input_option)) as dataset:
         #### Determine parameters ####
