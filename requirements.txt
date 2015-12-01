@@ -5,6 +5,7 @@ Cython
 decorator
 enum34
 funcsigs
+futures
 h5py
 linecache2
 llvmlite
