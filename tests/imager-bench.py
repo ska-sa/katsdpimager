@@ -125,14 +125,16 @@ def benchmark_grid(args):
                 gridder.buffer('w_plane')[rng] = chunk['w_plane']
                 gridder.buffer('vis')[rng] = chunk['vis']
                 start += len(chunk)
+            gridder()  # Forces data transfer
             queue.start_tuning()
             gridder()
             elapsed += queue.stop_tuning()
             queue.finish()
     gaps = N_compressed * args.grid_parameters.kernel_width**2 * args.polarizations / elapsed
-    print('Gridded {} points in {:.6f}s with kernel size {} and {} polarizations'.format(
-        N_compressed, elapsed, args.grid_parameters.kernel_width, args.polarizations))
-    print('{:.3f} GGAPS'.format(gaps / 1e9))
+    print('Gridded {} ({}) points in {:.6f}s with kernel size {} and {} polarizations'.format(
+        N_compressed, N, elapsed, args.grid_parameters.kernel_width, args.polarizations))
+    print('{:.3f} GGAPS uncompressed'.format(gaps * N / N_compressed / 1e9))
+    print('{:.3f} GGAPS compressed'.format(gaps / 1e9))
 
 
 def main():
