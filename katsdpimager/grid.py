@@ -498,7 +498,7 @@ class GridDegrid(accel.Operation):
 
     Parameters
     ----------
-    template : :class:`GridTemplate` or :class:`DegridTemplate`
+    template : :class:`GridderTemplate` or :class:`DegridderTemplate`
         Operation template
     command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
         Command queue for the operation
