@@ -52,6 +52,7 @@ setup(
         'test': tests_require,
         'doc': ['sphinx>=1.3.0'],
         'cpu': ['numba'],
-        'report': ['aplpy', 'matplotlib', 'mako', 'katpoint']
+        'report': ['aplpy', 'matplotlib', 'mako'],
+        'benchmark': ['katpoint']
     }
 )
