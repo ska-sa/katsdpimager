@@ -9,8 +9,8 @@ import ephem
 import pkg_resources
 import numpy as np
 from astropy import units
-from katsdpimager import grid, preprocess, parameters, polarization
-from katsdpsigproc import accel
+from katsdpimager import grid, preprocess, parameters, polarization, types
+from katsdpsigproc import accel, fill
 
 
 def load_antennas():
@@ -88,9 +88,7 @@ def make_uvw(args, n_time):
     return uvw.reshape(3, uvw.shape[1] * n_time).T.copy()
 
 
-def benchmark_grid(args):
-    add_parameters(args)
-    N = 8 * 1024**2
+def prepare_vis(args, N):
     collector = preprocess.VisibilityCollectorMem(
             [args.image_parameters], args.grid_parameters, N)
     n_baselines = len(args.antennas) * (len(args.antennas) - 1) // 2
@@ -103,20 +101,33 @@ def benchmark_grid(args):
     collector.add(0, uvw, weights, baselines, vis)
     collector.close()
     reader = collector.reader()
+    return reader
+
+
+def benchmark_grid_degrid(args, template_class):
+    N = 8 * 1024**2
+    add_parameters(args)
+    reader = prepare_vis(args, N)
 
     context = accel.create_some_context()
     queue = context.create_tuning_command_queue()
     allocator = accel.SVMAllocator(context)
-    gridder_template = grid.GridderTemplate(context, args.image_parameters, args.grid_parameters)
+    gridder_template = template_class(context, args.image_parameters, args.grid_parameters)
     gridder = gridder_template.instantiate(queue, args.array_parameters, N, allocator=allocator)
     gridder.ensure_all_bound()
+    clear_template = fill.FillTemplate(context,
+        args.image_parameters.complex_dtype,
+        types.dtype_to_ctype(args.image_parameters.complex_dtype))
+    clear = clear_template.instantiate(queue, gridder.buffer('grid').shape, allocator=allocator)
+    clear.bind(data=gridder.buffer('grid'))
     elapsed = 0.0
     N_compressed = 0
     for w_slice in range(reader.num_w_slices):
         gridder.num_vis = reader.len(0, w_slice)
         N_compressed += gridder.num_vis
         if gridder.num_vis > 0:
-            # TODO: zero the grid before each addition
+            clear()
+            queue.finish()
             start = 0
             for chunk in reader.iter_slice(0, w_slice):
                 rng = slice(start, start + len(chunk))
@@ -131,20 +142,37 @@ def benchmark_grid(args):
             elapsed += queue.stop_tuning()
             queue.finish()
     gaps = N_compressed * args.grid_parameters.kernel_width**2 * args.polarizations / elapsed
-    print('Gridded {} ({}) points in {:.6f}s with kernel size {} and {} polarizations'.format(
+    print('Processed {} ({}) visibilities in {:.6f}s with kernel size {} and {} polarizations'.format(
         N_compressed, N, elapsed, args.grid_parameters.kernel_width, args.polarizations))
     print('{:.3f} GGAPS uncompressed'.format(gaps * N / N_compressed / 1e9))
     print('{:.3f} GGAPS compressed'.format(gaps / 1e9))
 
 
+def benchmark_grid(args):
+    benchmark_grid_degrid(args, grid.GridderTemplate)
+
+def benchmark_degrid(args):
+    benchmark_grid_degrid(args, grid.DegridderTemplate)
+
+
+def grid_degrid_arguments(parser):
+    parser.add_argument('--polarizations', type=int, default=4, choices=[1, 2, 3, 4], help='Number of polarizations')
+    parser.add_argument('--frequency', type=float, default=1412000000.0, help='Observation frequency (Hz)')
+    parser.add_argument('--int-time', type=float, default=2.0, help='Integration time (seconds)')
+
+
 def main():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(help='sub-commands')
+
     parser_grid = subparsers.add_parser('grid', help='gridding benchmark')
-    parser_grid.add_argument('--polarizations', type=int, default=4, choices=[1, 2, 3, 4], help='Number of polarizations')
-    parser_grid.add_argument('--frequency', type=float, default=1412000000.0, help='Observation frequency (Hz)')
-    parser_grid.add_argument('--int-time', type=float, default=2.0, help='Integration time (seconds)')
+    grid_degrid_arguments(parser_grid)
     parser_grid.set_defaults(func=benchmark_grid)
+
+    parser_degrid = subparsers.add_parser('degrid', help='degridding benchmark')
+    grid_degrid_arguments(parser_degrid)
+    parser_degrid.set_defaults(func=benchmark_degrid)
+
     args = parser.parse_args()
     args.func(args)
 
