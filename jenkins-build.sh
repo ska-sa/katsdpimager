@@ -8,6 +8,10 @@ if [ "$1" = "" ]; then
     install-requirements.py -d ~/docker-base/base-requirements.txt -d ~/docker-base/gpu-requirements.txt \
         -r test-requirements.txt
     pip install --no-index -e '.[test]'
+    # numba crashes on import on ARM, so remove it
+    if ! python -c 'import numba'; then
+        pip uninstall --yes numba
+    fi
     nosetests --with-xunit --with-coverage --cover-erase --cover-package=katsdpimager --cover-xml
     # Hack to make Jenkins Cobertura plugin find the source
     sed -i -e 's!katsdppipelines/katsdpimager</source>!katsdppipelines</source>!' \
