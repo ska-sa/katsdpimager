@@ -8,6 +8,7 @@ import katpoint
 import ephem
 import pkg_resources
 import numpy as np
+import timeit
 from astropy import units
 from katsdpimager import grid, preprocess, parameters, polarization, types
 from katsdpsigproc import accel, fill
@@ -88,9 +89,16 @@ def make_uvw(args, n_time):
     return uvw.reshape(3, uvw.shape[1] * n_time).T.copy()
 
 
-def prepare_vis(args, N):
-    collector = preprocess.VisibilityCollectorMem(
-            [args.image_parameters], args.grid_parameters, N)
+def make_vis(args, N):
+    """Generate uncompressed visibilities
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Command-line arguments
+    N : int
+        Number of visibilities (rounded down to a whole dump)
+    """
     n_baselines = len(args.antennas) * (len(args.antennas) - 1) // 2
     n_time = N // n_baselines
     N = n_time * n_baselines
@@ -98,16 +106,52 @@ def prepare_vis(args, N):
     weights = np.ones((N, args.polarizations), np.float32)
     vis = np.ones((N, args.polarizations), np.complex64)
     baselines = np.repeat(np.arange(n_baselines, dtype=np.int32), n_time)
+    return uvw, weights, baselines, vis
+
+
+def make_compressed_vis(args, N):
+    """Generate compressed visibilities
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Command-line arguments
+    N : int
+        Number of *uncompressed* visibilities (rounded down to a whole dump)
+
+    Returns
+    -------
+    reader : :py:class:`katsdpimager.preprocess.VisibilityReaderMem`
+        Reader that iterates the visibilities
+    """
+    uvw, weights, baselines, vis = make_vis(args, N)
+    collector = preprocess.VisibilityCollectorMem(
+            [args.image_parameters], args.grid_parameters, N)
     collector.add(0, uvw, weights, baselines, vis)
     collector.close()
     reader = collector.reader()
     return reader
 
 
+def benchmark_preprocess(args):
+    add_parameters(args)
+    N = 8 * 1024**2
+    uvw, weights, baselines, vis = make_vis(args, N)
+    start = timeit.default_timer()
+    collector = preprocess.VisibilityCollectorMem(
+            [args.image_parameters], args.grid_parameters, N)
+    collector.add(0, uvw, weights, baselines, vis)
+    collector.close()
+    end = timeit.default_timer()
+    elapsed = end - start
+    print("preprocessed {} visibilities in {} seconds".format(N, elapsed))
+    print("{:.2f} vis/second".format(N / elapsed))
+
+
 def benchmark_grid_degrid(args, template_class):
     N = 8 * 1024**2
     add_parameters(args)
-    reader = prepare_vis(args, N)
+    reader = make_compressed_vis(args, N)
 
     context = accel.create_some_context()
     queue = context.create_tuning_command_queue()
@@ -155,22 +199,21 @@ def benchmark_degrid(args):
     benchmark_grid_degrid(args, grid.DegridderTemplate)
 
 
-def grid_degrid_arguments(parser):
+def main():
+    parser = argparse.ArgumentParser()
     parser.add_argument('--polarizations', type=int, default=4, choices=[1, 2, 3, 4], help='Number of polarizations')
     parser.add_argument('--frequency', type=float, default=1412000000.0, help='Observation frequency (Hz)')
     parser.add_argument('--int-time', type=float, default=2.0, help='Integration time (seconds)')
 
-
-def main():
-    parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(help='sub-commands')
 
+    parser_preprocess = subparsers.add_parser('preprocess', help='preprocessing benchmark')
+    parser_preprocess.set_defaults(func=benchmark_preprocess)
+
     parser_grid = subparsers.add_parser('grid', help='gridding benchmark')
-    grid_degrid_arguments(parser_grid)
     parser_grid.set_defaults(func=benchmark_grid)
 
     parser_degrid = subparsers.add_parser('degrid', help='degridding benchmark')
-    grid_degrid_arguments(parser_degrid)
     parser_degrid.set_defaults(func=benchmark_degrid)
 
     args = parser.parse_args()
