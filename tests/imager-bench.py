@@ -10,7 +10,7 @@ import pkg_resources
 import numpy as np
 import timeit
 from astropy import units
-from katsdpimager import grid, preprocess, parameters, polarization, types
+from katsdpimager import grid, preprocess, parameters, polarization, types, fft
 from katsdpsigproc import accel, fill
 
 
@@ -148,7 +148,7 @@ def benchmark_preprocess(args):
     print("{:.2f} vis/second".format(N / elapsed))
 
 
-def benchmark_grid_degrid(args, template_class):
+def benchmark_grid_degrid(args):
     N = 8 * 1024**2
     add_parameters(args)
     reader = make_compressed_vis(args, N)
@@ -156,7 +156,7 @@ def benchmark_grid_degrid(args, template_class):
     context = accel.create_some_context()
     queue = context.create_tuning_command_queue()
     allocator = accel.SVMAllocator(context)
-    gridder_template = template_class(context, args.image_parameters, args.grid_parameters)
+    gridder_template = args.template_class(context, args.image_parameters, args.grid_parameters)
     gridder = gridder_template.instantiate(queue, args.array_parameters, N, allocator=allocator)
     gridder.ensure_all_bound()
     clear_template = fill.FillTemplate(context,
@@ -192,11 +192,22 @@ def benchmark_grid_degrid(args, template_class):
     print('{:.3f} GGAPS compressed'.format(gaps / 1e9))
 
 
-def benchmark_grid(args):
-    benchmark_grid_degrid(args, grid.GridderTemplate)
-
-def benchmark_degrid(args):
-    benchmark_grid_degrid(args, grid.DegridderTemplate)
+def benchmark_fft(args):
+    context = accel.create_some_context()
+    queue = context.create_tuning_command_queue()
+    allocator = accel.SVMAllocator(context)
+    shape = (args.pixels, args.pixels)
+    template = fft.FftTemplate(queue, 2, shape, np.complex64, shape, shape)
+    fn = template.instantiate(args.mode, allocator=allocator)
+    fn.ensure_all_bound()
+    # Zero-fill, just to ensure no NaNs etc
+    fn.buffer('src').fill(0)
+    fn.buffer('dest').fill(0)
+    fn()  # Warm-up and forces data transfer
+    queue.start_tuning()
+    fn()
+    elapsed = queue.stop_tuning()
+    print('{pixels}x{pixels} in {elapsed:.6f} seconds'.format(pixels=args.pixels, elapsed=elapsed))
 
 
 def main():
@@ -211,10 +222,18 @@ def main():
     parser_preprocess.set_defaults(func=benchmark_preprocess)
 
     parser_grid = subparsers.add_parser('grid', help='gridding benchmark')
-    parser_grid.set_defaults(func=benchmark_grid)
+    parser_grid.set_defaults(func=benchmark_grid_degrid, template_class=grid.GridderTemplate)
 
     parser_degrid = subparsers.add_parser('degrid', help='degridding benchmark')
-    parser_degrid.set_defaults(func=benchmark_degrid)
+    parser_degrid.set_defaults(func=benchmark_grid_degrid, template_class=grid.DegridderTemplate)
+
+    parser_ifft = subparsers.add_parser('ifft', help='grid-to-image FFT benchmark')
+    parser_ifft.add_argument('--pixels', type=int, default=4608, help='Grid/image dimensions')
+    parser_ifft.set_defaults(func=benchmark_fft, mode=fft.FFT_INVERSE)
+
+    parser_fft = subparsers.add_parser('fft', help='image-to-grid FFT benchmark')
+    parser_fft.add_argument('--pixels', type=int, default=4608, help='Grid/image dimensions')
+    parser_fft.set_defaults(func=benchmark_fft, mode=fft.FFT_FORWARD)
 
     args = parser.parse_args()
     args.func(args)
