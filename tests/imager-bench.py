@@ -145,7 +145,7 @@ def benchmark_preprocess(args):
     end = timeit.default_timer()
     elapsed = end - start
     print("preprocessed {} visibilities in {} seconds".format(N, elapsed))
-    print("{:.2f} vis/second".format(N / elapsed))
+    print("{:.2f} Mvis/s".format(N / elapsed / 1e6))
 
 
 def benchmark_grid_degrid(args):
@@ -208,6 +208,9 @@ def benchmark_fft(args):
     fn()
     elapsed = queue.stop_tuning()
     print('{pixels}x{pixels} in {elapsed:.6f} seconds'.format(pixels=args.pixels, elapsed=elapsed))
+    # 8 bytes for complex64, 4 accesses (from source, to/from scratch, to dest)
+    mem_rate = args.pixels * args.pixels * 8 * 4 / elapsed
+    print('{:.3f} GiB/s'.format(mem_rate / 1024**3))
 
 
 def main():
