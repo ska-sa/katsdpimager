@@ -135,7 +135,7 @@ def make_compressed_vis(args, N):
 
 def benchmark_preprocess(args):
     add_parameters(args)
-    N = 8 * 1024**2
+    N = 2 * 1024**2
     uvw, weights, baselines, vis = make_vis(args, N)
     start = timeit.default_timer()
     collector = preprocess.VisibilityCollectorMem(
@@ -149,7 +149,7 @@ def benchmark_preprocess(args):
 
 
 def benchmark_grid_degrid(args):
-    N = 8 * 1024**2
+    N = 2 * 1024**2
     add_parameters(args)
     reader = make_compressed_vis(args, N)
 
