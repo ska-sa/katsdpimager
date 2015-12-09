@@ -444,7 +444,7 @@ def _autotune_uv(context, pixels, bin_size, oversample):
     low = bin_size
     high = pixels - bin_size
     track_length = (high - low) * oversample
-    tracks = 64 * 1024 // track_length
+    tracks = 1024 * 1024 // track_length
     out = np.empty((tracks, track_length, 4), np.int16)
     for i in range(tracks):
         angle = 2 * math.pi * i / tracks
@@ -683,10 +683,10 @@ class Gridder(GridDegrid):
         """
         if num_vis == 0:
             return
-        workgroups = 256  # TODO: tune this in some way
-        vis_per_workgroup = accel.divup(num_vis, workgroups)
         tiles_x = bin_size // tile_x
         tiles_y = bin_size // tile_y
+        workgroups = 256 // (tiles_x * tiles_y)   # TODO: tune this in some way
+        vis_per_workgroup = accel.divup(num_vis, workgroups)
         command_queue.enqueue_kernel(
             kernel,
             [
