@@ -524,6 +524,10 @@ class GridderTemplate(object):
         vis.zero(queue)
         convolve_kernel.zero(queue)
         def generate(multi_x, multi_y, wgs_x, wgs_y):
+            if wgs_x != wgs_y and wgs_x != wgs_y * 2:
+                # Only the total size really matters, so it is not necessary
+                # to try all possible shapes
+                raise RuntimeError('Skipping configuration')
             tile_x = wgs_x * multi_x
             tile_y = wgs_y * multi_y
             parameters = {
@@ -552,8 +556,8 @@ class GridderTemplate(object):
         return tune.autotune(generate,
                 multi_x=[1, 2, 4],
                 multi_y=[1, 2, 4],
-                wgs_x=[8, 16],
-                wgs_y=[8, 16])
+                wgs_x=[4, 8, 16],
+                wgs_y=[4, 8, 16])
 
     def instantiate(self, *args, **kwargs):
         return Gridder(self, *args, **kwargs)
