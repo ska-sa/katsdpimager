@@ -419,14 +419,10 @@ class ConvolutionKernelDevice(ConvolutionKernel):
 
     def parameters(self):
         """Parameters for templating CUDA/OpenCL kernels"""
-        w_scale = float(units.m / self.grid_parameters.max_w) * (self.grid_parameters.w_planes - 1)
         return {
             'convolve_kernel_slice_stride':
                 self.padded_data.padded_shape[2],
-            'convolve_kernel_oversample': self.data.shape[1],
             'convolve_kernel_w_stride': np.product(self.padded_data.padded_shape[1:]),
-            'convolve_kernel_w_scale': w_scale,
-            'convolve_kernel_max_w': float(self.grid_parameters.max_w / units.m),
             'bin_x': self.bin_size,
             'bin_y': self.bin_size,
         }

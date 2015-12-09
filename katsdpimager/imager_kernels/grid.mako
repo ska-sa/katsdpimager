@@ -12,13 +12,8 @@ typedef atomic_accum_${real_type}2 atomic_accum_Complex;
 #define MULTI_Y ${multi_y}
 #define BIN_X ${bin_x}
 #define BIN_Y ${bin_y}
-#define CONVOLVE_KERNEL_OVERSAMPLE ${convolve_kernel_oversample}
-#define CONVOLVE_KERNEL_OVERSAMPLE_MASK ${convolve_kernel_oversample - 1}
-#define CONVOLVE_KERNEL_OVERSAMPLE_SHIFT ${int.bit_length(convolve_kernel_oversample) - 1}
 #define CONVOLVE_KERNEL_SLICE_STRIDE ${convolve_kernel_slice_stride}
 #define CONVOLVE_KERNEL_W_STRIDE ${convolve_kernel_w_stride}
-#define CONVOLVE_KERNEL_W_SCALE ${convolve_kernel_w_scale}f
-#define CONVOLVE_KERNEL_MAX_W ${convolve_kernel_max_w}f
 #define make_Complex make_${real_type}2
 #define atomic_accum_Complex_add atomic_accum_${real_type}2_add
 

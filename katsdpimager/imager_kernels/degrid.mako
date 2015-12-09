@@ -16,13 +16,8 @@ typedef ${real_type}2 Complex;
 #define SUBGROUPS ${wgs_z}
 #define BIN_X ${bin_x}
 #define BIN_Y ${bin_y}
-#define CONVOLVE_KERNEL_OVERSAMPLE ${convolve_kernel_oversample}
-#define CONVOLVE_KERNEL_OVERSAMPLE_MASK ${convolve_kernel_oversample - 1}
-#define CONVOLVE_KERNEL_OVERSAMPLE_SHIFT ${int.bit_length(convolve_kernel_oversample) - 1}
 #define CONVOLVE_KERNEL_SLICE_STRIDE ${convolve_kernel_slice_stride}
 #define CONVOLVE_KERNEL_W_STRIDE ${convolve_kernel_w_stride}
-#define CONVOLVE_KERNEL_W_SCALE ${convolve_kernel_w_scale}f
-#define CONVOLVE_KERNEL_MAX_W ${convolve_kernel_max_w}f
 
 /// Computes a * b
 DEVICE_FN float2 complex_mul(float2 a, float2 b)
