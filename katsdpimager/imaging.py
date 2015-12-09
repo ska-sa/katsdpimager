@@ -3,7 +3,7 @@ objects together."""
 
 from __future__ import print_function, division
 import numpy as np
-from katsdpsigproc import accel, fill
+from katsdpsigproc import accel
 from . import grid, image, clean, types
 
 
@@ -38,12 +38,6 @@ class ImagingTemplate(object):
             context, clean_parameters, image_parameters.real_dtype, image_shape[0])
         self.scale = image.ScaleTemplate(
             context, image_parameters.real_dtype, image_shape[0])
-        self.clear_grid = fill.FillTemplate(
-            context, image_parameters.complex_dtype,
-            types.dtype_to_ctype(image_parameters.complex_dtype))
-        self.clear_image = fill.FillTemplate(
-            context, image_parameters.real_dtype,
-            types.dtype_to_ctype(image_parameters.real_dtype))
         self.taper1d = accel.SVMArray(
             context, (image_parameters.pixels,), image_parameters.real_dtype)
         self.gridder.convolve_kernel.taper(image_parameters.pixels, self.taper1d)
@@ -75,12 +69,6 @@ class Imaging(accel.OperationSequence):
             template.command_queue, template.image_parameters, allocator)
         self._scale = template.scale.instantiate(
             template.command_queue, image_shape, allocator)
-        self._clear_grid = template.clear_grid.instantiate(
-            template.command_queue, image_shape, allocator)
-        self._clear_dirty = template.clear_image.instantiate(
-            template.command_queue, image_shape, allocator)
-        self._clear_model = template.clear_image.instantiate(
-            template.command_queue, image_shape, allocator)
         self._grid_to_image.bind(kernel1d=template.taper1d)
         self._image_to_grid.bind(kernel1d=template.untaper1d)
         operations = [
@@ -89,20 +77,17 @@ class Imaging(accel.OperationSequence):
             ('grid_to_image', self._grid_to_image),
             ('image_to_grid', self._image_to_grid),
             ('clean', self._clean),
-            ('scale', self._scale),
-            ('clear_grid', self._clear_grid),
-            ('clear_dirty', self._clear_dirty),
-            ('clear_model', self._clear_model)
+            ('scale', self._scale)
         ]
         compounds = {
             'uv': ['gridder:uv', 'degridder:uv'],
             'w_plane': ['gridder:w_plane', 'degridder:w_plane'],
             'vis': ['gridder:vis', 'degridder:vis'],
-            'grid': ['gridder:grid', 'grid_to_image:grid', 'clear_grid:data'],
+            'grid': ['gridder:grid', 'grid_to_image:grid'],
             'degrid': ['degridder:grid', 'image_to_grid:grid'],
             'layer': ['grid_to_image:layer', 'image_to_grid:layer'],
-            'dirty': ['grid_to_image:image', 'clean:dirty', 'clear_dirty:data', 'scale:data'],
-            'model': ['clean:model', 'clear_model:data', 'image_to_grid:image'],
+            'dirty': ['grid_to_image:image', 'clean:dirty', 'scale:data'],
+            'model': ['clean:model', 'image_to_grid:image'],
             'psf': ['clean:psf'],
             'tile_max': ['clean:tile_max'],
             'tile_pos': ['clean:tile_pos'],
@@ -118,15 +103,15 @@ class Imaging(accel.OperationSequence):
 
     def clear_grid(self):
         self.ensure_all_bound()
-        self._clear_grid()
+        self.buffer('grid').zero(self.command_queue)
 
     def clear_dirty(self):
         self.ensure_all_bound()
-        self._clear_dirty()
+        self.buffer('dirty').zero(self.command_queue)
 
     def clear_model(self):
         self.ensure_all_bound()
-        self._clear_model()
+        self.buffer('model').zero(self.command_queue)
 
     def grid(self, *args, **kwargs):
         self.ensure_all_bound()
