@@ -428,21 +428,54 @@ class ConvolutionKernelDevice(ConvolutionKernel):
         }
 
 
+def _autotune_uv(context, pixels, bin_size, oversample):
+    """Creates UVW test data for autotuning gridding and degridding.
+
+    The visibilities and weights are irrelevant, but
+    the UVW coordinates are important because the performance is heavily
+    data-dependent. Compression ensures that samples in the same subgrid
+    cell are compressed, but each sample is typically close to the
+    previous one, moving along an elliptic track. Rather than go to the
+    full complexity of modelling such tracks, we use a number of linear
+    tracks at a variety of slopes.
+    """
+    # Set bounds of the UV coordinates in pixels. This is a slightly
+    # conservative bound.
+    low = bin_size
+    high = pixels - bin_size
+    track_length = (high - low) * oversample
+    tracks = 64 * 1024 // track_length
+    out = np.empty((tracks, track_length, 4), np.int16)
+    for i in range(tracks):
+        angle = 2 * math.pi * i / tracks
+        dx = math.cos(angle)
+        dy = math.sin(angle)
+        scale = max(abs(dx), abs(dy))
+        # step is either (1, slope), (-1, slope), (slope, 1) or (slope, -1)
+        step = np.array([dx / scale, dy / scale])
+        indices = np.arange(track_length) - track_length / 2
+        sub_uv = np.outer(indices, step) + oversample * pixels / 2
+        sub_uv = np.round(sub_uv).astype(np.int32)
+        out[i, :, 0:2] = sub_uv // oversample
+        out[i, :, 2:4] = sub_uv % oversample
+    # Flatten the separate tracks into one dimension
+    return out.reshape((-1, 4))
+
+
 class GridderTemplate(object):
-    autotune_version = 1
+    autotune_version = 2
 
     def __init__(self, context, image_parameters, grid_parameters, tuning=None):
         if tuning is None:
             tuning = self.autotune(
-                context, grid_parameters.antialias_width, grid_parameters.oversample,
+                context, grid_parameters.oversample, image_parameters.real_dtype,
                 len(image_parameters.polarizations))
         self.grid_parameters = grid_parameters
         self.image_parameters = image_parameters
-        # These must be powers of 2. TODO: autotune
-        self.wgs_x = 16
-        self.wgs_y = 16
-        self.multi_x = 2
-        self.multi_y = 2
+        self.wgs_x = tuning['wgs_x']
+        self.wgs_y = tuning['wgs_y']
+        self.multi_x = tuning['multi_x']
+        self.multi_y = tuning['multi_y']
         min_pad = max(self.multi_x, self.multi_y) - 1
         self.tile_x = self.wgs_x * self.multi_x
         self.tile_y = self.wgs_y * self.multi_y
@@ -451,9 +484,8 @@ class GridderTemplate(object):
         pad = bin_size - grid_parameters.kernel_width
         self.convolve_kernel = ConvolutionKernelDevice(
             context, image_parameters, grid_parameters, pad)
-        real_dtype = katsdpimager.types.complex_to_real(image_parameters.complex_dtype)
         parameters = {
-            'real_type': katsdpimager.types.dtype_to_ctype(real_dtype),
+            'real_type': katsdpimager.types.dtype_to_ctype(image_parameters.real_dtype),
             'multi_x': self.multi_x,
             'multi_y': self.multi_y,
             'wgs_x': self.wgs_x,
@@ -466,10 +498,62 @@ class GridderTemplate(object):
             extra_dirs=[pkg_resources.resource_filename(__name__, '')])
 
     @classmethod
-    @tune.autotuner(test={})
-    def autotune(cls, context, antialias_width, oversample, num_polarizations):
-        # Nothing to autotune yet
-        return {}
+    @tune.autotuner(test={'wgs_x': 16, 'wgs_y': 8, 'multi_x': 2, 'multi_y': 2})
+    def autotune(cls, context, oversample, real_dtype, num_polarizations):
+        # This autotuning code is unusually complex because it tries to avoid
+        # actually creating the convolution kernels. Doing so is slow, would
+        # require fake values of many parameters to be carefully chosen, and
+        # could potentially lead to different bin sizes for different tuning
+        # parameters. Instead, we directly build the program and data
+        # structures.
+        queue = context.create_tuning_command_queue()
+        pixels = 1024
+        bin_size = 32
+        pad = 3  # pad + 1 must be >= any multi_x/y
+        complex_dtype = katsdpimager.types.real_to_complex(real_dtype)
+        uv_host = _autotune_uv(context, pixels, bin_size, oversample)
+        num_vis = len(uv_host)
+        uv = accel.DeviceArray(context, uv_host.shape, np.int16)
+        grid = accel.DeviceArray(context, (pixels, pixels, num_polarizations), complex_dtype)
+        w_plane = accel.DeviceArray(context, (num_vis,), np.int16)
+        vis = accel.DeviceArray(context, (num_vis, num_polarizations), np.complex64)
+        convolve_kernel = accel.DeviceArray(context, (1, oversample, bin_size + pad), np.complex64)
+        uv.set(queue, uv_host)
+        grid.zero(queue)
+        w_plane.zero(queue)
+        vis.zero(queue)
+        convolve_kernel.zero(queue)
+        def generate(multi_x, multi_y, wgs_x, wgs_y):
+            tile_x = wgs_x * multi_x
+            tile_y = wgs_y * multi_y
+            parameters = {
+                'real_type': katsdpimager.types.dtype_to_ctype(real_dtype),
+                'multi_x': multi_x,
+                'multi_y': multi_y,
+                'wgs_x': wgs_x,
+                'wgs_y': wgs_y,
+                'bin_x': bin_size,
+                'bin_y': bin_size,
+                'num_polarizations': num_polarizations,
+                'convolve_kernel_slice_stride': convolve_kernel.padded_shape[2],
+                'convolve_kernel_w_stride': np.product(convolve_kernel.padded_shape[1:])
+            }
+            program = accel.build(
+                context, "imager_kernels/grid.mako", parameters,
+                extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+            kernel = program.get_kernel('grid')
+            uv_bias = (bin_size - 1) // 2
+            def fn():
+                Gridder.static_run(
+                    queue, kernel, wgs_x, wgs_y, tile_x, tile_y, bin_size, num_vis, uv_bias,
+                    grid, uv, w_plane, vis, convolve_kernel)
+            return tune.make_measure(queue, fn)
+
+        return tune.autotune(generate,
+                multi_x=[1, 2, 4],
+                multi_y=[1, 2, 4],
+                wgs_x=[8, 16],
+                wgs_y=[8, 16])
 
     def instantiate(self, *args, **kwargs):
         return Gridder(self, *args, **kwargs)
@@ -574,36 +658,72 @@ class Gridder(GridDegrid):
         self.buffer('vis')[:N] = vis
         return self()
 
-    def _run(self):
-        if self.num_vis == 0:
+    @classmethod
+    def static_run(cls, command_queue, kernel,
+                   wgs_x, wgs_y, tile_x, tile_y, bin_size, num_vis, uv_bias,
+                   grid, uv, w_plane, vis, convolve_kernel):
+        """Implementation of :meth:`_run` with all the parameters explicit.
+        This is not intended for direct use, but is used for autotuning to
+        execute the kernel while bypassing a lot of unwanted setup.
+
+        Parameters
+        ----------
+        command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+            Command queue for the operation
+        kernel : :class:`katsdpsigproc.cuda.Kernel` or :class:`katsdpsigproc.opencl.Kernel`
+            Compiled kernel to run
+        wgs_x, wgs_y, tile_x, tile_y, bin_size : int
+            Tuning parameters (see :class:`GridTemplate`)
+        num_vis : int
+            Number of visibilities to grid
+        uv_bias : int
+            Bias for UV coordinates to center the kernel
+        grid, uv, w_plane, vis, convolve_kernel : :class:`~katsdpsigproc.accel.DeviceArray`-like
+            Data passed to the kernel
+        """
+        if num_vis == 0:
             return
-        grid = self.buffer('grid')
         workgroups = 256  # TODO: tune this in some way
-        vis_per_workgroup = accel.divup(self.num_vis, workgroups)
-        kernel_width = self.template.grid_parameters.kernel_width
-        bin_size = self.template.convolve_kernel.bin_size
-        tiles_x = bin_size // self.template.tile_x
-        tiles_y = bin_size // self.template.tile_y
-        uv_bias = (kernel_width - 1) // 2 + self.template.convolve_kernel.pad
-        self.command_queue.enqueue_kernel(
-            self._kernel,
+        vis_per_workgroup = accel.divup(num_vis, workgroups)
+        tiles_x = bin_size // tile_x
+        tiles_y = bin_size // tile_y
+        command_queue.enqueue_kernel(
+            kernel,
             [
                 grid.buffer,
                 np.int32(grid.padded_shape[2]),
                 np.int32(grid.padded_shape[1] * grid.padded_shape[2]),
-                self.buffer('uv').buffer,
-                self.buffer('w_plane').buffer,
-                self.buffer('vis').buffer,
-                self.template.convolve_kernel.padded_data.buffer,
+                uv.buffer,
+                w_plane.buffer,
+                vis.buffer,
+                convolve_kernel.buffer,
                 np.int32(uv_bias),
                 np.int32(vis_per_workgroup),
-                np.int32(self.num_vis)
+                np.int32(num_vis)
             ],
-            global_size=(self.template.wgs_x * tiles_x,
-                         self.template.wgs_y * tiles_y,
+            global_size=(wgs_x * tiles_x,
+                         wgs_y * tiles_y,
                          workgroups),
-            local_size=(self.template.wgs_x, self.template.wgs_y, 1)
+            local_size=(wgs_x, wgs_y, 1)
         )
+
+    def _run(self):
+        if self.num_vis == 0:
+            return
+        kernel_width = self.template.grid_parameters.kernel_width
+        uv_bias = (kernel_width - 1) // 2 + self.template.convolve_kernel.pad
+        self.static_run(
+            self.command_queue, self._kernel,
+            self.template.wgs_x, self.template.wgs_y,
+            self.template.tile_x, self.template.tile_y,
+            self.template.convolve_kernel.bin_size,
+            self.num_vis,
+            uv_bias,
+            self.buffer('grid'),
+            self.buffer('uv'),
+            self.buffer('w_plane'),
+            self.buffer('vis'),
+            self.template.convolve_kernel.padded_data)
 
 
 class DegridderTemplate(object):
@@ -627,9 +747,8 @@ class DegridderTemplate(object):
         # simply adjust the padding.
         self.convolve_kernel = ConvolutionKernelDevice(
             context, image_parameters, grid_parameters, pad)
-        real_dtype = katsdpimager.types.complex_to_real(image_parameters.complex_dtype)
         parameters = {
-            'real_type': katsdpimager.types.dtype_to_ctype(real_dtype),
+            'real_type': katsdpimager.types.dtype_to_ctype(image_parameters.real_dtype),
             'multi_x': self.multi_x,
             'multi_y': self.multi_y,
             'wgs_x': self.wgs_x,
