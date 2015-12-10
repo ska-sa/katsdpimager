@@ -125,7 +125,19 @@ class TestGridder(BaseTest):
     @force_autotune
     def test_autotune(self, context, queue):
         """Check that the autotuner runs successfully"""
-        grid.GridderTemplate(context, self.image_parameters, self.grid_parameters)
+        # The fixture image parameters use double precision for testing
+        # quality. The autotuner for that takes forever though, so we
+        # create a single-precision version
+        image_parameters = parameters.ImageParameters(
+            q_fov=1.0,
+            image_oversample=None,
+            frequency=0.01 * units.m,
+            array=None,
+            polarizations=polarization.STOKES_IQUV,
+            dtype=np.float32,
+            pixel_size=0.0001,
+            pixels=pixels)
+        grid.GridderTemplate(context, image_parameters, self.grid_parameters)
 
 
 class TestGridderHost(BaseTest):

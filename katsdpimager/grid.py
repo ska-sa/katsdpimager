@@ -444,7 +444,7 @@ def _autotune_uv(context, pixels, bin_size, oversample):
     low = bin_size
     high = pixels - bin_size
     track_length = (high - low) * oversample
-    tracks = 1024 * 1024 // track_length
+    tracks = 256 * 1024 // track_length
     out = np.empty((tracks, track_length, 4), np.int16)
     for i in range(tracks):
         angle = 2 * math.pi * i / tracks
@@ -463,7 +463,7 @@ def _autotune_uv(context, pixels, bin_size, oversample):
 
 
 class GridderTemplate(object):
-    autotune_version = 2
+    autotune_version = 3
 
     def __init__(self, context, image_parameters, grid_parameters, tuning=None):
         if tuning is None:
@@ -476,6 +476,7 @@ class GridderTemplate(object):
         self.wgs_y = tuning['wgs_y']
         self.multi_x = tuning['multi_x']
         self.multi_y = tuning['multi_y']
+        self.workitems = tuning['workitems']
         min_pad = max(self.multi_x, self.multi_y) - 1
         self.tile_x = self.wgs_x * self.multi_x
         self.tile_y = self.wgs_y * self.multi_y
@@ -498,7 +499,7 @@ class GridderTemplate(object):
             extra_dirs=[pkg_resources.resource_filename(__name__, '')])
 
     @classmethod
-    @tune.autotuner(test={'wgs_x': 16, 'wgs_y': 8, 'multi_x': 2, 'multi_y': 2})
+    @tune.autotuner(test={'wgs_x': 16, 'wgs_y': 8, 'multi_x': 2, 'multi_y': 2, 'workitems': 4096})
     def autotune(cls, context, oversample, real_dtype, num_polarizations):
         # This autotuning code is unusually complex because it tries to avoid
         # actually creating the convolution kernels. Doing so is slow, would
@@ -507,7 +508,7 @@ class GridderTemplate(object):
         # parameters. Instead, we directly build the program and data
         # structures.
         queue = context.create_tuning_command_queue()
-        pixels = 1024
+        pixels = 256
         bin_size = 32
         pad = 3  # pad + 1 must be >= any multi_x/y
         complex_dtype = katsdpimager.types.real_to_complex(real_dtype)
@@ -523,13 +524,24 @@ class GridderTemplate(object):
         w_plane.zero(queue)
         vis.zero(queue)
         convolve_kernel.zero(queue)
-        def generate(multi_x, multi_y, wgs_x, wgs_y):
+        logging.basicConfig(level=logging.DEBUG)
+        def generate(multi_x, multi_y, wgs_x, wgs_y, workitems):
+            # No point having less than a warp per workgroup
+            if wgs_x * wgs_y < 32:
+                return None
+            # Only the total size really matters, so it is not necessary
+            # to try all possible shapes.
             if wgs_x != wgs_y and wgs_x != wgs_y * 2:
-                # Only the total size really matters, so it is not necessary
-                # to try all possible shapes
-                raise RuntimeError('Skipping configuration')
+                return None
+            if multi_x != multi_y and multi_y != multi_x * 2:
+                return None
+            # This can cause launch timeouts
+            if multi_x * multi_y * num_polarizations * real_dtype.itemsize > 256:
+                return None
             tile_x = wgs_x * multi_x
             tile_y = wgs_y * multi_y
+            if tile_x > bin_size or tile_y > bin_size:
+                return None
             parameters = {
                 'real_type': katsdpimager.types.dtype_to_ctype(real_dtype),
                 'multi_x': multi_x,
@@ -549,7 +561,8 @@ class GridderTemplate(object):
             uv_bias = (bin_size - 1) // 2
             def fn():
                 Gridder.static_run(
-                    queue, kernel, wgs_x, wgs_y, tile_x, tile_y, bin_size, num_vis, uv_bias,
+                    queue, kernel, wgs_x, wgs_y, tile_x, tile_y, bin_size, workitems,
+                    num_vis, uv_bias,
                     grid, uv, w_plane, vis, convolve_kernel)
             return tune.make_measure(queue, fn)
 
@@ -557,7 +570,8 @@ class GridderTemplate(object):
                 multi_x=[1, 2, 4],
                 multi_y=[1, 2, 4],
                 wgs_x=[4, 8, 16],
-                wgs_y=[4, 8, 16])
+                wgs_y=[4, 8, 16],
+                workitems=[1024, 4096, 16384])
 
     def instantiate(self, *args, **kwargs):
         return Gridder(self, *args, **kwargs)
@@ -664,7 +678,7 @@ class Gridder(GridDegrid):
 
     @classmethod
     def static_run(cls, command_queue, kernel,
-                   wgs_x, wgs_y, tile_x, tile_y, bin_size, num_vis, uv_bias,
+                   wgs_x, wgs_y, tile_x, tile_y, bin_size, workitems, num_vis, uv_bias,
                    grid, uv, w_plane, vis, convolve_kernel):
         """Implementation of :meth:`_run` with all the parameters explicit.
         This is not intended for direct use, but is used for autotuning to
@@ -676,7 +690,7 @@ class Gridder(GridDegrid):
             Command queue for the operation
         kernel : :class:`katsdpsigproc.cuda.Kernel` or :class:`katsdpsigproc.opencl.Kernel`
             Compiled kernel to run
-        wgs_x, wgs_y, tile_x, tile_y, bin_size : int
+        wgs_x, wgs_y, tile_x, tile_y, bin_size, workitems : int
             Tuning parameters (see :class:`GridTemplate`)
         num_vis : int
             Number of visibilities to grid
@@ -689,8 +703,9 @@ class Gridder(GridDegrid):
             return
         tiles_x = bin_size // tile_x
         tiles_y = bin_size // tile_y
-        workgroups = 256 // (tiles_x * tiles_y)   # TODO: tune this in some way
-        vis_per_workgroup = accel.divup(num_vis, workgroups)
+        workgroups = workitems // (wgs_x * wgs_y)
+        workgroups_z = max(1, workgroups // (tiles_x * tiles_y))
+        vis_per_workgroup = accel.divup(num_vis, workgroups_z)
         command_queue.enqueue_kernel(
             kernel,
             [
@@ -707,7 +722,7 @@ class Gridder(GridDegrid):
             ],
             global_size=(wgs_x * tiles_x,
                          wgs_y * tiles_y,
-                         workgroups),
+                         workgroups_z),
             local_size=(wgs_x, wgs_y, 1)
         )
 
@@ -721,6 +736,7 @@ class Gridder(GridDegrid):
             self.template.wgs_x, self.template.wgs_y,
             self.template.tile_x, self.template.tile_y,
             self.template.convolve_kernel.bin_size,
+            self.template.workitems,
             self.num_vis,
             uv_bias,
             self.buffer('grid'),
