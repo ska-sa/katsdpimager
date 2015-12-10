@@ -235,6 +235,10 @@ def log_parameters(name, params):
             if line:
                 logger.info('    ' + line)
 
+@contextmanager
+def dummy_context():
+    """Do-nothing context manager used in place of a device context."""
+    yield
 
 def main():
     parser = get_parser()
@@ -248,11 +252,15 @@ def main():
         context = accel.create_some_context(device_filter=lambda x: x.is_cuda)
         queue = context.create_command_queue()
     else:
+        context = dummy_context()
         queue = DummyCommandQueue()
         if not numba.have_numba:
             logger.warn('could not import numba: --host mode will be VERY slow')
 
-    with closing(loader.load(args.input_file, args.input_option)) as dataset:
+    # PyCUDA leaks resources that are freed when the corresponding context is
+    # not active. We make it active for the rest of the execution to avoid
+    # this.
+    with context, closing(loader.load(args.input_file, args.input_option)) as dataset:
         #### Determine parameters ####
         input_polarizations = dataset.polarizations()
         output_polarizations = args.stokes
