@@ -131,12 +131,12 @@ class TestGridder(BaseTest):
         image_parameters = parameters.ImageParameters(
             q_fov=1.0,
             image_oversample=None,
-            frequency=0.01 * units.m,
+            frequency=self.image_parameters.wavelength,
             array=None,
-            polarizations=polarization.STOKES_IQUV,
+            polarizations=self.image_parameters.polarizations,
             dtype=np.float32,
-            pixel_size=0.0001,
-            pixels=pixels)
+            pixel_size=self.image_parameters.pixel_size,
+            pixels=self.image_parameters.pixels)
         grid.GridderTemplate(context, image_parameters, self.grid_parameters)
 
 
