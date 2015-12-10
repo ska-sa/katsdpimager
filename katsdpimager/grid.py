@@ -530,9 +530,9 @@ class GridderTemplate(object):
                 return None
             # Only the total size really matters, so it is not necessary
             # to try all possible shapes.
-            if wgs_x != wgs_y and wgs_x != wgs_y * 2:
+            if wgs_x != wgs_y and wgs_y != wgs_x * 2:
                 return None
-            if multi_x != multi_y and multi_y != multi_x * 2:
+            if multi_x != multi_y and multi_x != multi_y * 2:
                 return None
             # This can cause launch timeouts
             if multi_x * multi_y * num_polarizations * real_dtype.itemsize > 256:
