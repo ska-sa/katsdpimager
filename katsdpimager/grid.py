@@ -462,6 +462,53 @@ def _autotune_uv(context, pixels, bin_size, oversample):
     return out.reshape((-1, 4))
 
 
+def _autotune_arrays(command_queue, oversample, real_dtype, num_polarizations, bin_size, pad):
+    """Creates device arrays for autotuning gridding and degridding. The
+    UV coordinates are provided by :func:`_autotune_uv`, while the other
+    arrays are zeroed out.
+
+    Parameters
+    ----------
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+        Command queue for zeroing the arrays
+    oversample : int
+        Grid oversampling
+    real_dtype : {np.float32, np.complex64}
+        Floating-point type for image and grid
+    num_polarizations : int
+        Number of polarizations in grid
+    bin_size : int
+        Bin size
+    pad : int
+        Amount of padding around edges of convolution kernel to allow for
+        thread coarsening. This must be at greater than or equal to the maximum
+        alignment minus one.
+
+    Returns
+    -------
+    grid, uv, w_plane, vis, convolve_kernel : :class:`katsdpsigproc.accel.DeviceArray`
+        Device arrays to be passed to the kernels
+    """
+    context = command_queue.context
+    pixels = 256
+    bin_size = 32
+    pad = 3  # pad + 1 must be >= any multi_x/y
+    complex_dtype = katsdpimager.types.real_to_complex(real_dtype)
+    uv_host = _autotune_uv(context, pixels, bin_size, oversample)
+    num_vis = len(uv_host)
+    uv = accel.DeviceArray(context, uv_host.shape, np.int16)
+    grid = accel.DeviceArray(context, (pixels, pixels, num_polarizations), complex_dtype)
+    w_plane = accel.DeviceArray(context, (num_vis,), np.int16)
+    vis = accel.DeviceArray(context, (num_vis, num_polarizations), np.complex64)
+    convolve_kernel = accel.DeviceArray(context, (1, oversample, bin_size + pad), np.complex64)
+    uv.set(command_queue, uv_host)
+    grid.zero(command_queue)
+    w_plane.zero(command_queue)
+    vis.zero(command_queue)
+    convolve_kernel.zero(command_queue)
+    return grid, uv, w_plane, vis, convolve_kernel
+
+
 class GridderTemplate(object):
     autotune_version = 3
 
@@ -508,22 +555,10 @@ class GridderTemplate(object):
         # parameters. Instead, we directly build the program and data
         # structures.
         queue = context.create_tuning_command_queue()
-        pixels = 256
         bin_size = 32
-        pad = 3  # pad + 1 must be >= any multi_x/y
-        complex_dtype = katsdpimager.types.real_to_complex(real_dtype)
-        uv_host = _autotune_uv(context, pixels, bin_size, oversample)
-        num_vis = len(uv_host)
-        uv = accel.DeviceArray(context, uv_host.shape, np.int16)
-        grid = accel.DeviceArray(context, (pixels, pixels, num_polarizations), complex_dtype)
-        w_plane = accel.DeviceArray(context, (num_vis,), np.int16)
-        vis = accel.DeviceArray(context, (num_vis, num_polarizations), np.complex64)
-        convolve_kernel = accel.DeviceArray(context, (1, oversample, bin_size + pad), np.complex64)
-        uv.set(queue, uv_host)
-        grid.zero(queue)
-        w_plane.zero(queue)
-        vis.zero(queue)
-        convolve_kernel.zero(queue)
+        grid, uv, w_plane, vis, convolve_kernel = _autotune_arrays(
+                queue, oversample, real_dtype, num_polarizations, bin_size, 3)
+        num_vis = uv.shape[0]
         def generate(multi_x, multi_y, wgs_x, wgs_y, workitems):
             # No point having less than a warp per workgroup
             if wgs_x * wgs_y < context.device.simd_group_size:
@@ -726,8 +761,6 @@ class Gridder(GridDegrid):
         )
 
     def _run(self):
-        if self.num_vis == 0:
-            return
         kernel_width = self.template.grid_parameters.kernel_width
         uv_bias = (kernel_width - 1) // 2 + self.template.convolve_kernel.pad
         self.static_run(
@@ -746,15 +779,22 @@ class Gridder(GridDegrid):
 
 
 class DegridderTemplate(object):
+    autotune_version = 1
+
     def __init__(self, context, image_parameters, grid_parameters, tuning=None):
+        if tuning is None:
+            tuning = self.autotune(
+                context, grid_parameters.oversample, image_parameters.real_dtype,
+                len(image_parameters.polarizations))
         # TODO: autotuning
         self.grid_parameters = grid_parameters
         self.image_parameters = image_parameters
-        self.wgs_x = 8
-        self.wgs_y = 4
-        self.wgs_z = 4
-        self.multi_x = 2
-        self.multi_y = 4
+        self.wgs_x = tuning['wgs_x']
+        self.wgs_y = tuning['wgs_y']
+        self.wgs_z = tuning['wgs_z']
+        self.multi_x = tuning['multi_x']
+        self.multi_y = tuning['multi_y']
+        self.workitems = tuning['workitems']
         self.tile_x = self.wgs_x * self.multi_x
         self.tile_y = self.wgs_y * self.multi_y
         min_pad = max(self.multi_x, self.multi_y) - 1
@@ -779,6 +819,63 @@ class DegridderTemplate(object):
         self.program = accel.build(
             context, "imager_kernels/degrid.mako", parameters,
             extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+
+    @classmethod
+    @tune.autotuner(test={'wgs_x': 8, 'wgs_y': 4, 'wgs_z': 4, 'multi_x': 2, 'multi_y': 4, 'workitems': 65536})
+    def autotune(cls, context, oversample, real_dtype, num_polarizations):
+        queue = context.create_tuning_command_queue()
+        bin_size = 32
+        grid, uv, w_plane, vis, convolve_kernel = _autotune_arrays(
+                queue, oversample, real_dtype, num_polarizations, bin_size, 3)
+        num_vis = uv.shape[0]
+        def generate(multi_x, multi_y, wgs_x, wgs_y, wgs_z, workitems):
+            # No point having less than a warp per workgroup
+            if wgs_x * wgs_y * wgs_z < context.device.simd_group_size:
+                return None
+            # Avoid subgroups bigger than a warp, since they can't use
+            # shuffle reduction
+            if wgs_x * wgs_y > context.device.simd_group_size:
+                return None
+            # Cut down number of configurations to test
+            if multi_x != multi_y and multi_x != multi_y * 2:
+                return None
+            if wgs_y != wgs_x and wgs_y != wgs_x * 2:
+                return None
+            # Eliminate configurations that don't fit in a bin
+            if wgs_x * multi_x > bin_size or wgs_y * multi_y > bin_size:
+                return None
+            parameters = {
+                'real_type': katsdpimager.types.dtype_to_ctype(real_dtype),
+                'multi_x': multi_x,
+                'multi_y': multi_y,
+                'wgs_x': wgs_x,
+                'wgs_y': wgs_y,
+                'wgs_z': wgs_z,
+                'num_polarizations': num_polarizations,
+                'convolve_kernel_slice_stride': convolve_kernel.padded_shape[2],
+                'convolve_kernel_w_stride': np.product(convolve_kernel.padded_shape[1:]),
+                'bin_x': bin_size,
+                'bin_y': bin_size
+            }
+            program = accel.build(
+                context, "imager_kernels/degrid.mako", parameters,
+                extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+            kernel = program.get_kernel('degrid')
+            uv_bias = (bin_size - 1) // 2
+            def fn():
+                Degridder.static_run(
+                        queue, kernel, wgs_x, wgs_y, wgs_z, bin_size, workitems,
+                        num_vis, uv_bias,
+                        grid, uv, w_plane, vis, convolve_kernel)
+            return tune.make_measure(queue, fn)
+
+        return tune.autotune(generate,
+                multi_x=[1, 2, 4],
+                multi_y=[1, 2, 4],
+                wgs_x=[4, 8],
+                wgs_y=[4, 8],
+                wgs_z=[1, 2, 4, 8],
+                workitems=[65536, 262144, 1048576])
 
     def instantiate(self, *args, **kwargs):
         return Degridder(self, *args, **kwargs)
@@ -806,35 +903,50 @@ class Degridder(GridDegrid):
         self.command_queue.finish()
         vis[:] = self.buffer('vis')[:N]
 
-    def _run(self):
-        if self.num_vis == 0:
+    @classmethod
+    def static_run(cls, command_queue, kernel,
+                   wgs_x, wgs_y, wgs_z, bin_size, workitems, num_vis, uv_bias,
+                   grid, uv, w_plane, vis, convolve_kernel):
+        if num_vis == 0:
             return
-        grid = self.buffer('grid')
-        workgroups = 256   # TODO: tune this in some way
-        subgroups = workgroups * self.template.wgs_z
-        vis_per_subgroup = accel.divup(self.num_vis, subgroups)
-        kernel_width = self.template.grid_parameters.kernel_width
-        bin_size = self.template.convolve_kernel.bin_size
-        uv_bias = (kernel_width - 1) // 2 + self.template.convolve_kernel.pad
-        self.command_queue.enqueue_kernel(
-            self._kernel,
+        workgroups = max(1, workitems // (wgs_x * wgs_y * wgs_z))
+        subgroups = workgroups * wgs_z
+        vis_per_subgroup = accel.divup(num_vis, subgroups)
+        command_queue.enqueue_kernel(
+            kernel,
             [
                 grid.buffer,
                 np.int32(grid.padded_shape[2]),
                 np.int32(grid.padded_shape[1] * grid.padded_shape[2]),
-                self.buffer('uv').buffer,
-                self.buffer('w_plane').buffer,
-                self.buffer('vis').buffer,
-                self.template.convolve_kernel.padded_data.buffer,
+                uv.buffer,
+                w_plane.buffer,
+                vis.buffer,
+                convolve_kernel.buffer,
                 np.int32(uv_bias),
                 np.int32(vis_per_subgroup),
-                np.int32(self.num_vis)
+                np.int32(num_vis)
             ],
-            global_size=(self.template.wgs_x * workgroups,
-                         self.template.wgs_y,
-                         self.template.wgs_z),
-            local_size=(self.template.wgs_x, self.template.wgs_y, self.template.wgs_z)
+            global_size=(wgs_x * workgroups,
+                         wgs_y,
+                         wgs_z),
+            local_size=(wgs_x, wgs_y, wgs_z)
         )
+
+    def _run(self):
+        kernel_width = self.template.grid_parameters.kernel_width
+        uv_bias = (kernel_width - 1) // 2 + self.template.convolve_kernel.pad
+        self.static_run(
+            self.command_queue, self._kernel,
+            self.template.wgs_x, self.template.wgs_y, self.template.wgs_z,
+            self.template.convolve_kernel.bin_size,
+            self.template.workitems,
+            self.num_vis,
+            uv_bias,
+            self.buffer('grid'),
+            self.buffer('uv'),
+            self.buffer('w_plane'),
+            self.buffer('vis'),
+            self.template.convolve_kernel.padded_data)
 
 
 @numba.jit(nopython=True)
