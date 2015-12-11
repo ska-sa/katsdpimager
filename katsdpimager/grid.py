@@ -526,7 +526,7 @@ class GridderTemplate(object):
         convolve_kernel.zero(queue)
         def generate(multi_x, multi_y, wgs_x, wgs_y, workitems):
             # No point having less than a warp per workgroup
-            if wgs_x * wgs_y < 32:
+            if wgs_x * wgs_y < context.device.simd_group_size:
                 return None
             # Only the total size really matters, so it is not necessary
             # to try all possible shapes.
