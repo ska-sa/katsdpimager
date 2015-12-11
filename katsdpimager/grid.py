@@ -841,6 +841,8 @@ class DegridderTemplate(object):
                 return None
             if wgs_y != wgs_x and wgs_y != wgs_x * 2:
                 return None
+            if multi_x * multi_y * num_polarizations * real_dtype.itemsize > 128:
+                return None
             # Eliminate configurations that don't fit in a bin
             if wgs_x * multi_x > bin_size or wgs_y * multi_y > bin_size:
                 return None
