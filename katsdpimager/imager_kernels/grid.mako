@@ -125,6 +125,8 @@ void grid(
             float2 sample_vis[NPOLS];
             float2 weight_u[MULTI_X];
             float2 weight_v[MULTI_Y];
+            for (int p = 0; p < NPOLS; p++)
+                sample_vis[p] = batch_vis[p][vis_id];
             int2 min_uv = batch_min_uv[vis_id];
             int2 base_offset = batch_offset[vis_id];
             int u0 = wrap(min_uv.x, BIN_X, u_phase);
@@ -154,8 +156,6 @@ void grid(
                         for (int p = 0; p < NPOLS; p++)
                             sums[y][x][p] = make_Complex(0.0f, 0.0f);
             }
-            for (int p = 0; p < NPOLS; p++)
-                sample_vis[p] = batch_vis[p][vis_id];
             for (int y = 0; y < MULTI_Y; y++)
                 for (int x = 0; x < MULTI_X; x++)
                 {
