@@ -782,7 +782,6 @@ class DegridderTemplate(object):
             tuning = self.autotune(
                 context, grid_parameters.oversample, image_parameters.real_dtype,
                 len(image_parameters.polarizations))
-        # TODO: autotuning
         self.grid_parameters = grid_parameters
         self.image_parameters = image_parameters
         self.wgs_x = tuning['wgs_x']
