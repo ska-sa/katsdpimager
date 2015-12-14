@@ -85,16 +85,8 @@ void grid(
     // In-register sums
     Complex sums[MULTI_Y][MULTI_X][NPOLS];
     // Last-known UV coordinates
-    int cur_u0 = 0;
+    int cur_u0 = -1; // used as sentinel for first element in batch
     int cur_v0 = 0;
-
-    // Zero-initialize things
-    for (int y = 0; y < MULTI_Y; y++)
-        for (int x = 0; x < MULTI_X; x++)
-        {
-            for (int p = 0; p < NPOLS; p++)
-                sums[y][x][p] = make_Complex(0.0f, 0.0f);
-        }
 
     int u_phase = get_group_id(0) * TILE_X + get_local_id(0) * MULTI_X;
     int v_phase = get_group_id(1) * TILE_Y + get_local_id(1) * MULTI_Y;
@@ -145,7 +137,8 @@ void grid(
                 weight_v[y] = convolve_kernel[v0 + base_offset.y + y];
             if (u0 != cur_u0 || v0 != cur_v0)
             {
-                writeback(out, out_row_stride, out_pol_stride, cur_u0, cur_v0, sums);
+                if (cur_u0 >= 0)
+                    writeback(out, out_row_stride, out_pol_stride, cur_u0, cur_v0, sums);
                 for (int y = 0; y < MULTI_Y; y++)
                     for (int x = 0; x < MULTI_X; x++)
                         for (int p = 0; p < NPOLS; p++)
