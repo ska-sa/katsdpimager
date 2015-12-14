@@ -139,12 +139,22 @@ void grid(
             {
                 if (cur_u0 >= 0)
                     writeback(out, out_row_stride, out_pol_stride, cur_u0, cur_v0, sums);
+                cur_u0 = u0;
+                cur_v0 = v0;
+#ifdef __CUDA_ARCH__
+                /* CUDA 7 and 7.5 make an unfortunate de-optimisation choice:
+                 * sums gets copied, then the original is zeroed, then the
+                 * copies are atomically added to global memory. This adds an
+                 * extra MULTI_X * MULTI_Y * N_POLS * 2 registers. Putting this
+                 * empty asm statement here seems to prevent the
+                 * de-optimisation.
+                 */
+                asm("");
+#endif
                 for (int y = 0; y < MULTI_Y; y++)
                     for (int x = 0; x < MULTI_X; x++)
                         for (int p = 0; p < NPOLS; p++)
                             sums[y][x][p] = make_Complex(0.0f, 0.0f);
-                cur_u0 = u0;
-                cur_v0 = v0;
             }
             for (int y = 0; y < MULTI_Y; y++)
                 for (int x = 0; x < MULTI_X; x++)
