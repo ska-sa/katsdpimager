@@ -175,5 +175,6 @@ void grid(
     }
 
     // Write back final internal values
-    writeback(out, out_row_stride, out_pol_stride, cur_u0, cur_v0, sums);
+    if (cur_u0 >= 0)
+        writeback(out, out_row_stride, out_pol_stride, cur_u0, cur_v0, sums);
 }
