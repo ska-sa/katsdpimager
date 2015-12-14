@@ -129,20 +129,20 @@ void degrid(
                 int2 min_uv = lclp->batch_min_uv[vis_id];
                 int2 base_offset = lclp->batch_offset[vis_id];
                 Complex contrib[NPOLS];
+                float2 weight_u[MULTI_X];
+                float2 weight_v[MULTI_Y];
                 int u0 = wrap(min_uv.x, BIN_X, u_phase);
                 int v0 = wrap(min_uv.y, BIN_Y, v_phase);
+                for (int x = 0; x < MULTI_X; x++)
+                    weight_u[x] = convolve_kernel[u0 + base_offset.x + x];
+                for (int y = 0; y < MULTI_Y; y++)
+                    weight_v[y] = convolve_kernel[v0 + base_offset.y + y];
                 if (u0 != cur_u0 || v0 != cur_v0)
                 {
                     load(grid, grid_row_stride, grid_pol_stride, u0, v0, cached_grid);
                     cur_u0 = u0;
                     cur_v0 = v0;
                 }
-                float2 weight_u[MULTI_X];
-                float2 weight_v[MULTI_Y];
-                for (int x = 0; x < MULTI_X; x++)
-                    weight_u[x] = convolve_kernel[u0 + base_offset.x + x];
-                for (int y = 0; y < MULTI_Y; y++)
-                    weight_v[y] = convolve_kernel[v0 + base_offset.y + y];
                 for (int y = 0; y < MULTI_Y; y++)
                     for (int x = 0; x < MULTI_X; x++)
                     {
