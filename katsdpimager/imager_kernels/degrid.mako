@@ -83,7 +83,6 @@ void degrid(
     GLOBAL float2 * RESTRICT vis,
     const GLOBAL float2 * RESTRICT convolve_kernel,
     int uv_bias,
-    int vis_per_subgroup,
     int nvis)
 {
     LOCAL_DECL subgroup_local lcl[SUBGROUPS];
@@ -98,106 +97,95 @@ void degrid(
     const int batch_id = get_group_id(0) * SUBGROUPS + subgroup;
     LOCAL subgroup_local *lclp = &lcl[subgroup];
 
-    int batch_start = batch_id * vis_per_subgroup;
-    int batch_end = min(nvis, batch_start + vis_per_subgroup);
-    for (; batch_start < batch_end; batch_start += BATCH_SIZE)
+    // Load batch
+    int batch_start = batch_id * BATCH_SIZE;
+    int vis_id = batch_start + lid;
+    if (vis_id < nvis)
     {
-        // Load batch
-        int batch_size = min(batch_end - batch_start, BATCH_SIZE);
-        if (lid < batch_size)
+        short4 sample_uv = uv[vis_id];
+        short sample_w_plane = w_plane[vis_id];
+        for (int p = 0; p < NPOLS; p++)
+            lclp->batch_vis[p][lid] = make_Complex(0, 0);
+
+        int2 min_uv = make_int2(sample_uv.x - uv_bias, sample_uv.y - uv_bias);
+        int offset_w = sample_w_plane * CONVOLVE_KERNEL_W_STRIDE;
+        lclp->batch_min_uv[lid] = min_uv;
+        lclp->batch_offset[lid] = make_int2(
+            offset_w + sample_uv.z * CONVOLVE_KERNEL_SLICE_STRIDE - min_uv.x,
+            offset_w + sample_uv.w * CONVOLVE_KERNEL_SLICE_STRIDE - min_uv.y);
+    }
+
+    BARRIER();
+
+    int batch_size = min(nvis - batch_start, BATCH_SIZE);
+    // Process batch
+    for (int tile_y = 0; tile_y < BIN_Y; tile_y += TILE_Y)
+        for (int tile_x = 0; tile_x < BIN_X; tile_x += TILE_X)
         {
-            int vis_id = batch_start + lid;
-            short4 sample_uv = uv[vis_id];
-            short sample_w_plane = w_plane[vis_id];
-            for (int p = 0; p < NPOLS; p++)
-                lclp->batch_vis[p][lid] = make_Complex(0, 0);
-
-            int2 min_uv = make_int2(sample_uv.x - uv_bias, sample_uv.y - uv_bias);
-            int offset_w = sample_w_plane * CONVOLVE_KERNEL_W_STRIDE;
-            lclp->batch_min_uv[lid] = min_uv;
-            lclp->batch_offset[lid] = make_int2(
-                offset_w + sample_uv.z * CONVOLVE_KERNEL_SLICE_STRIDE - min_uv.x,
-                offset_w + sample_uv.w * CONVOLVE_KERNEL_SLICE_STRIDE - min_uv.y);
-        }
-
-        BARRIER();
-
-        // Process batch
-        for (int tile_y = 0; tile_y < BIN_Y; tile_y += TILE_Y)
-            for (int tile_x = 0; tile_x < BIN_X; tile_x += TILE_X)
+            const int u_phase = tile_x + get_local_id(0) * MULTI_X;
+            const int v_phase = tile_y + get_local_id(1) * MULTI_Y;
+            for (int vis_id = 0; vis_id < batch_size; vis_id++)
             {
-                const int u_phase = tile_x + get_local_id(0) * MULTI_X;
-                const int v_phase = tile_y + get_local_id(1) * MULTI_Y;
-                for (int vis_id = 0; vis_id < batch_size; vis_id++)
+                int2 min_uv = lclp->batch_min_uv[vis_id];
+                int2 base_offset = lclp->batch_offset[vis_id];
+                Complex contrib[NPOLS];
+                int u0 = wrap(min_uv.x, BIN_X, u_phase);
+                int v0 = wrap(min_uv.y, BIN_Y, v_phase);
+                if (u0 != cur_u0 || v0 != cur_v0)
                 {
-                    int2 min_uv = lclp->batch_min_uv[vis_id];
-                    int2 base_offset = lclp->batch_offset[vis_id];
-                    Complex contrib[NPOLS];
-                    int u0 = wrap(min_uv.x, BIN_X, u_phase);
-                    int v0 = wrap(min_uv.y, BIN_Y, v_phase);
-                    if (u0 != cur_u0 || v0 != cur_v0)
-                    {
-                        load(grid, grid_row_stride, grid_pol_stride, u0, v0, cached_grid);
-                        cur_u0 = u0;
-                        cur_v0 = v0;
-                    }
-                    float2 weight_u[MULTI_X];
-                    float2 weight_v[MULTI_Y];
+                    load(grid, grid_row_stride, grid_pol_stride, u0, v0, cached_grid);
+                    cur_u0 = u0;
+                    cur_v0 = v0;
+                }
+                float2 weight_u[MULTI_X];
+                float2 weight_v[MULTI_Y];
+                for (int x = 0; x < MULTI_X; x++)
+                    weight_u[x] = convolve_kernel[u0 + base_offset.x + x];
+                for (int y = 0; y < MULTI_Y; y++)
+                    weight_v[y] = convolve_kernel[v0 + base_offset.y + y];
+                for (int y = 0; y < MULTI_Y; y++)
                     for (int x = 0; x < MULTI_X; x++)
-                        weight_u[x] = convolve_kernel[u0 + base_offset.x + x];
-                    for (int y = 0; y < MULTI_Y; y++)
-                        weight_v[y] = convolve_kernel[v0 + base_offset.y + y];
-                    for (int y = 0; y < MULTI_Y; y++)
-                        for (int x = 0; x < MULTI_X; x++)
-                        {
-                            float2 weight = complex_mul(weight_u[x], weight_v[y]);
-                            for (int p = 0; p < NPOLS; p++)
-                                contrib[p] = Complex_mad(weight, cached_grid[y][x][p],
-                                                         (x || y) ? contrib[p] : make_Complex(0, 0));
-                        }
-                    for (int p = 0; p < NPOLS; p++)
                     {
-                        // TODO: result could be kept in a register instead of
-                        // shared memory.
-                        Complex reduced = make_Complex(
-                            reduce_add(contrib[p].x, lid, &lclp->scratch),
-                            reduce_add(contrib[p].y, lid, &lclp->scratch));
-                        if (lid == 0)
-                        {
-                            Complex old = lclp->batch_vis[p][vis_id];
-                            reduced.x += old.x;
-                            reduced.y += old.y;
-                            lclp->batch_vis[p][vis_id] = reduced;
-                        }
+                        float2 weight = complex_mul(weight_u[x], weight_v[y]);
+                        for (int p = 0; p < NPOLS; p++)
+                            contrib[p] = Complex_mad(weight, cached_grid[y][x][p],
+                                                     (x || y) ? contrib[p] : make_Complex(0, 0));
+                    }
+                for (int p = 0; p < NPOLS; p++)
+                {
+                    // TODO: result could be kept in a register instead of
+                    // shared memory.
+                    Complex reduced = make_Complex(
+                        reduce_add(contrib[p].x, lid, &lclp->scratch),
+                        reduce_add(contrib[p].y, lid, &lclp->scratch));
+                    if (lid == 0)
+                    {
+                        Complex old = lclp->batch_vis[p][vis_id];
+                        reduced.x += old.x;
+                        reduced.y += old.y;
+                        lclp->batch_vis[p][vis_id] = reduced;
                     }
                 }
             }
-
-        BARRIER();
-
-        // Write back results from the batch
-        // TODO: this isn't the optimal memory access order
-        if (lid < batch_size)
-        {
-            int vis_id = batch_start + lid;
-            for (int p = 0; p < NPOLS; p++)
-            {
-                // TODO: could improve this using float4s where appropriate
-                int idx = vis_id * NPOLS + p;
-% if real_type == 'float':
-                vis[idx] = lclp->batch_vis[p][lid];
-% else:
-                vis[idx] = make_float2(
-                    lclp->batch_vis[p][lid].x,
-                    lclp->batch_vis[p][lid].y);
-% endif
-            }
         }
 
-        /* No barrier necessary here: although the start of the next loop
-         * zero-initializes batch_vis, it is done with the same work items
-         * that read out the values here, and so there are no cross-thread
-         * race conditions.
-         */
+    BARRIER();
+
+    // Write back results from the batch
+    // TODO: this isn't the optimal memory access order
+    if (vis_id < nvis)
+    {
+        for (int p = 0; p < NPOLS; p++)
+        {
+            // TODO: could improve this using float4s where appropriate
+            int idx = vis_id * NPOLS + p;
+% if real_type == 'float':
+            vis[idx] = lclp->batch_vis[p][lid];
+% else:
+            vis[idx] = make_float2(
+                lclp->batch_vis[p][lid].x,
+                lclp->batch_vis[p][lid].y);
+% endif
+        }
     }
 }

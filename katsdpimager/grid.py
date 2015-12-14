@@ -779,7 +779,7 @@ class Gridder(GridDegrid):
 
 
 class DegridderTemplate(object):
-    autotune_version = 1
+    autotune_version = 2
 
     def __init__(self, context, image_parameters, grid_parameters, tuning=None):
         if tuning is None:
@@ -794,7 +794,6 @@ class DegridderTemplate(object):
         self.wgs_z = tuning['wgs_z']
         self.multi_x = tuning['multi_x']
         self.multi_y = tuning['multi_y']
-        self.workitems = tuning['workitems']
         self.tile_x = self.wgs_x * self.multi_x
         self.tile_y = self.wgs_y * self.multi_y
         min_pad = max(self.multi_x, self.multi_y) - 1
@@ -821,14 +820,14 @@ class DegridderTemplate(object):
             extra_dirs=[pkg_resources.resource_filename(__name__, '')])
 
     @classmethod
-    @tune.autotuner(test={'wgs_x': 8, 'wgs_y': 4, 'wgs_z': 4, 'multi_x': 2, 'multi_y': 4, 'workitems': 65536})
+    @tune.autotuner(test={'wgs_x': 8, 'wgs_y': 4, 'wgs_z': 4, 'multi_x': 2, 'multi_y': 4})
     def autotune(cls, context, oversample, real_dtype, num_polarizations):
         queue = context.create_tuning_command_queue()
         bin_size = 32
         grid, uv, w_plane, vis, convolve_kernel = _autotune_arrays(
                 queue, oversample, real_dtype, num_polarizations, bin_size, 3)
         num_vis = uv.shape[0]
-        def generate(multi_x, multi_y, wgs_x, wgs_y, wgs_z, workitems):
+        def generate(multi_x, multi_y, wgs_x, wgs_y, wgs_z):
             # No point having less than a warp per workgroup
             if wgs_x * wgs_y * wgs_z < context.device.simd_group_size:
                 return None
@@ -866,7 +865,7 @@ class DegridderTemplate(object):
             uv_bias = (bin_size - 1) // 2
             def fn():
                 Degridder.static_run(
-                        queue, kernel, wgs_x, wgs_y, wgs_z, bin_size, workitems,
+                        queue, kernel, wgs_x, wgs_y, wgs_z, bin_size,
                         num_vis, uv_bias,
                         grid, uv, w_plane, vis, convolve_kernel)
             return tune.make_measure(queue, fn)
@@ -876,8 +875,7 @@ class DegridderTemplate(object):
                 multi_y=[1, 2, 4],
                 wgs_x=[4, 8],
                 wgs_y=[4, 8],
-                wgs_z=[1, 2, 4, 8],
-                workitems=[65536, 262144, 1048576])
+                wgs_z=[1, 2, 4, 8])
 
     def instantiate(self, *args, **kwargs):
         return Degridder(self, *args, **kwargs)
@@ -907,13 +905,13 @@ class Degridder(GridDegrid):
 
     @classmethod
     def static_run(cls, command_queue, kernel,
-                   wgs_x, wgs_y, wgs_z, bin_size, workitems, num_vis, uv_bias,
+                   wgs_x, wgs_y, wgs_z, bin_size, num_vis, uv_bias,
                    grid, uv, w_plane, vis, convolve_kernel):
         if num_vis == 0:
             return
-        workgroups = max(1, workitems // (wgs_x * wgs_y * wgs_z))
-        subgroups = workgroups * wgs_z
-        vis_per_subgroup = accel.divup(num_vis, subgroups)
+        batch_size = wgs_x * wgs_y
+        subgroups = accel.divup(num_vis, batch_size)
+        workgroups = accel.divup(subgroups, wgs_z)
         command_queue.enqueue_kernel(
             kernel,
             [
@@ -925,7 +923,6 @@ class Degridder(GridDegrid):
                 vis.buffer,
                 convolve_kernel.buffer,
                 np.int32(uv_bias),
-                np.int32(vis_per_subgroup),
                 np.int32(num_vis)
             ],
             global_size=(wgs_x * workgroups,
@@ -941,7 +938,6 @@ class Degridder(GridDegrid):
             self.command_queue, self._kernel,
             self.template.wgs_x, self.template.wgs_y, self.template.wgs_z,
             self.template.convolve_kernel.bin_size,
-            self.template.workitems,
             self.num_vis,
             uv_bias,
             self.buffer('grid'),
