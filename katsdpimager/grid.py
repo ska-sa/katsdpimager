@@ -510,7 +510,7 @@ def _autotune_arrays(command_queue, oversample, real_dtype, num_polarizations, b
 
 
 class GridderTemplate(object):
-    autotune_version = 3
+    autotune_version = 4
 
     def __init__(self, context, image_parameters, grid_parameters, tuning=None):
         if tuning is None:
@@ -523,7 +523,6 @@ class GridderTemplate(object):
         self.wgs_y = tuning['wgs_y']
         self.multi_x = tuning['multi_x']
         self.multi_y = tuning['multi_y']
-        self.workitems = tuning['workitems']
         min_pad = max(self.multi_x, self.multi_y) - 1
         self.tile_x = self.wgs_x * self.multi_x
         self.tile_y = self.wgs_y * self.multi_y
@@ -546,7 +545,7 @@ class GridderTemplate(object):
             extra_dirs=[pkg_resources.resource_filename(__name__, '')])
 
     @classmethod
-    @tune.autotuner(test={'wgs_x': 16, 'wgs_y': 8, 'multi_x': 2, 'multi_y': 2, 'workitems': 4096})
+    @tune.autotuner(test={'wgs_x': 16, 'wgs_y': 8, 'multi_x': 2, 'multi_y': 2})
     def autotune(cls, context, oversample, real_dtype, num_polarizations):
         # This autotuning code is unusually complex because it tries to avoid
         # actually creating the convolution kernels. Doing so is slow, would
@@ -559,7 +558,7 @@ class GridderTemplate(object):
         grid, uv, w_plane, vis, convolve_kernel = _autotune_arrays(
                 queue, oversample, real_dtype, num_polarizations, bin_size, 3)
         num_vis = uv.shape[0]
-        def generate(multi_x, multi_y, wgs_x, wgs_y, workitems):
+        def generate(multi_x, multi_y, wgs_x, wgs_y):
             # No point having less than a warp per workgroup
             if wgs_x * wgs_y < context.device.simd_group_size:
                 return None
@@ -595,7 +594,7 @@ class GridderTemplate(object):
             uv_bias = (bin_size - 1) // 2
             def fn():
                 Gridder.static_run(
-                    queue, kernel, wgs_x, wgs_y, tile_x, tile_y, bin_size, workitems,
+                    queue, kernel, wgs_x, wgs_y, tile_x, tile_y, bin_size,
                     num_vis, uv_bias,
                     grid, uv, w_plane, vis, convolve_kernel)
             return tune.make_measure(queue, fn)
@@ -604,8 +603,7 @@ class GridderTemplate(object):
                 multi_x=[1, 2, 4],
                 multi_y=[1, 2, 4],
                 wgs_x=[4, 8, 16],
-                wgs_y=[4, 8, 16],
-                workitems=[1024, 4096, 16384])
+                wgs_y=[4, 8, 16])
 
     def instantiate(self, *args, **kwargs):
         return Gridder(self, *args, **kwargs)
@@ -712,7 +710,7 @@ class Gridder(GridDegrid):
 
     @classmethod
     def static_run(cls, command_queue, kernel,
-                   wgs_x, wgs_y, tile_x, tile_y, bin_size, workitems, num_vis, uv_bias,
+                   wgs_x, wgs_y, tile_x, tile_y, bin_size, num_vis, uv_bias,
                    grid, uv, w_plane, vis, convolve_kernel):
         """Implementation of :meth:`_run` with all the parameters explicit.
         This is not intended for direct use, but is used for autotuning to
@@ -724,7 +722,7 @@ class Gridder(GridDegrid):
             Command queue for the operation
         kernel : :class:`katsdpsigproc.cuda.Kernel` or :class:`katsdpsigproc.opencl.Kernel`
             Compiled kernel to run
-        wgs_x, wgs_y, tile_x, tile_y, bin_size, workitems : int
+        wgs_x, wgs_y, tile_x, tile_y, bin_size : int
             Tuning parameters (see :class:`GridTemplate`)
         num_vis : int
             Number of visibilities to grid
@@ -737,9 +735,8 @@ class Gridder(GridDegrid):
             return
         tiles_x = bin_size // tile_x
         tiles_y = bin_size // tile_y
-        workgroups = workitems // (wgs_x * wgs_y)
-        workgroups_z = max(1, workgroups // (tiles_x * tiles_y))
-        vis_per_workgroup = accel.divup(num_vis, workgroups_z)
+        vis_per_workgroup = 1024   # Must be >= any batch size from autotuning
+        batches = accel.divup(num_vis, vis_per_workgroup)
         command_queue.enqueue_kernel(
             kernel,
             [
@@ -756,7 +753,7 @@ class Gridder(GridDegrid):
             ],
             global_size=(wgs_x * tiles_x,
                          wgs_y * tiles_y,
-                         workgroups_z),
+                         batches),
             local_size=(wgs_x, wgs_y, 1)
         )
 
@@ -768,7 +765,6 @@ class Gridder(GridDegrid):
             self.template.wgs_x, self.template.wgs_y,
             self.template.tile_x, self.template.tile_y,
             self.template.convolve_kernel.bin_size,
-            self.template.workitems,
             self.num_vis,
             uv_bias,
             self.buffer('grid'),
