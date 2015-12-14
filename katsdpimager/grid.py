@@ -735,8 +735,15 @@ class Gridder(GridDegrid):
             return
         tiles_x = bin_size // tile_x
         tiles_y = bin_size // tile_y
-        vis_per_workgroup = 1024   # Must be >= any batch size from autotuning
-        batches = accel.divup(num_vis, vis_per_workgroup)
+        vis_per_workgroup = 1024
+        workgroups_z = accel.divup(num_vis, vis_per_workgroup)
+        # Recompute vis_per_workgroup: a smaller value may now be possible
+        # for the given value of workgroups_z.
+        vis_per_workgroup = accel.divup(num_vis, workgroups_z)
+        # Make sure that vis_per_workgroup is a multiple of the batch size.
+        # If it is not, then every workgroup will finish with a partial batch,
+        # rather than only the last workgroup.
+        vis_per_workgroup = accel.roundup(vis_per_workgroup, wgs_x * wgs_y)
         command_queue.enqueue_kernel(
             kernel,
             [
@@ -753,7 +760,7 @@ class Gridder(GridDegrid):
             ],
             global_size=(wgs_x * tiles_x,
                          wgs_y * tiles_y,
-                         batches),
+                         workgroups_z),
             local_size=(wgs_x, wgs_y, 1)
         )
 
