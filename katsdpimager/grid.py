@@ -429,15 +429,17 @@ class ConvolutionKernelDevice(ConvolutionKernel):
 
 
 def _autotune_uv(context, pixels, bin_size, oversample):
-    """Creates UVW test data for autotuning gridding and degridding.
+    """Creates UV test data for autotuning gridding and degridding.
 
-    The visibilities and weights are irrelevant, but
-    the UVW coordinates are important because the performance is heavily
-    data-dependent. Compression ensures that samples in the same subgrid
-    cell are compressed, but each sample is typically close to the
-    previous one, moving along an elliptic track. Rather than go to the
-    full complexity of modelling such tracks, we use a number of linear
-    tracks at a variety of slopes.
+    The visibilities and weights are irrelevant, but the UV coordinates are
+    important because the performance is heavily data-dependent. Compression
+    ensures that samples in the same subgrid cell are compressed, but each
+    sample is typically close to the previous one, moving along an elliptic
+    track. Rather than go to the full complexity of modelling such tracks, we
+    use a number of linear tracks at a variety of slopes.
+
+    The return value has the format required by the *uv* slot in
+    :class:`Gridder`.
     """
     # Set bounds of the UV coordinates in pixels. This is a slightly
     # conservative bound.
@@ -474,15 +476,15 @@ def _autotune_arrays(command_queue, oversample, real_dtype, num_polarizations, b
     oversample : int
         Grid oversampling
     real_dtype : {np.float32, np.complex64}
-        Floating-point type for image and grid
+        Floating-point type for grid value
     num_polarizations : int
         Number of polarizations in grid
     bin_size : int
         Bin size
     pad : int
         Amount of padding around edges of convolution kernel to allow for
-        thread coarsening. This must be at greater than or equal to the maximum
-        alignment minus one.
+        blocking. This must be at greater than or equal to the maximum
+        block size (X or Y) minus one.
 
     Returns
     -------
@@ -491,8 +493,6 @@ def _autotune_arrays(command_queue, oversample, real_dtype, num_polarizations, b
     """
     context = command_queue.context
     pixels = 256
-    bin_size = 32
-    pad = 3  # pad + 1 must be >= any multi_x/y
     complex_dtype = katsdpimager.types.real_to_complex(real_dtype)
     uv_host = _autotune_uv(context, pixels, bin_size, oversample)
     num_vis = len(uv_host)
@@ -555,20 +555,25 @@ class GridderTemplate(object):
         # structures.
         queue = context.create_tuning_command_queue()
         bin_size = 32
+        pad = 3
         grid, uv, w_plane, vis, convolve_kernel = _autotune_arrays(
-                queue, oversample, real_dtype, num_polarizations, bin_size, 3)
+                queue, oversample, real_dtype, num_polarizations, bin_size, pad)
         num_vis = uv.shape[0]
+
         def generate(multi_x, multi_y, wgs_x, wgs_y):
+            assert multi_x <= pad + 1 and multi_y <= pad + 1
             # No point having less than a warp per workgroup
             if wgs_x * wgs_y < context.device.simd_group_size:
                 return None
             # Only the total size really matters, so it is not necessary
-            # to try all possible shapes.
+            # to try all possible shapes. For block shape, it is important
+            # to be as square as possible.
             if wgs_x != wgs_y and wgs_y != wgs_x * 2:
                 return None
             if multi_x != multi_y and multi_x != multi_y * 2:
                 return None
-            # This can cause launch timeouts
+            # This can cause launch timeouts due to excessive register pressure
+            # and spilling.
             if multi_x * multi_y * num_polarizations * real_dtype.itemsize > 256:
                 return None
             tile_x = wgs_x * multi_x
@@ -592,6 +597,7 @@ class GridderTemplate(object):
                 extra_dirs=[pkg_resources.resource_filename(__name__, '')])
             kernel = program.get_kernel('grid')
             uv_bias = (bin_size - 1) // 2
+
             def fn():
                 Gridder.static_run(
                     queue, kernel, wgs_x, wgs_y, tile_x, tile_y, bin_size,
@@ -599,7 +605,8 @@ class GridderTemplate(object):
                     grid, uv, w_plane, vis, convolve_kernel)
             return tune.make_measure(queue, fn)
 
-        return tune.autotune(generate,
+        return tune.autotune(
+                generate,
                 multi_x=[1, 2, 4],
                 multi_y=[1, 2, 4],
                 wgs_x=[4, 8, 16],
@@ -829,6 +836,7 @@ class DegridderTemplate(object):
         grid, uv, w_plane, vis, convolve_kernel = _autotune_arrays(
                 queue, oversample, real_dtype, num_polarizations, bin_size, 3)
         num_vis = uv.shape[0]
+
         def generate(multi_x, multi_y, wgs_x, wgs_y, wgs_z):
             # No point having less than a warp per workgroup
             if wgs_x * wgs_y * wgs_z < context.device.simd_group_size:
@@ -865,6 +873,7 @@ class DegridderTemplate(object):
                 extra_dirs=[pkg_resources.resource_filename(__name__, '')])
             kernel = program.get_kernel('degrid')
             uv_bias = (bin_size - 1) // 2
+
             def fn():
                 Degridder.static_run(
                         queue, kernel, wgs_x, wgs_y, wgs_z, bin_size,
@@ -872,7 +881,8 @@ class DegridderTemplate(object):
                         grid, uv, w_plane, vis, convolve_kernel)
             return tune.make_measure(queue, fn)
 
-        return tune.autotune(generate,
+        return tune.autotune(
+                generate,
                 multi_x=[1, 2, 4],
                 multi_y=[1, 2, 4],
                 wgs_x=[4, 8],
