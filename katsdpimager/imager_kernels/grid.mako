@@ -116,11 +116,19 @@ void grid(
                 offset_w + sample_uv.z * CONVOLVE_KERNEL_SLICE_STRIDE - min_uv.x,
                 offset_w + sample_uv.w * CONVOLVE_KERNEL_SLICE_STRIDE - min_uv.y);
         }
+        else
+        {
+            batch_min_uv[lid] = make_int2(0, 0);
+            batch_offset[lid] = make_int2(0, 0);
+            for (int p = 0; p < NPOLS; p++)
+                batch_vis[p][lid] = make_float2(0.0f, 0.0f);
+        }
 
         BARRIER();
 
         // Process batch
-        for (int vis_id = 0; vis_id < batch_size; vis_id++)
+#pragma unroll 2
+        for (int vis_id = 0; vis_id < BATCH_SIZE; vis_id++)
         {
             float2 sample_vis[NPOLS];
             float2 weight_u[MULTI_X];
