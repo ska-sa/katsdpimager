@@ -5,7 +5,7 @@
     Real value[2][2];
     for (int i = 0; i < 2; i++)
         for (int j = 0; j < 2; j++)
-            value[i][j] = image[addr[i][j]];
+            value[i][j] = image[image_start + addr[i][j]];
 
     ${layer_image.compute_lm()}
 

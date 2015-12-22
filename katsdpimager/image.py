@@ -93,7 +93,7 @@ class _LayerImage(accel.Operation):
     command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
         Command queue for the operation
     shape : tuple of int
-        Shape of the data (must be square)
+        Shape of the image data (polarizations, height, width) - must be square
     lm_scale : float
         Scale factor from pixel coordinates to l/m coordinates
     lm_bias : float
@@ -109,7 +109,7 @@ class _LayerImage(accel.Operation):
         if the last two elements of shape are not equal and even
     """
     def __init__(self, template, command_queue, shape, lm_scale, lm_bias, kernel_name, allocator=None):
-        if len(shape) < 2 or shape[-1] != shape[-2]:
+        if len(shape) != 3 or shape[-1] != shape[-2]:
             raise ValueError('shape must be square, not {}'.format(shape))
         if shape[-1] % 2 != 0:
             raise ValueError('image size must be even, not {}'.format(shape[-1]))
@@ -117,34 +117,40 @@ class _LayerImage(accel.Operation):
         self.template = template
         complex_dtype = katsdpimager.types.real_to_complex(template.real_dtype)
         dims = [accel.Dimension(x) for x in shape]
-        self.slots['layer'] = accel.IOSlot(dims, complex_dtype)
+        self.slots['layer'] = accel.IOSlot(dims[-2:], complex_dtype)
         self.slots['image'] = accel.IOSlot(dims, template.real_dtype)
         self.slots['kernel1d'] = accel.IOSlot((shape[-1],), template.real_dtype)
         self.kernel = template.program.get_kernel(kernel_name)
         self.lm_scale = lm_scale
         self.lm_bias = lm_bias
         self.w = 0
+        self.polarization = 0
 
     def set_w(self, w):
         """Set w (in wavelengths)."""
         self.w = w
 
+    def set_polarization(self, polarization):
+        """Set polarization index in the image"""
+        if polarization < 0 or polarization >= self.slots['image'].shape[0]:
+            raise IndexError('polarization index out of range')
+        self.polarization = polarization
+
     def _run(self):
         layer = self.buffer('layer')
         image = self.buffer('image')
-        assert(layer.padded_shape == image.padded_shape)
-        half_size = layer.shape[-1] // 2
-        row_stride = layer.padded_shape[-1]
-        slice_stride = row_stride * layer.padded_shape[-2]
-        batches = int(np.product(layer.padded_shape[:-2]))
+        assert(layer.padded_shape == image.padded_shape[-2:])
+        half_size = image.shape[-1] // 2
+        row_stride = image.padded_shape[-1]
+        slice_stride = row_stride * image.padded_shape[-2]
         kernel1d = self.buffer('kernel1d')
         self.command_queue.enqueue_kernel(
             self.kernel,
             [
                 image.buffer,
                 layer.buffer,
+                np.int32(self.polarization * slice_stride),
                 np.int32(row_stride),
-                np.int32(slice_stride),
                 kernel1d.buffer,
                 self.template.real_dtype.type(self.lm_scale),
                 self.template.real_dtype.type(self.lm_bias),
@@ -154,9 +160,8 @@ class _LayerImage(accel.Operation):
                 self.template.real_dtype.type(2 * self.w)
             ],
             global_size=(accel.roundup(half_size, self.template.wgs_x),
-                         accel.roundup(half_size, self.template.wgs_y),
-                         batches),
-            local_size=(self.template.wgs_x, self.template.wgs_y, 1)
+                         accel.roundup(half_size, self.template.wgs_y)),
+            local_size=(self.template.wgs_x, self.template.wgs_y)
         )
 
 
@@ -240,7 +245,7 @@ class ImageToLayer(_LayerImage):
     command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
         Command queue for the operation
     shape : tuple of int
-        Shape of the data (must be square)
+        Shape of the image as (polarizations, height, width) - must be square
     lm_scale : float
         Scale factor from pixel coordinates to l/m coordinates
     lm_bias : float
@@ -353,8 +358,6 @@ class GridToImageTemplate(object):
     and the real part of the result is returned. Both the grid and the image
     have the DC term in the middle.
 
-    This operation is destructive: the grid is modified in-place.
-
     Because it uses :class:`~katsdpimager.fft.FftTemplate`, most of the
     parameters are baked into the template rather than the instance.
 
@@ -362,21 +365,18 @@ class GridToImageTemplate(object):
     ----------
     command_queue : :class:`katsdpsigproc.cuda.CommandQueue`
         Command queue for the operation
-    shape : tuple of int
-        Shape for both the source and destination, as (polarizations, height, width)
-    padded_shape_src : tuple of int
-        Padded shape of the grid
-    padded_shape_dest : tuple of int
-        Padded shape of the image
+    shape_layer : tuple of int
+        Shape for the intermediate layer, as (height, width)
+    padded_shape_layer : tuple of int
+        Padded shape of the intermediate layer
     real_dtype : {`np.float32`, `np.float64`}
         Precision
     """
 
-    def __init__(self, command_queue, shape, padded_shape_src, padded_shape_dest, real_dtype):
+    def __init__(self, command_queue, shape_layer, padded_shape_layer, real_dtype):
         complex_dtype = katsdpimager.types.real_to_complex(real_dtype)
-        self.shift_complex = fft.FftshiftTemplate(command_queue.context, complex_dtype)
-        self.fft = fft.FftTemplate(command_queue, 2, shape, complex_dtype,
-                                   padded_shape_src, padded_shape_dest)
+        self.fft = fft.FftTemplate(command_queue, 2, shape_layer, complex_dtype,
+                                   padded_shape_layer, padded_shape_layer)
         self.layer_to_image = LayerToImageTemplate(command_queue.context, real_dtype)
 
     def instantiate(self, *args, **kwargs):
@@ -390,33 +390,60 @@ class GridToImage(accel.OperationSequence):
     ----------
     template : :class:`GridToImageTemplate`
         Operation template
+    shape_grid : tuple of int
+        Shape of the grid, as (polarizations, height, width)
     lm_scale, lm_bias : float
         See :class:`LayerToImage`
     allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
         Allocator used to allocate unbound slots
     """
-    def __init__(self, template, lm_scale, lm_bias, allocator=None):
+    def __init__(self, template, shape_grid, lm_scale, lm_bias, allocator=None):
         command_queue = template.fft.command_queue
-        self._shift_grid = template.shift_complex.instantiate(
-            command_queue, template.fft.shape, allocator)
         self._ifft = template.fft.instantiate(fft.FFT_INVERSE, allocator)
+        polarizations = shape_grid[0]
+        shape_image = (polarizations,) + tuple(template.fft.shape)
         self._layer_to_image = template.layer_to_image.instantiate(
-            command_queue, template.fft.shape, lm_scale, lm_bias, allocator)
+            command_queue, shape_image, lm_scale, lm_bias, allocator)
         operations = [
-            ('shift_grid', self._shift_grid),
             ('ifft', self._ifft),
             ('layer_to_image', self._layer_to_image)
         ]
         compounds = {
-            'grid': ['shift_grid:data', 'ifft:src'],
-            'layer': ['ifft:dest', 'layer_to_image:layer'],
+            'layer': ['ifft:src', 'ifft:dest', 'layer_to_image:layer'],
             'image': ['layer_to_image:image'],
             'kernel1d': ['layer_to_image:kernel1d']
         }
         super(GridToImage, self).__init__(command_queue, operations, compounds, allocator=allocator)
+        self.slots['grid'] = accel.IOSlot(shape_grid, template.fft.dtype)
 
     def set_w(self, w):
         self._layer_to_image.set_w(w)
+
+    def _run(self):
+        grid = self.buffer('grid')
+        layer = self.buffer('layer')
+        polarizations, width, height = grid.shape
+        # This could probably be made to work correctly with odd width/height,
+        # but it would need to be done carefully to avoid off-by-one bugs.
+        assert width % 2 == 0
+        assert height % 2 == 0
+        half_width = width // 2
+        half_height = height // 2
+        for pol in range(polarizations):
+            layer.zero(self.command_queue)
+            # Copy one polarization from the grid to the layer, also switching
+            # the centre to the corners. The two slices in each of src/dest_x/y
+            # are the two halves of the data.
+            src_y = np.s_[:half_height, half_height:]
+            dest_y = np.s_[half_height:, :half_height]
+            src_x = np.s_[:half_width, half_width:]
+            dest_x = np.s_[half_width:, :half_width]
+            for sy, dy in zip(src_y, dest_y):
+                for sx, dx in zip(src_x, dest_x):
+                    grid.copy_region(
+                        self.command_queue, layer, (pol, sy, sx), (dy, dx))
+            self._layer_to_image.set_polarization(pol)
+            super(GridToImage, self)._run()
 
 
 class ImageToGridTemplate(object):
@@ -426,11 +453,10 @@ class ImageToGridTemplate(object):
     Because it uses :class:`~katsdpimager.fft.FftTemplate`, most of the
     parameters are baked into the template rather than the instance.
     """
-    def __init__(self, command_queue, shape, padded_shape_src, padded_shape_dest, real_dtype):
+    def __init__(self, command_queue, shape_layer, padded_shape_layer, real_dtype):
         complex_dtype = katsdpimager.types.real_to_complex(real_dtype)
-        self.shift_complex = fft.FftshiftTemplate(command_queue.context, complex_dtype)
-        self.fft = fft.FftTemplate(command_queue, 2, shape, complex_dtype,
-                                   padded_shape_src, padded_shape_dest)
+        self.fft = fft.FftTemplate(command_queue, 2, shape_layer, complex_dtype,
+                                   padded_shape_layer, padded_shape_layer)
         self.image_to_layer = ImageToLayerTemplate(command_queue.context, real_dtype)
 
     def instantiate(self, *args, **kwargs):
@@ -444,33 +470,60 @@ class ImageToGrid(accel.OperationSequence):
     ----------
     template : :class:`ImageToGridTemplate`
         Operation template
+    shape_grid : tuple of int
+        Shape of the grid, as (polarizations, height, width)
     lm_scale, lm_bias : float
         See :class:`ImageToLayer`
     allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
         Allocator used to allocate unbound slots
     """
-    def __init__(self, template, lm_scale, lm_bias, allocator=None):
+    def __init__(self, template, shape_grid, lm_scale, lm_bias, allocator=None):
         command_queue = template.fft.command_queue
-        self._shift_grid = template.shift_complex.instantiate(
-            command_queue, template.fft.shape, allocator)
+        polarizations = shape_grid[0]
+        shape_image = (polarizations,) + tuple(template.fft.shape)
         self._fft = template.fft.instantiate(fft.FFT_FORWARD, allocator)
         self._image_to_layer = template.image_to_layer.instantiate(
-            command_queue, template.fft.shape, lm_scale, lm_bias, allocator)
+            command_queue, shape_image, lm_scale, lm_bias, allocator)
         operations = [
             ('image_to_layer', self._image_to_layer),
             ('fft', self._fft),
-            ('shift_grid', self._shift_grid)
         ]
         compounds = {
-            'grid': ['shift_grid:data', 'fft:dest'],
-            'layer': ['fft:src', 'image_to_layer:layer'],
+            'layer': ['fft:src', 'fft:dest', 'image_to_layer:layer'],
             'image': ['image_to_layer:image'],
             'kernel1d': ['image_to_layer:kernel1d']
         }
         super(ImageToGrid, self).__init__(command_queue, operations, compounds, allocator=allocator)
+        self.slots['grid'] = accel.IOSlot(shape_grid, template.fft.dtype)
 
     def set_w(self, w):
         self._image_to_layer.set_w(w)
+
+    def _run(self):
+        # TODO: unify with GridToImage._run
+        grid = self.buffer('grid')
+        layer = self.buffer('layer')
+        polarizations, width, height = grid.shape
+        # This could probably be made to work correctly with odd width/height,
+        # but it would need to be done carefully to avoid off-by-one bugs.
+        assert width % 2 == 0
+        assert height % 2 == 0
+        half_width = width // 2
+        half_height = height // 2
+        for pol in range(polarizations):
+            self._image_to_layer.set_polarization(pol)
+            super(ImageToGrid, self)._run()
+            # Copy one polarization from the grid to the layer, also switching
+            # the centre to the corners. The two slices in each of src/dest_x/y
+            # are the two halves of the data.
+            src_y = np.s_[:half_height, half_height:]
+            dest_y = np.s_[half_height:, :half_height]
+            src_x = np.s_[:half_width, half_width:]
+            dest_x = np.s_[half_width:, :half_width]
+            for sy, dy in zip(src_y, dest_y):
+                for sx, dx in zip(src_x, dest_x):
+                    layer.copy_region(
+                        self.command_queue, grid, (sy, sx), (pol, dy, dx))
 
 
 class GridToImageHost(object):

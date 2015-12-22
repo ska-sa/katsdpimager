@@ -16,6 +16,6 @@
             ${layer_image.compute_n_rotate('i', 'j')}
             // Multiply by e^(2pi i w (n-1))
             Real rotated = value[i][j].x * rotate.x - value[i][j].y * rotate.y;
-            image[addr[i][j]] += rotated * n / (kernel_y[i] * kernel_x[j]);
+            image[image_start + addr[i][j]] += rotated * n / (kernel_y[i] * kernel_x[j]);
         }
 </%call>

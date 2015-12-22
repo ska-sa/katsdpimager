@@ -21,19 +21,16 @@ class ImagingTemplate(object):
         image_shape = (len(image_parameters.polarizations),
                        image_parameters.pixels,
                        image_parameters.pixels)
-        grid_shape = image_shape
-        # Currently none of the kernels accessing the grid need any padding.
+        # Currently none of the kernels accessing the layer need any padding.
         # It would be nice if there was a cleaner way to handle this; possibly
         # by deferring creation of the FFT plan until instantiation.
-        padded_grid_shape = grid_shape
+        padded_layer_shape = layer_shape = image_shape[1:]
         self.gridder = grid.GridderTemplate(context, image_parameters, grid_parameters)
         self.degridder = grid.DegridderTemplate(context, image_parameters, grid_parameters)
         self.grid_to_image = image.GridToImageTemplate(
-            command_queue, grid_shape, padded_grid_shape,
-            image_shape, image_parameters.real_dtype)
+            command_queue, layer_shape, padded_layer_shape, image_parameters.real_dtype)
         self.image_to_grid = image.ImageToGridTemplate(
-            command_queue, grid_shape, image_shape,
-            padded_grid_shape, image_parameters.real_dtype)
+            command_queue, layer_shape, padded_layer_shape, image_parameters.real_dtype)
         self.clean = clean.CleanTemplate(
             context, clean_parameters, image_parameters.real_dtype, image_shape[0])
         self.scale = image.ScaleTemplate(
@@ -57,14 +54,15 @@ class Imaging(accel.OperationSequence):
         image_shape = (len(template.image_parameters.polarizations),
                        template.image_parameters.pixels,
                        template.image_parameters.pixels)
+        grid_shape = image_shape
         self._gridder = template.gridder.instantiate(
             template.command_queue, template.array_parameters, max_vis, allocator)
         self._degridder = template.degridder.instantiate(
             template.command_queue, template.array_parameters, max_vis, allocator)
         self._grid_to_image = template.grid_to_image.instantiate(
-            lm_scale, lm_bias, allocator)
+            grid_shape, lm_scale, lm_bias, allocator)
         self._image_to_grid = template.image_to_grid.instantiate(
-            lm_scale, lm_bias, allocator)
+            grid_shape, lm_scale, lm_bias, allocator)
         self._clean = template.clean.instantiate(
             template.command_queue, template.image_parameters, allocator)
         self._scale = template.scale.instantiate(

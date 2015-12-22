@@ -29,13 +29,13 @@
     typedef ${real_type}2 Complex;
 
     /**
-     * @param image     Real image, with strides @a x_stride, @a y_stride and image centre in the middle
+     * @param image     Real image, with stride @a stride and image centre in the middle
      * @param layer     Complex layer, with stride @a x_stride, @a y_stride and image centre at the corners
-     * @param x_stride, y_stride  Strides for @a out and @a in
+     * @param image_start Pixel offset to the start of the image layer
+     * @param stride    Row stride for @a image and @a layer
      * @param kernel1d, lm_scale, lm_bias  See Python documentation
-     * @param half_size Half the width/height of @a in and @a out images
-     * @param x_offset  Product of @a half_size and @a x_stride
-     * @param y_offset  Product of @a half_size and @a y_stride
+     * @param half_size Half the width/height of @a layer and @a image
+     * @param y_offset  Product of @a half_size and @a stride
      * @param lm_offset Product of @a half_size and @a lm_scale
      * @param w2        Twice the central W value for the slice
      */
@@ -43,8 +43,8 @@
     void ${kernel_name}(
         ${image_const} GLOBAL Real * RESTRICT image,
         ${layer_const} GLOBAL Complex * RESTRICT layer,
-        int row_stride,
-        int slice_stride,
+        int image_start,
+        int stride,
         const GLOBAL Real * RESTRICT kernel1d,
         Real lm_scale,
         Real lm_bias,
@@ -56,7 +56,6 @@
         int x[2], y[2];
         x[0] = get_global_id(0);
         y[0] = get_global_id(1);
-        int pol = get_global_id(2);
         if (x[0] < half_size && y[0] < half_size)
         {
             Real kernel_x[2], kernel_y[2];
@@ -69,7 +68,7 @@
                 kernel_x[i] = kernel1d[x[i]];
                 kernel_y[i] = kernel1d[y[i]];
             }
-            addr[0][0] = pol * slice_stride + y[0] * row_stride + x[0];
+            addr[0][0] = y[0] * stride + x[0];
             addr[0][1] = addr[0][0] + half_size;
             addr[1][0] = addr[0][0] + y_offset;
             addr[1][1] = addr[0][1] + y_offset;
