@@ -139,7 +139,7 @@ def kaiser_bessel(x, width, beta):
     param = 1 - (2 * x / width)**2
     # The np.maximum is to protect against runtime warnings for taking
     # sqrt of negative values. The actual values in this situation are
-    # irrelvent due to the np.select call.
+    # irrelevent due to the np.select call.
     values = np.i0(beta * np.sqrt(np.maximum(0, param))) / np.i0(beta)
     return np.select([param >= 0], [values])
 
