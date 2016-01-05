@@ -155,7 +155,7 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
         ip = self.image_parameters[channel]
         super(VisibilityCollector, self).add(
             channel,
-            ip.pixels, ip.cell_size.to(units.m).value,
+            ip.cell_size.to(units.m).value,
             uvw, weights, baselines, vis)
 
     def reader(self):

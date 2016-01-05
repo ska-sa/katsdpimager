@@ -66,7 +66,7 @@ public:
         const py::object &emit_callback);
     virtual ~visibility_collector_base() {}
     virtual void add(
-        int channel, int pixels, float cell_size,
+        int channel, float cell_size,
         const py::object &uvw, const py::object &weights,
         const py::object &baselines, const py::object &vis) = 0;
     virtual void close() = 0;
@@ -121,7 +121,7 @@ public:
         std::size_t buffer_capacity);
 
     virtual void add(
-        int channel, int pixels, float cell_size,
+        int channel, float cell_size,
         const py::object &uvw, const py::object &weights,
         const py::object &baselines, const py::object &vis) override;
 
@@ -265,7 +265,7 @@ void visibility_collector<P>::compress()
 
 template<int P>
 void visibility_collector<P>::add(
-    int channel, int pixels, float cell_size,
+    int channel, float cell_size,
     const py::object &uvw_obj, const py::object &weights_obj,
     const py::object &baselines_obj, const py::object &vis_obj)
 {
@@ -281,7 +281,6 @@ void visibility_collector<P>::add(
     auto baselines = array_data<const int32_t>(baselines_array);
     auto vis = array_data<const float[P][2]>(vis_array);
 
-    float offset = pixels * 0.5f;
     float uv_scale = 1.0f / cell_size;
     float w_scale = (w_slices - 0.5f) * w_planes / max_w;
     int max_slice_plane = w_slices * w_planes - 1; // TODO: check for overflow? precompute?
@@ -314,8 +313,8 @@ void visibility_collector<P>::add(
             out.vis[p][0] *= weight;
             out.vis[p][1] *= weight;
         }
-        u = u * uv_scale + offset;
-        v = v * uv_scale + offset;
+        u = u * uv_scale;
+        v = v * uv_scale;
         // The plane number is biased by half a slice, because the first slice
         // is half-width and centered at w=0.
         w = trunc(w * w_scale + w_planes * 0.5f);

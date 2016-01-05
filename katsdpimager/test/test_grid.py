@@ -68,6 +68,7 @@ class BaseTest(object):
                     self.sub_uv[i, j] = \
                         (self.sub_uv[i - 1, j] + rs.random_integers(-1, 1)) % oversample
                 self.w_plane[i] = (self.w_plane[i - 1] + rs.random_integers(-1, 1)) % w_planes
+        self.uv -= pixels // 2
         self.convolve_kernel = grid.ConvolutionKernel(
             self.image_parameters, self.grid_parameters)
 
@@ -80,7 +81,7 @@ class BaseTest(object):
                1j * rs.uniform(-1, 1, size=(n_vis, 4))).astype(np.complex128)
         actual = callback(max_vis, vis)
         expected = np.zeros_like(actual)
-        uv_bias = (self.convolve_kernel.data.shape[-1] - 1) // 2
+        uv_bias = (self.convolve_kernel.data.shape[-1] - 1) // 2 - pixels // 2
         for i in range(n_vis):
             kernel = np.outer(self.convolve_kernel.data[self.w_plane[i], self.sub_uv[i, 1], :],
                               self.convolve_kernel.data[self.w_plane[i], self.sub_uv[i, 0], :])
@@ -101,7 +102,7 @@ class BaseTest(object):
         grid_data = (rs.uniform(-1, 1, size=shape) + 1j * rs.uniform(-1, 1, size=shape)).astype(np.complex128)
         vis = callback(max_vis, grid_data)
         expected = np.zeros_like(vis)
-        uv_bias = (self.convolve_kernel.data.shape[-1] - 1) // 2
+        uv_bias = (self.convolve_kernel.data.shape[-1] - 1) // 2 - pixels // 2
         for i in range(n_vis):
             kernel = np.outer(self.convolve_kernel.data[self.w_plane[i], self.sub_uv[i, 1], :],
                               self.convolve_kernel.data[self.w_plane[i], self.sub_uv[i, 0], :])
