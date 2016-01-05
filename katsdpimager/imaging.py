@@ -52,15 +52,16 @@ class Imaging(accel.OperationSequence):
         image_shape = (len(template.image_parameters.polarizations),
                        template.image_parameters.pixels,
                        template.image_parameters.pixels)
-        grid_shape = image_shape
         self._gridder = template.gridder.instantiate(
             template.command_queue, template.array_parameters, max_vis, allocator)
         self._degridder = template.degridder.instantiate(
             template.command_queue, template.array_parameters, max_vis, allocator)
+        grid_shape = self._gridder.slots['grid'].shape
+        degrid_shape = self._degridder.slots['grid'].shape
         self._grid_to_image = template.grid_image.instantiate_grid_to_image(
             grid_shape, lm_scale, lm_bias, allocator)
         self._image_to_grid = template.grid_image.instantiate_image_to_grid(
-            grid_shape, lm_scale, lm_bias, allocator)
+            degrid_shape, lm_scale, lm_bias, allocator)
         self._clean = template.clean.instantiate(
             template.command_queue, template.image_parameters, allocator)
         self._scale = template.scale.instantiate(

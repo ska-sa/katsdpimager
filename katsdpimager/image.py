@@ -443,10 +443,10 @@ class GridToImage(accel.OperationSequence):
             # Copy one polarization from the grid to the layer, also switching
             # the centre to the corners. The two slices in each of src/dest_x/y
             # are the two halves of the data.
-            src_y = np.s_[:half_height, half_height:]
-            dest_y = np.s_[half_height:, :half_height]
-            src_x = np.s_[:half_width, half_width:]
-            dest_x = np.s_[half_width:, :half_width]
+            src_y = np.s_[:half_height, -half_height:]
+            dest_y = np.s_[-half_height:, :half_height]
+            src_x = np.s_[:half_width, -half_width:]
+            dest_x = np.s_[-half_width:, :half_width]
             for sy, dy in zip(src_y, dest_y):
                 for sx, dx in zip(src_x, dest_x):
                     grid.copy_region(
@@ -508,10 +508,10 @@ class ImageToGrid(accel.OperationSequence):
             # Copy one polarization from the grid to the layer, also switching
             # the centre to the corners. The two slices in each of src/dest_x/y
             # are the two halves of the data.
-            src_y = np.s_[:half_height, half_height:]
-            dest_y = np.s_[half_height:, :half_height]
-            src_x = np.s_[:half_width, half_width:]
-            dest_x = np.s_[half_width:, :half_width]
+            src_y = np.s_[:half_height, -half_height:]
+            dest_y = np.s_[-half_height:, :half_height]
+            src_x = np.s_[:half_width, -half_width:]
+            dest_x = np.s_[-half_width:, :half_width]
             for sy, dy in zip(src_y, dest_y):
                 for sx, dx in zip(src_x, dest_x):
                     layer.copy_region(

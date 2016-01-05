@@ -657,15 +657,16 @@ class GridDegrid(accel.Operation):
         # Check that longest baseline won't cause an out-of-bounds access
         max_uv_src = float(array_parameters.longest_baseline / template.image_parameters.cell_size)
         convolve_kernel_size = template.convolve_kernel.padded_data.shape[-1]
-        max_uv = max_uv_src + convolve_kernel_size / 2
-        if max_uv >= template.image_parameters.pixels // 2 - 1 - 1e-3:
+        # I don't think the + 1 is actually needed, but it's a safety factor in
+        # case I've made an off-by-one error in the maths.
+        grid_pixels = 2 * (int(max_uv_src) + convolve_kernel_size // 2 + 1)
+        if grid_pixels > template.image_parameters.pixels:
             raise ValueError('image_oversample is too small to capture all visibilities in the UV plane')
         self.template = template
         self.max_vis = max_vis
         num_polarizations = len(template.image_parameters.polarizations)
-        pixels = template.image_parameters.pixels
         self.slots['grid'] = accel.IOSlot(
-            (num_polarizations, pixels, pixels),
+            (num_polarizations, grid_pixels, grid_pixels),
             template.image_parameters.complex_dtype)
         self.slots['uv'] = accel.IOSlot(
             (max_vis, accel.Dimension(4, exact=True)), np.int16)

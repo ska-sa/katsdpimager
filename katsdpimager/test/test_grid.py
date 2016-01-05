@@ -15,10 +15,12 @@ import mock
 class BaseTest(object):
     def setup(self):
         pixels = 256
+        grid_cover = 180
         w_planes = 32
         oversample = 8
         n_vis = 1000
         kernel_width = 28
+        assert grid_cover + kernel_width < pixels
         self.image_parameters = parameters.ImageParameters(
             q_fov=1.0,
             image_oversample=None,
@@ -47,7 +49,7 @@ class BaseTest(object):
             max_w=5 * units.m,
             kernel_width=kernel_width)
         self.array_parameters = mock.Mock()
-        self.array_parameters.longest_baseline = 5 * units.m
+        self.array_parameters.longest_baseline = self.image_parameters.cell_size * (grid_cover // 2)
         # Create a track in which movement happens in various subsets of the
         # axes, using a random walk
         rs = np.random.RandomState(seed=1)
@@ -57,30 +59,29 @@ class BaseTest(object):
         for i in range(0, n_vis):
             if i % 73 == 0:
                 # Add an occasional total jump
-                self.uv[i, :] = rs.randint(kernel_width, pixels - 2 * kernel_width, (2,))
+                self.uv[i, :] = rs.randint(0, grid_cover, (2,))
                 self.sub_uv[i, :] = rs.randint(0, oversample, (2,))
                 self.w_plane[i] = rs.randint(0, w_planes)
             else:
                 for j in range(2):
                     self.uv[i, j] = \
-                        (self.uv[i - 1, j] + rs.random_integers(-1, 1) - kernel_width) % \
-                        (pixels - 3 * kernel_width) + kernel_width
+                        (self.uv[i - 1, j] + rs.random_integers(-1, 1)) % grid_cover
                     self.sub_uv[i, j] = \
                         (self.sub_uv[i - 1, j] + rs.random_integers(-1, 1)) % oversample
                 self.w_plane[i] = (self.w_plane[i - 1] + rs.random_integers(-1, 1)) % w_planes
-        self.uv -= pixels // 2
+        self.uv -= grid_cover // 2
         self.convolve_kernel = grid.ConvolutionKernel(
             self.image_parameters, self.grid_parameters)
 
     def do_grid(self, callback):
         max_vis = 1280
         n_vis = len(self.w_plane)
-        pixels = self.image_parameters.pixels
         rs = np.random.RandomState(seed=2)
         vis = (rs.uniform(-1, 1, size=(n_vis, 4)) +
                1j * rs.uniform(-1, 1, size=(n_vis, 4))).astype(np.complex128)
         actual = callback(max_vis, vis)
         expected = np.zeros_like(actual)
+        pixels = actual.shape[-1]
         uv_bias = (self.convolve_kernel.data.shape[-1] - 1) // 2 - pixels // 2
         for i in range(n_vis):
             kernel = np.outer(self.convolve_kernel.data[self.w_plane[i], self.sub_uv[i, 1], :],
@@ -162,7 +163,12 @@ class TestDegridder(BaseTest):
             fn = template.instantiate(command_queue, self.array_parameters, max_vis,
                                       allocator=accel.SVMAllocator(context))
             fn.ensure_all_bound()
-            fn.buffer('grid').set(command_queue, grid_data)
+            grid_buffer = fn.buffer('grid')
+            pad1 = (grid_data.shape[1] - grid_buffer.shape[1]) // 2
+            pad2 = (grid_data.shape[2] - grid_buffer.shape[2]) // 2
+            middle1 = np.s_[pad1 : -pad1]
+            middle2 = np.s_[pad2 : -pad2]
+            grid_buffer.set(command_queue, grid_data[..., middle1, middle2])
             fn.degrid(self.uv, self.sub_uv, self.w_plane, vis)
             return vis
         self.do_degrid(callback)
