@@ -351,15 +351,20 @@ class Scale(accel.Operation):
         )
 
 
-class GridToImageTemplate(object):
+class GridImageTemplate(object):
     """Template for a combined operation that converts from a complex grid to a
-    real image, including layer-to-image conversion.  The grid need not be
-    conjugate symmetric: it is put through a complex-to-complex transformation,
-    and the real part of the result is returned. Both the grid and the image
-    have the DC term in the middle.
+    real image or vice versa, including layer-to-image/image-to-layer
+    conversion.  The grid need not be conjugate symmetric: it is put through a
+    complex-to-complex transformation, and the real part of the result is
+    returned. Both the grid and the image have the DC term in the middle.
 
     Because it uses :class:`~katsdpimager.fft.FftTemplate`, most of the
     parameters are baked into the template rather than the instance.
+
+    .. warning::
+        Instances created from the same template cannot be executed
+        simultaneously, due to limitations of CUFFT (work area is part of the
+        plan).
 
     Parameters
     ----------
@@ -378,9 +383,13 @@ class GridToImageTemplate(object):
         self.fft = fft.FftTemplate(command_queue, 2, shape_layer, complex_dtype,
                                    padded_shape_layer, padded_shape_layer)
         self.layer_to_image = LayerToImageTemplate(command_queue.context, real_dtype)
+        self.image_to_layer = ImageToLayerTemplate(command_queue.context, real_dtype)
 
-    def instantiate(self, *args, **kwargs):
+    def instantiate_grid_to_image(self, *args, **kwargs):
         return GridToImage(self, *args, **kwargs)
+
+    def instantiate_image_to_grid(self, *args, **kwargs):
+        return ImageToGrid(self, *args, **kwargs)
 
 
 class GridToImage(accel.OperationSequence):
@@ -388,7 +397,7 @@ class GridToImage(accel.OperationSequence):
 
     Parameters
     ----------
-    template : :class:`GridToImageTemplate`
+    template : :class:`GridImageTemplate`
         Operation template
     shape_grid : tuple of int
         Shape of the grid, as (polarizations, height, width)
@@ -446,29 +455,12 @@ class GridToImage(accel.OperationSequence):
             super(GridToImage, self)._run()
 
 
-class ImageToGridTemplate(object):
-    """Convert from a real image to a complex grid, for a single W layer.
-    Both the grid and the image have the DC term in the middle.
-
-    Because it uses :class:`~katsdpimager.fft.FftTemplate`, most of the
-    parameters are baked into the template rather than the instance.
-    """
-    def __init__(self, command_queue, shape_layer, padded_shape_layer, real_dtype):
-        complex_dtype = katsdpimager.types.real_to_complex(real_dtype)
-        self.fft = fft.FftTemplate(command_queue, 2, shape_layer, complex_dtype,
-                                   padded_shape_layer, padded_shape_layer)
-        self.image_to_layer = ImageToLayerTemplate(command_queue.context, real_dtype)
-
-    def instantiate(self, *args, **kwargs):
-        return ImageToGrid(self, *args, **kwargs)
-
-
 class ImageToGrid(accel.OperationSequence):
     """Instantiation of :class:`ImageToGridTemplate`.
 
     Parameters
     ----------
-    template : :class:`ImageToGridTemplate`
+    template : :class:`GridImageTemplate`
         Operation template
     shape_grid : tuple of int
         Shape of the grid, as (polarizations, height, width)

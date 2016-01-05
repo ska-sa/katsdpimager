@@ -27,9 +27,7 @@ class ImagingTemplate(object):
         padded_layer_shape = layer_shape = image_shape[1:]
         self.gridder = grid.GridderTemplate(context, image_parameters, grid_parameters)
         self.degridder = grid.DegridderTemplate(context, image_parameters, grid_parameters)
-        self.grid_to_image = image.GridToImageTemplate(
-            command_queue, layer_shape, padded_layer_shape, image_parameters.real_dtype)
-        self.image_to_grid = image.ImageToGridTemplate(
+        self.grid_image = image.GridImageTemplate(
             command_queue, layer_shape, padded_layer_shape, image_parameters.real_dtype)
         self.clean = clean.CleanTemplate(
             context, clean_parameters, image_parameters.real_dtype, image_shape[0])
@@ -59,9 +57,9 @@ class Imaging(accel.OperationSequence):
             template.command_queue, template.array_parameters, max_vis, allocator)
         self._degridder = template.degridder.instantiate(
             template.command_queue, template.array_parameters, max_vis, allocator)
-        self._grid_to_image = template.grid_to_image.instantiate(
+        self._grid_to_image = template.grid_image.instantiate_grid_to_image(
             grid_shape, lm_scale, lm_bias, allocator)
-        self._image_to_grid = template.image_to_grid.instantiate(
+        self._image_to_grid = template.grid_image.instantiate_image_to_grid(
             grid_shape, lm_scale, lm_bias, allocator)
         self._clean = template.clean.instantiate(
             template.command_queue, template.image_parameters, allocator)
