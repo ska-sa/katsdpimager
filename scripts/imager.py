@@ -362,6 +362,11 @@ def main():
                     imager.clean_cycle()
             queue.finish()
 
+        # Try to free up memory for the beam convolution
+        del grid_data
+        del psf
+        del imager
+
         if args.write_model is not None:
             with progress.step('Write model'):
                 io.write_fits_image(dataset, model, image_p, args.write_model)
