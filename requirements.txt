@@ -23,6 +23,7 @@ pytest
 python-casacore
 pytools
 scikit-cuda
+scipy
 singledispatch
 six
 git+ssh://git@github.com/ska-sa/katsdpsigproc@imager-support#egg=katsdpsigproc

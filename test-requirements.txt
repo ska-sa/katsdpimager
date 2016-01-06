@@ -3,5 +3,4 @@ funcsigs
 mock
 nose
 pbr
-scipy
 six
