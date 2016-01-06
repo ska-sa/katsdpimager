@@ -102,8 +102,51 @@ def fit_beam(psf, step=1.0, threshold=0.05):
     return Beam(model)
 
 
+def beam_covariance_sqrt(beam):
+    model = beam.model
+    # Rotation matrix for theta
+    c = np.cos(model.theta)
+    s = np.sin(model.theta)
+    Q = np.matrix([[c, -s], [s, c]])
+    # Diagonalisation of square root of covariance matrix
+    D = np.asmatrix(np.diag([model.x_stddev.value, model.y_stddev.value]))
+    return Q * D * Q.T
+
+
 def convolve_beam(model, beam, out=None):
-    """Convolve a model image with a restoring beam.
+    r"""Convolve a model image with a restoring beam.
+
+    This is done by FFT-based convolution, which causes the restoring beam to
+    wrap at the edges of the image. Since the edges are usually suspect anyway,
+    this isn't considered an issue.
+
+    .. rubric:: Implementation details
+
+    The Fourier transform of the restoring beam is computed analytically,
+    rather than applying an FFT to a sampled beam. Once GPU-acceleration is
+    being done, this will save memory since the transform can be multiplied
+    in-place as it is computed.
+
+    Consider a 1D Gaussian of the form :math:`e^{-\frac12 x^2}`: it has a
+    Fourier Transform of :math:`\sqrt{2\pi}e^{-2\pi^2 k^2}` (see Mathworld_).
+    Since a Gaussian is separable, the transform of the 2D Gaussian
+    :math:`Ae^{-\frac12 \lVert x\rVert^2}` is
+    :math:`2\pi A e^{-2\pi^2\lVert k\rVert^2}`. Next, using variable
+    substitution, the transform of
+    :math:`Ae^{-\frac12 \lVert M^{-1}x\rVert^2}` is
+    :math:`2\pi \lvert M\rvert A e^{-2\pi^2\lVert Mk\rVert^2}` for a matrix
+    :math:`M`.
+
+    Astropy represents a 2D Gaussian by the standard deviation along the major
+    and minor axes and the angle of the axes, so we need to reconstruct M,
+    which is the square root of the covariance matrix. For standard deviations
+    :math:`\sigma_1` and :math:`\sigma_2` and :math:`R` being the rotation
+    matrix for the stored angle, the covariance matrix is
+    :math:`R\left(\begin{smallmatrix}\sigma_1^2 & 0\\0 & \sigma_2^2\end{smallmatrix}\right)R^T`
+    and its square root is
+    :math:`M = R\left(\begin{smallmatrix}\sigma_1 & 0\\0 & \sigma_2\end{smallmatrix}\right)R^T`.
+
+    .. _Mathworld: http://mathworld.wolfram.com/FourierTransformGaussian.html
 
     Parameters
     ----------
@@ -115,12 +158,18 @@ def convolve_beam(model, beam, out=None):
     out : array-like, optional
         If specified, it will contain the output. It is safe to pass `model`.
     """
-    # Sample the synthesized beam
-    window = min(model.shape[-1], int(math.ceil(beam.major * 5)))
-    lm = np.arange(-window, window + 1)
-    beam_pixels = beam.model(*np.meshgrid(lm, lm, indexing='ij'))
     if out is None:
         out = np.empty_like(model)
-    for pol in range(model.shape[0]):
-        out[pol, ...] = scipy.signal.fftconvolve(model[pol, ...], beam_pixels, 'same')
+    model_ft = np.fft.fftn(model, axes=[1, 2])
+    M = beam_covariance_sqrt(beam)
+    amplitude = 2 * np.pi * beam.model.amplitude * np.linalg.det(M)
+    u = np.fft.fftfreq(model.shape[1])
+    v = np.fft.fftfreq(model.shape[2])
+    # Coords is shape (model.shape[1], model.shape[2], 2) - pairs of coordinates
+    coords = np.stack(np.meshgrid(u, v, indexing='ij'), axis=-1)
+    # Compute matrix-vector product M * uv, for every uv coordinate
+    rotated_coords = np.inner(coords, M.A)
+    rotated_coords_square = np.sum(rotated_coords**2, axis=-1)
+    beam_ft = amplitude * np.exp(-2.0 * np.pi**2 * rotated_coords_square)
+    out[:] = np.fft.ifftn(model_ft * beam_ft[np.newaxis, ...], axes=[1, 2]).real
     return out
