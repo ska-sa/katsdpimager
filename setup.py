@@ -8,7 +8,7 @@ try:
 except ImportError:
     numpy_include = None
 
-tests_require = ['nose', 'mock']
+tests_require = ['nose', 'mock', 'scipy']
 
 # Different OSes install the Boost.Python library under different names
 bp_library_names = [
@@ -44,7 +44,7 @@ setup(
     ext_modules=extensions,
     setup_requires=['numpy'],
     install_requires=[
-        'numpy', 'scipy', 'katsdpsigproc', 'python-casacore', 'astropy', 'progress',
+        'numpy', 'katsdpsigproc', 'python-casacore', 'astropy', 'progress',
         'pycuda', 'scikit-cuda', 'h5py', 'ansicolors'
     ],
     tests_require=tests_require,

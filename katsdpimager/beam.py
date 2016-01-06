@@ -6,7 +6,6 @@ import math
 import numpy as np
 from astropy.modeling import models, fitting
 from astropy import units
-import scipy.signal
 
 
 class Beam(object):
