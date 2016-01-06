@@ -380,7 +380,7 @@ class GridImageTemplate(object):
 
     def __init__(self, command_queue, shape_layer, padded_shape_layer, real_dtype):
         complex_dtype = katsdpimager.types.real_to_complex(real_dtype)
-        self.fft = fft.FftTemplate(command_queue, 2, shape_layer, complex_dtype,
+        self.fft = fft.FftTemplate(command_queue, 2, shape_layer, complex_dtype, complex_dtype,
                                    padded_shape_layer, padded_shape_layer)
         self.layer_to_image = LayerToImageTemplate(command_queue.context, real_dtype)
         self.image_to_layer = ImageToLayerTemplate(command_queue.context, real_dtype)
@@ -423,7 +423,7 @@ class GridToImage(accel.OperationSequence):
             'kernel1d': ['layer_to_image:kernel1d']
         }
         super(GridToImage, self).__init__(command_queue, operations, compounds, allocator=allocator)
-        self.slots['grid'] = accel.IOSlot(shape_grid, template.fft.dtype)
+        self.slots['grid'] = accel.IOSlot(shape_grid, template.fft.dtype_src)
 
     def set_w(self, w):
         self._layer_to_image.set_w(w)
@@ -486,7 +486,7 @@ class ImageToGrid(accel.OperationSequence):
             'kernel1d': ['image_to_layer:kernel1d']
         }
         super(ImageToGrid, self).__init__(command_queue, operations, compounds, allocator=allocator)
-        self.slots['grid'] = accel.IOSlot(shape_grid, template.fft.dtype)
+        self.slots['grid'] = accel.IOSlot(shape_grid, template.fft.dtype_dest)
 
     def set_w(self, w):
         self._image_to_layer.set_w(w)

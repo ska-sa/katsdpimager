@@ -51,7 +51,7 @@ class TestFft(object):
     def test_forward(self, context, command_queue):
         rs = np.random.RandomState(1)
         template = fft.FftTemplate(
-            command_queue, 2, (3, 2, 16, 48), np.complex64, (4, 5, 24, 64), (4, 5, 20, 48))
+            command_queue, 2, (3, 2, 16, 48), np.complex64, np.complex64, (4, 5, 24, 64), (4, 5, 20, 48))
         fn = template.instantiate(fft.FFT_FORWARD, allocator=accel.SVMAllocator(context))
         fn.ensure_all_bound()
         src = fn.buffer('src')
@@ -63,12 +63,61 @@ class TestFft(object):
         expected = np.fft.fftn(src, axes=(2, 3))
         np.testing.assert_allclose(expected, dest, rtol=1e-4)
 
+    def _test_r2c(self, context, command_queue, N, shape, padded_shape_src, padded_shape_dest):
+        rs = np.random.RandomState(1)
+        template = fft.FftTemplate(
+            command_queue, N, shape, np.float32, np.complex64, padded_shape_src, padded_shape_dest)
+        fn = template.instantiate(fft.FFT_FORWARD, allocator=accel.SVMAllocator(context))
+        fn.ensure_all_bound()
+        src = fn.buffer('src')
+        dest = fn.buffer('dest')
+        src[:] = rs.standard_normal(src.shape)
+        fn()
+        command_queue.finish()
+        expected = np.fft.rfftn(src, axes=(2, 3))
+        np.testing.assert_allclose(expected, dest, rtol=1e-4)
+
+    def _test_c2r(self, context, command_queue, N, shape, padded_shape_src, padded_shape_dest):
+        rs = np.random.RandomState(1)
+        template = fft.FftTemplate(
+            command_queue, N, shape, np.complex64, np.float32, padded_shape_src, padded_shape_dest)
+        fn = template.instantiate(fft.FFT_INVERSE, allocator=accel.SVMAllocator(context))
+        fn.ensure_all_bound()
+        src = fn.buffer('src')
+        dest = fn.buffer('dest')
+        signal = rs.standard_normal(shape) + 3
+        src[:] = np.fft.rfftn(signal, axes=(2, 3))
+        fn()
+        command_queue.finish()
+        expected = signal * shape[2] * shape[3]
+        np.testing.assert_allclose(expected, dest, rtol=1e-4)
+
+    @device_test
+    @cuda_test
+    def test_r2c_even(self, context, command_queue):
+        self._test_r2c(context, command_queue, 2, (3, 2, 16, 48), (4, 5, 24, 64), (4, 5, 20, 27))
+
+    @device_test
+    @cuda_test
+    def test_r2c_odd(self, context, command_queue):
+        self._test_r2c(context, command_queue, 2, (3, 2, 15, 47), (4, 5, 23, 63), (4, 5, 17, 24))
+
+    @device_test
+    @cuda_test
+    def test_c2r_even(self, context, command_queue):
+        self._test_c2r(context, command_queue, 2, (3, 2, 16, 48), (4, 5, 20, 27), (4, 5, 24, 64))
+
+    @device_test
+    @cuda_test
+    def test_c2r_odd(self, context, command_queue):
+        self._test_c2r(context, command_queue, 2, (3, 2, 15, 47), (4, 5, 17, 24), (4, 5, 23, 63))
+
     @device_test
     @cuda_test
     def test_inverse(self, context, command_queue):
         rs = np.random.RandomState(1)
         template = fft.FftTemplate(
-            command_queue, 2, (3, 2, 16, 48), np.complex64, (4, 5, 24, 64), (4, 5, 20, 48))
+            command_queue, 2, (3, 2, 16, 48), np.complex64, np.complex64, (4, 5, 24, 64), (4, 5, 20, 48))
         fn = template.instantiate(fft.FFT_INVERSE, allocator=accel.SVMAllocator(context))
         fn.ensure_all_bound()
         src = fn.buffer('src')

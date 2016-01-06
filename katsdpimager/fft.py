@@ -143,15 +143,24 @@ class Fftshift(accel.Operation):
 
 
 class FftTemplate(object):
-    """Operation template for a forward or reverse FFT, complex to complex.
-    The transformation is done over the last N dimensions, with the remaining
-    dimensions for batching multiple arrays to be transformed. Dimensions
-    before the first N must have consistent padding between the source and
-    destination, and it is recommended to have no padding at all since the
-    padding arrays are also transformed.
+    r"""Operation template for a forward or reverse FFT. The transformation is
+    done over the last N dimensions, with the remaining dimensions for batching
+    multiple arrays to be transformed. Dimensions before the first N must have
+    consistent padding between the source and destination, and it is
+    recommended to have no padding at all since the padding arrays are also
+    transformed.
 
     This template bakes in more information than most (command queue and data
     shapes), which is due to constraints in CUFFT.
+
+    The template can specify real->complex, complex->real, or
+    complex->complex. In the last case, the same template can be used to
+    instantiate forward or inverse transforms. Otherwise, real->complex
+    transforms must be forward, and complex->real transforms must be inverse.
+
+    For real<->complex transforms, the final dimension of the padded shape
+    need only be :math:`\lfloor\frac{L}{2}\rfloor + 1`, where :math:`L` is the
+    last element of `shape`.
 
     Parameters
     ----------
@@ -161,8 +170,10 @@ class FftTemplate(object):
         Number of dimensions for the transform
     shape : tuple
         Shape of the input (N or more dimensions)
-    dtype : {`np.complex64`, `np.complex128`}
-        Data type, for both input and output
+    dtype_src : {`np.float32, `np.float64`, `np.complex64`, `np.complex128`}
+        Data type for input
+    dtype_dest : {`np.float32, `np.float64`, `np.complex64`, `np.complex128`}
+        Data type for output
     padded_shape_src : tuple
         Padded shape of the input
     padded_shape_dest : tuple
@@ -170,13 +181,14 @@ class FftTemplate(object):
     tuning : dict, optional
         Tuning parameters (currently unused)
     """
-    def __init__(self, command_queue, N, shape, dtype,
+    def __init__(self, command_queue, N, shape, dtype_src, dtype_dest,
                  padded_shape_src, padded_shape_dest, tuning=None):
         if padded_shape_src[:-N] != padded_shape_dest[:-N]:
             raise ValueError('Source and destination padding does not match on batch dimensions')
         self.command_queue = command_queue
         self.shape = shape
-        self.dtype = dtype
+        self.dtype_src = np.dtype(dtype_src)
+        self.dtype_dest = np.dtype(dtype_dest)
         self.padded_shape_src = padded_shape_src
         self.padded_shape_dest = padded_shape_dest
         # CUDA 7.0 CUFFT has a bug where kernels are run in the default stream
@@ -187,7 +199,7 @@ class FftTemplate(object):
         batches = int(np.product(padded_shape_src[:-N]))
         with command_queue.context:
             self.plan = skcuda.fft.Plan(
-                shape[-N:], dtype, dtype, batches,
+                shape[-N:], dtype_src, dtype_dest, batches,
                 stream=command_queue._pycuda_stream,
                 inembed=np.array(padded_shape_src[-N:], np.int32),
                 istride=1,
@@ -222,12 +234,22 @@ class Fft(accel.Operation):
     def __init__(self, template, mode, allocator=None):
         super(Fft, self).__init__(template.command_queue, allocator)
         self.template = template
+        src_shape = list(template.shape)
+        dest_shape = list(template.shape)
+        if template.dtype_src.kind != 'c':
+            if mode != FFT_FORWARD:
+                raise ValueError('R2C transform must use FFT_FORWARD')
+            dest_shape[-1] = template.shape[-1] // 2 + 1
+        if template.dtype_dest.kind != 'c':
+            if mode != FFT_INVERSE:
+                raise ValueError('C2R transform must use FFT_INVERSE')
+            src_shape[-1] = template.shape[-1] // 2 + 1
         src_dims = [accel.Dimension(d[0], min_padded_size=d[1], exact=True)
-                    for d in zip(template.shape, template.padded_shape_src)]
+                    for d in zip(src_shape, template.padded_shape_src)]
         dest_dims = [accel.Dimension(d[0], min_padded_size=d[1], exact=True)
-                     for d in zip(template.shape, template.padded_shape_dest)]
-        self.slots['src'] = accel.IOSlot(src_dims, template.dtype)
-        self.slots['dest'] = accel.IOSlot(dest_dims, template.dtype)
+                     for d in zip(dest_shape, template.padded_shape_dest)]
+        self.slots['src'] = accel.IOSlot(src_dims, template.dtype_src)
+        self.slots['dest'] = accel.IOSlot(dest_dims, template.dtype_dest)
         self.mode = mode
 
     def _run(self):

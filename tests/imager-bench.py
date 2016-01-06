@@ -197,7 +197,7 @@ def benchmark_fft(args):
     queue = context.create_tuning_command_queue()
     allocator = accel.SVMAllocator(context)
     shape = (args.pixels, args.pixels)
-    template = fft.FftTemplate(queue, 2, shape, np.complex64, shape, shape)
+    template = fft.FftTemplate(queue, 2, shape, np.complex64, np.complex64, shape, shape)
     fn = template.instantiate(args.mode, allocator=allocator)
     fn.ensure_all_bound()
     # Zero-fill, just to ensure no NaNs etc
