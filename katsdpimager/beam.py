@@ -1,11 +1,48 @@
-"""Fitting of the synthesised beam, and convolution of this beam with the
-model."""
+r"""Fitting of the synthesised beam, and convolution of this beam with the
+model.
+
+Convolution implementation details
+----------------------------------
+This is done by FFT-based convolution, which causes the restoring beam to
+wrap at the edges of the image. Since the edges are usually suspect anyway,
+this isn't considered an issue.
+
+The Fourier transform of the restoring beam is computed analytically,
+rather than applying an FFT to a sampled beam. Once GPU-acceleration is
+being done, this will save memory since the transform can be multiplied
+in-place as it is computed.
+
+Consider a 1D Gaussian of the form :math:`e^{-\frac12 x^2}`: it has a
+Fourier Transform of :math:`\sqrt{2\pi}e^{-2\pi^2 k^2}` (see Mathworld_).
+Since a Gaussian is separable, the transform of the 2D Gaussian
+:math:`Ae^{-\frac12 \lVert x\rVert^2}` is
+:math:`2\pi A e^{-2\pi^2\lVert k\rVert^2}`. Next, using variable
+substitution, the transform of
+:math:`Ae^{-\frac12 \lVert M^{-1}x\rVert^2}` is
+:math:`2\pi \lvert M\rvert A e^{-2\pi^2\lVert Mk\rVert^2}` for a matrix
+:math:`M`.
+
+Astropy represents a 2D Gaussian by the standard deviation along the major
+and minor axes and the angle of the axes, so we need to reconstruct M,
+which is the square root of the covariance matrix. For standard deviations
+:math:`\sigma_1` and :math:`\sigma_2` and :math:`R` being the rotation
+matrix for the stored angle, the covariance matrix is
+:math:`R\left(\begin{smallmatrix}\sigma_1^2 & 0\\0 & \sigma_2^2\end{smallmatrix}\right)R^T`
+and its square root is
+:math:`M = R\left(\begin{smallmatrix}\sigma_1 & 0\\0 & \sigma_2\end{smallmatrix}\right)R^T`.
+
+.. _Mathworld: http://mathworld.wolfram.com/FourierTransformGaussian.html
+"""
 
 from __future__ import print_function, division
 import math
 import numpy as np
+import pkg_resources
 from astropy.modeling import models, fitting
 from astropy import units
+from katsdpsigproc import accel
+from katsdpimager import fft
+import katsdpimager.types
 
 
 class Beam(object):
@@ -113,39 +150,7 @@ def beam_covariance_sqrt(beam):
 
 
 def convolve_beam(model, beam, out=None):
-    r"""Convolve a model image with a restoring beam.
-
-    This is done by FFT-based convolution, which causes the restoring beam to
-    wrap at the edges of the image. Since the edges are usually suspect anyway,
-    this isn't considered an issue.
-
-    .. rubric:: Implementation details
-
-    The Fourier transform of the restoring beam is computed analytically,
-    rather than applying an FFT to a sampled beam. Once GPU-acceleration is
-    being done, this will save memory since the transform can be multiplied
-    in-place as it is computed.
-
-    Consider a 1D Gaussian of the form :math:`e^{-\frac12 x^2}`: it has a
-    Fourier Transform of :math:`\sqrt{2\pi}e^{-2\pi^2 k^2}` (see Mathworld_).
-    Since a Gaussian is separable, the transform of the 2D Gaussian
-    :math:`Ae^{-\frac12 \lVert x\rVert^2}` is
-    :math:`2\pi A e^{-2\pi^2\lVert k\rVert^2}`. Next, using variable
-    substitution, the transform of
-    :math:`Ae^{-\frac12 \lVert M^{-1}x\rVert^2}` is
-    :math:`2\pi \lvert M\rvert A e^{-2\pi^2\lVert Mk\rVert^2}` for a matrix
-    :math:`M`.
-
-    Astropy represents a 2D Gaussian by the standard deviation along the major
-    and minor axes and the angle of the axes, so we need to reconstruct M,
-    which is the square root of the covariance matrix. For standard deviations
-    :math:`\sigma_1` and :math:`\sigma_2` and :math:`R` being the rotation
-    matrix for the stored angle, the covariance matrix is
-    :math:`R\left(\begin{smallmatrix}\sigma_1^2 & 0\\0 & \sigma_2^2\end{smallmatrix}\right)R^T`
-    and its square root is
-    :math:`M = R\left(\begin{smallmatrix}\sigma_1 & 0\\0 & \sigma_2\end{smallmatrix}\right)R^T`.
-
-    .. _Mathworld: http://mathworld.wolfram.com/FourierTransformGaussian.html
+    """Convolve a model image with a restoring beam.
 
     Parameters
     ----------
@@ -172,3 +177,120 @@ def convolve_beam(model, beam, out=None):
     beam_ft = amplitude * np.exp(-2.0 * np.pi**2 * rotated_coords_square)
     out[:] = np.fft.ifftn(model_ft * beam_ft[np.newaxis, ...], axes=[1, 2]).real
     return out
+
+
+class FourierBeamTemplate(object):
+    """Multiply the Fourier transform of an image by the Fourier transform of a
+    Gaussian beam model. The beam parameters must be in units of image pixels.
+    """
+    def __init__(self, context, dtype, tuning=None):
+        # TODO: autotune
+        self.wgs_x = 16
+        self.wgs_y = 16
+        self.dtype = np.dtype(dtype)
+        parameters = {
+            'wgs_x': self.wgs_x,
+            'wgs_y': self.wgs_y,
+            'real_type': katsdpimager.types.dtype_to_ctype(self.dtype)
+        }
+        self.program = accel.build(
+            context, "imager_kernels/fourier_beam.mako", parameters,
+            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+
+    def instantiate(self, *args, **kwargs):
+        return FourierBeam(self, *args, **kwargs)
+
+
+class FourierBeam(accel.Operation):
+    def __init__(self, template, command_queue, image_shape, allocator=None):
+        if len(image_shape) != 2:
+            raise ValueError('image_shape must be 2D')
+        super(FourierBeam, self).__init__(command_queue, allocator=allocator)
+        self.template = template
+        self.image_shape = image_shape
+        output_shape = (image_shape[0], image_shape[1] // 2 + 1)
+        complex_type = katsdpimager.types.real_to_complex(template.dtype)
+        self.slots['data'] = accel.IOSlot(output_shape, complex_type)
+        self.beam = None
+        self._kernel = template.program.get_kernel('fourier_beam')
+
+    def _run(self):
+        if self.beam is None:
+            raise ValueError('Must set beam')
+        M = beam_covariance_sqrt(self.beam)
+        amplitude = 2 * np.pi * self.beam.model.amplitude * np.linalg.det(M)
+        # CUFFT, unlikely numpy.fft, does not normalize the inverse transform.
+        # We fold the normalization into the amplitude
+        amplitude /= self.image_shape[0] * self.image_shape[1]
+        # The kernel has integral coordinates, which we need to convert to
+        # the range [-1, 1). We fold this into the matrix.
+        M *= np.asmatrix(np.diag([1.0 / self.image_shape[0],
+                                  1.0 / self.image_shape[1]]))
+        # Compute overall matrix for the exponent
+        C = -2 * np.pi**2 * M.T * M
+        real = self.template.dtype.type
+        data = self.buffer('data')
+        self.command_queue.enqueue_kernel(
+            self._kernel,
+            [
+                data.buffer,
+                np.int32(data.padded_shape[1]),
+                real(amplitude),
+                real(C[0, 0]),
+                real(2 * C[0, 1]),
+                real(C[1, 1]),
+                np.int32(data.shape[1]),
+                np.int32(data.shape[0])
+            ],
+            global_size=(accel.roundup(data.shape[1], self.template.wgs_x),
+                         accel.roundup(data.shape[0], self.template.wgs_y)),
+            local_size=(self.template.wgs_x, self.template.wgs_y)
+        )
+
+
+class ConvolveBeamTemplate(object):
+    def __init__(self, command_queue, shape, dtype, padded_shape_image=None, padded_shape_fourier=None, tuning=None):
+        if padded_shape_image is None:
+            padded_shape_image = tuple(shape)
+        if padded_shape_fourier is None:
+            padded_shape_fourier = tuple(shape[:-1]) + (shape[-1] // 2 + 1,)
+        if len(shape) != 2 or len(padded_shape_image) != 2 or len(padded_shape_fourier) != 2:
+            raise ValueError('wrong number of dimensions')
+        self.dtype = np.dtype(dtype)
+        self.shape = shape
+        complex_dtype = katsdpimager.types.real_to_complex(self.dtype)
+        self.fft = fft.FftTemplate(command_queue, 2, shape, dtype, complex_dtype,
+                padded_shape_image, padded_shape_fourier)
+        self.ifft = fft.FftTemplate(command_queue, 2, shape, complex_dtype, dtype,
+                padded_shape_fourier, padded_shape_image)
+        self.fourier_beam = FourierBeamTemplate(command_queue.context, dtype, tuning)
+
+    def instantiate(self, *args, **kwargs):
+        return ConvolveBeam(self, *args, **kwargs)
+
+
+class ConvolveBeam(accel.OperationSequence):
+    def __init__(self, template, allocator=None):
+        self._fft = template.fft.instantiate(fft.FFT_FORWARD, allocator=allocator)
+        self._ifft = template.ifft.instantiate(fft.FFT_INVERSE, allocator=allocator)
+        self._fourier_beam = template.fourier_beam.instantiate(
+                template.fft.command_queue, template.shape, allocator=allocator)
+        operations = [
+            ('fft', self._fft),
+            ('fourier_beam', self._fourier_beam),
+            ('ifft', self._ifft)
+        ]
+        compounds = {
+            'image': ['fft:src', 'ifft:dest'],
+            'fourier': ['fft:dest', 'ifft:src', 'fourier_beam:data']
+        }
+        super(ConvolveBeam, self).__init__(
+                template.fft.command_queue, operations, compounds, allocator=allocator)
+
+    @property
+    def beam(self):
+        return self._fourier_beam.beam
+
+    @beam.setter
+    def beam(self, value):
+        self._fourier_beam.beam = value
