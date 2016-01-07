@@ -41,8 +41,8 @@ class _GpudataWrapper(object):
         self._wrapped = wrapped
         try:
             # Handle DeviceArray case
-            self.gpudata = wrapper.buffer.gpudata
-        except:
+            self.gpudata = wrapped.buffer.gpudata
+        except AttributeError:
             # SVMArray case
             self.gpudata = _Gpudata(wrapped)
 
