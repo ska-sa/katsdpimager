@@ -362,19 +362,33 @@ def main():
                     imager.clean_cycle()
             queue.finish()
 
-        # Try to free up memory for the beam convolution
-        del grid_data
-        del psf
-        del imager
-
         if args.write_model is not None:
             with progress.step('Write model'):
                 io.write_fits_image(dataset, model, image_p, args.write_model)
         if args.write_residuals is not None:
             with progress.step('Write residuals'):
                 io.write_fits_image(dataset, dirty, image_p, args.write_residuals, restoring_beam)
+
+        # Try to free up memory for the beam convolution
+        del grid_data
+        del psf
+        del imager
+
         # Convolve with restoring beam, and add residuals back in
-        beam.convolve_beam(model, restoring_beam, model)
+        if args.host:
+            beam.convolve_beam(model, restoring_beam, model)
+        else:
+            restore = beam.ConvolveBeamTemplate(queue, model.shape[1:], model.dtype).instantiate()
+            restore.beam = restoring_beam
+            restore.ensure_all_bound()
+            restore_image = restore.buffer('image')
+            for pol in range(model.shape[0]):
+                # TODO: eliminate these copies, and work directly on model
+                model.copy_region(queue, restore_image, np.s_[pol], ())
+                restore()
+                restore_image.copy_region(queue, model, (), np.s_[pol])
+            queue.finish()
+
         model += dirty
         with progress.step('Write clean image'):
             io.write_fits_image(dataset, model, image_p, args.output_file, restoring_beam)
