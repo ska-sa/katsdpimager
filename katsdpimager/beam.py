@@ -182,6 +182,15 @@ def convolve_beam(model, beam, out=None):
 class FourierBeamTemplate(object):
     """Multiply the Fourier transform of an image by the Fourier transform of a
     Gaussian beam model. The beam parameters must be in units of image pixels.
+
+    Parameters
+    ----------
+    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+        Context for which kernels will be compiled
+    dtype : {`numpy.float32`, `numpy.float64`}
+        Real data type
+    tuning : dict, optional
+        Tuning parameters (currently unused)
     """
     def __init__(self, context, dtype, tuning=None):
         # TODO: autotune
@@ -202,6 +211,31 @@ class FourierBeamTemplate(object):
 
 
 class FourierBeam(accel.Operation):
+    """Instantiation of :class:`FourierBeamTemplate`.
+
+    .. rubric:: Slots
+
+    **data** : array of shape (height, width // 2 + 1), complex
+        Fourier transform (real-to-complex) of the model image. On output, the
+        Fourier transform of the restored image.
+
+    Attributes
+    ----------
+    beam : :class:`Beam`
+        Restoring beam. It must be set before invoking the operation.
+
+    Parameters
+    ----------
+    template : :class:`FourierBeamTemplate`
+        Operation template
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+        Command queue for the operation
+    image_shape : tuple
+        (height, width) of the image. Note that the buffer on which this operation works
+        will have shape (height, width // 2 + 1).
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
+    """
     def __init__(self, template, command_queue, image_shape, allocator=None):
         if len(image_shape) != 2:
             raise ValueError('image_shape must be 2D')
@@ -249,6 +283,31 @@ class FourierBeam(accel.Operation):
 
 
 class ConvolveBeamTemplate(object):
+    """Template for device convolution of a model image with a Gaussian
+    restoring beam, for a single polarization. Due to limitations in CUFFT,
+    many parameters are folded into the template.
+
+    Due to limitations in katsdpsigproc, convolving a multi-polarization image
+    currently requires each polarization to be copied into a
+    single-polarization image first.
+
+    Parameters
+    ----------
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+        Command queue for the operation
+    shape : tuple
+        (height, width) of the image
+    dtype : {`numpy.float32`, `numpy.float64`}
+        Type of the image data
+    padded_shape_image : tuple, optional
+        Padded shape for the image. Defaults to no padding.
+    padded_shape_fourier : tuple, optional
+        Padded shape for the Fourier transform of the image. Defaults to no
+        padding. Note that because the image is real, the Fourier transform has
+        shape (height, width // 2 + 1).
+    tuning : dict, optional
+        Tuning parameters (currently unused)
+    """
     def __init__(self, command_queue, shape, dtype, padded_shape_image=None, padded_shape_fourier=None, tuning=None):
         if padded_shape_image is None:
             padded_shape_image = tuple(shape)
@@ -270,6 +329,21 @@ class ConvolveBeamTemplate(object):
 
 
 class ConvolveBeam(accel.OperationSequence):
+    """Instantiation of :class:`ConvolveBeamTemplate`.
+
+    .. rubric:: Slots
+
+    **image** : array of shape (height, width), real
+        Image to be convolved, as well as the output.
+    **fourier** : array of shape (height, width // 2 + 1), real
+        Fourier transform of the image. It should be treated as an opaque
+        scratch buffer.
+
+    Attributes
+    ----------
+    beam : :class:`Beam`
+        Restoring beam. It must be set before invoking the operation.
+    """
     def __init__(self, template, allocator=None):
         self._fft = template.fft.instantiate(fft.FFT_FORWARD, allocator=allocator)
         self._ifft = template.ifft.instantiate(fft.FFT_INVERSE, allocator=allocator)
