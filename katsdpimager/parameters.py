@@ -15,10 +15,10 @@ import clean
 
 def is_smooth(x):
     """Whether x is a good candidate for FFT. We heuristically require
-    it to be a multiple of 64 and a product of powers of 2, 3 and 5."""
-    if x % 64 != 0:
+    it to be a multiple of 8 and a product of powers of 2, 3, 5 and 7."""
+    if x % 8 != 0:
         return False
-    for d in [2, 3, 5]:
+    for d in [2, 3, 5, 7]:
         while x % d == 0:
             x = x // d
     return x == 1

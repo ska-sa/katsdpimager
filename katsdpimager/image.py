@@ -325,10 +325,7 @@ class Scale(accel.Operation):
             raise ValueError('Wrong number of dimensions in shape')
         if shape[0] != template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
-        self.slots['data'] = accel.IOSlot(
-            (accel.Dimension(shape[0]),
-             accel.Dimension(shape[1], template.wgsy),
-             accel.Dimension(shape[2], template.wgsx)), template.dtype)
+        self.slots['data'] = accel.IOSlot(shape, template.dtype)
         self.kernel = template.program.get_kernel('scale')
         self.scale_factor = np.zeros((shape[0],), template.dtype)
 
@@ -343,6 +340,8 @@ class Scale(accel.Operation):
                 data.buffer,
                 np.int32(data.padded_shape[2]),
                 np.int32(data.padded_shape[1] * data.padded_shape[2]),
+                np.int32(data.shape[2]),
+                np.int32(data.shape[1]),
                 self.scale_factor
             ],
             global_size=(accel.roundup(data.shape[2], self.template.wgsx),

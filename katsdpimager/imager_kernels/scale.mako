@@ -15,10 +15,13 @@ void scale(
     GLOBAL T * RESTRICT image,
     int row_stride,
     int pol_stride,
+    int width, int height,
     scale_t scale_factor)
 {
     int x = get_global_id(0);
     int y = get_global_id(1);
+    if (x >= width || y >= height)
+        return;
     int addr = y * row_stride + x;
     for (int pol = 0; pol < NPOLS; pol++)
     {
