@@ -4,11 +4,48 @@
 ## These operations have relaxed memory consistency, i.e. are not ordered with
 ## respect to any other operations.
 
-#ifdef __OPENCL_VERSION__
-# error "Atomic operations on OpenCL are not supported yet"
-#else
+## For cases where floating-point atomics are not available, simulates them
+## using integer atomic compare-and-swap.
+<%def name="float_wrapper(float_t, int_t, cas, float_as_int, int_as_float, volatile)">
+DEVICE_FN void atomic_accum_${float_t}_add(GLOBAL atomic_accum_${float_t} *object, ${float_t} operand)
+{
+    GLOBAL ${volatile} ${int_t} *ptr = (GLOBAL ${volatile} ${int_t} *) &object->value;
+    ${int_t} old = *ptr;
+    ${int_t} expected, updated;
 
-% for T in ['int', 'uint', 'long', 'ulong', 'float', 'double']:
+    do {
+        expected = old;
+        updated = ${float_as_int}(operand + ${int_as_float}(old));
+        old = ${cas}(ptr, old, updated);
+    } while (old != expected);
+}
+</%def>
+
+#ifdef __OPENCL_VERSION__
+
+#pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable
+
+% for T in ['int', 'uint', 'float', 'double']:
+typedef struct
+{
+    volatile ${T} value;
+} atomic_accum_${T};
+%endfor
+
+% for T in ['int', 'uint']:
+DEVICE_FN void atomic_accum_${T}_add(GLOBAL atomic_accum_${T} *object, ${T} operand)
+{
+    atomic_add(&object->value, operand);
+}
+% endfor
+
+// OpenCL doesn't support non-integer atomics directly
+${float_wrapper('float', 'unsigned int', 'atomic_cmpxchg', 'as_uint', 'as_float', 'volatile')}
+${float_wrapper('double', 'unsigned long', 'atomic_cmpxchg', 'as_ulong', 'as_double', 'volatile')}
+
+#else  // !__OPENCL_VERSION__
+
+% for T in ['int', 'uint', 'float', 'double']:
 struct atomic_accum_${T}
 {
     ${T} value;
@@ -16,25 +53,14 @@ struct atomic_accum_${T}
 % endfor
 
 % for T in ['int', 'uint', 'float']:
-DEVICE_FN void atomic_accum_${T}_add(atomic_accum_${T} *object, ${T} operand)
+DEVICE_FN void atomic_accum_${T}_add(GLOBAL atomic_accum_${T} *object, ${T} operand)
 {
     atomicAdd(&object->value, operand);
 }
 % endfor
 
 // CUDA doesn't support double precision atomics directly
-DEVICE_FN void atomic_accum_double_add(atomic_accum_double *object, double operand)
-{
-    unsigned long long int *ptr = (unsigned long long int *) &object->value;
-    unsigned long long int old = *ptr;
-    unsigned long long int expected, updated;
-
-    do {
-        expected = old;
-        updated = __double_as_longlong(operand + __longlong_as_double(old));
-        old = atomicCAS(ptr, old, updated);
-    } while (old != expected);
-}
+${float_wrapper('double', 'unsigned long long', 'atomicCAS', '__double_as_longlong', '__longlong_as_double', '')}
 
 #endif // !__OPENCL_VERSION__
 
@@ -47,7 +73,7 @@ typedef struct
     atomic_accum_${T} v[${V}];
 } atomic_accum_${T}${V};
 
-DEVICE_FN void atomic_accum_${T}${V}_add(atomic_accum_${T}${V} *object, ${T}${V} operand)
+DEVICE_FN void atomic_accum_${T}${V}_add(GLOBAL atomic_accum_${T}${V} *object, ${T}${V} operand)
 {
 % for i in range(V):
     atomic_accum_${T}_add(&object->v[${i}], operand.${'xyzw'[i]});
