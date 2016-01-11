@@ -9,6 +9,8 @@ import ephem
 import pkg_resources
 import numpy as np
 import timeit
+import json
+from collections import OrderedDict
 from astropy import units
 from katsdpimager import grid, preprocess, parameters, polarization, types, fft
 from katsdpsigproc import accel, fill
@@ -156,7 +158,7 @@ def benchmark_grid_degrid(args):
     context = accel.create_some_context()
     queue = context.create_tuning_command_queue()
     allocator = accel.SVMAllocator(context)
-    gridder_template = args.template_class(context, args.image_parameters, args.grid_parameters)
+    gridder_template = args.template_class(context, args.image_parameters, args.grid_parameters, tuning=args.tuning)
     gridder = gridder_template.instantiate(queue, args.array_parameters, N, allocator=allocator)
     gridder.ensure_all_bound()
     clear_template = fill.FillTemplate(context,
@@ -213,29 +215,40 @@ def benchmark_fft(args):
     print('{:.3f} GiB/s'.format(mem_rate / 1024**3))
 
 
+def add_arguments(subparser, arguments):
+    arg_map = OrderedDict([
+        ('--polarizations', lambda: subparser.add_argument('--polarizations', type=int, default=4, choices=[1, 2, 3, 4], help='Number of polarizations')),
+        ('--frequency', lambda: subparser.add_argument('--frequency', type=float, default=1412000000.0, help='Observation frequency (Hz)')),
+        ('--int-time', lambda: subparser.add_argument('--int-time', type=float, default=2.0, help='Integration time (seconds)')),
+        ('--pixels', lambda: subparser.add_argument('--pixels', type=int, default=4608, help='Grid/image dimensions')),
+        ('--tuning', lambda: subparser.add_argument('--tuning', type=json.loads, help='Tuning arguments (JSON)'))
+    ])
+    for arg_name in arguments:
+        arg_map[arg_name]()
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--polarizations', type=int, default=4, choices=[1, 2, 3, 4], help='Number of polarizations')
-    parser.add_argument('--frequency', type=float, default=1412000000.0, help='Observation frequency (Hz)')
-    parser.add_argument('--int-time', type=float, default=2.0, help='Integration time (seconds)')
-
     subparsers = parser.add_subparsers(help='sub-commands')
 
     parser_preprocess = subparsers.add_parser('preprocess', help='preprocessing benchmark')
     parser_preprocess.set_defaults(func=benchmark_preprocess)
+    add_arguments(parser_preprocess, ['--polarizations', '--frequency', '--int-time'])
 
     parser_grid = subparsers.add_parser('grid', help='gridding benchmark')
     parser_grid.set_defaults(func=benchmark_grid_degrid, template_class=grid.GridderTemplate)
+    add_arguments(parser_grid, ['--polarizations', '--frequency', '--int-time', '--tuning'])
 
     parser_degrid = subparsers.add_parser('degrid', help='degridding benchmark')
     parser_degrid.set_defaults(func=benchmark_grid_degrid, template_class=grid.DegridderTemplate)
+    add_arguments(parser_degrid, ['--polarizations', '--frequency', '--int-time', '--tuning'])
 
     parser_ifft = subparsers.add_parser('ifft', help='grid-to-image FFT benchmark')
-    parser_ifft.add_argument('--pixels', type=int, default=4608, help='Grid/image dimensions')
+    add_arguments(parser_ifft, ['--pixels'])
     parser_ifft.set_defaults(func=benchmark_fft, mode=fft.FFT_INVERSE)
 
     parser_fft = subparsers.add_parser('fft', help='image-to-grid FFT benchmark')
-    parser_fft.add_argument('--pixels', type=int, default=4608, help='Grid/image dimensions')
+    add_arguments(parser_fft, ['--pixels'])
     parser_fft.set_defaults(func=benchmark_fft, mode=fft.FFT_FORWARD)
 
     args = parser.parse_args()
