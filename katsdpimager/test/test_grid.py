@@ -7,7 +7,7 @@ import katsdpimager.polarization as polarization
 import katsdpimager.grid as grid
 import astropy.units as units
 import katsdpsigproc.accel as accel
-from katsdpsigproc.test.test_accel import device_test, cuda_test, force_autotune
+from katsdpsigproc.test.test_accel import device_test, force_autotune
 from nose.tools import *
 import mock
 
@@ -118,7 +118,6 @@ class BaseTest(object):
 class TestGridder(BaseTest):
     """Tests for :class:`grid.Gridder`"""
     @device_test
-    @cuda_test
     def test(self, context, command_queue):
         def callback(max_vis, vis):
             template = grid.GridderTemplate(context, self.image_parameters, self.grid_parameters)
@@ -133,7 +132,6 @@ class TestGridder(BaseTest):
         self.do_grid(callback)
 
     @device_test
-    @cuda_test
     @force_autotune
     def test_autotune(self, context, queue):
         """Check that the autotuner runs successfully"""
@@ -154,7 +152,6 @@ class TestGridderHost(BaseTest):
 class TestDegridder(BaseTest):
     """Tests for :class:`grid.Degridder`"""
     @device_test
-    @cuda_test
     def test(self, context, command_queue):
         def callback(max_vis, grid_data):
             n_vis = len(self.w_plane)
@@ -174,7 +171,6 @@ class TestDegridder(BaseTest):
         self.do_degrid(callback)
 
     @device_test
-    @cuda_test
     @force_autotune
     def test_autotune(self, context, queue):
         """Check that the autotuner runs successfully"""

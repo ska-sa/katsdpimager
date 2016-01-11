@@ -157,32 +157,31 @@ def benchmark_grid_degrid(args):
 
     context = accel.create_some_context()
     queue = context.create_tuning_command_queue()
-    allocator = accel.SVMAllocator(context)
     gridder_template = args.template_class(context, args.image_parameters, args.grid_parameters, tuning=args.tuning)
-    gridder = gridder_template.instantiate(queue, args.array_parameters, N, allocator=allocator)
+    gridder = gridder_template.instantiate(queue, args.array_parameters, N)
     gridder.ensure_all_bound()
-    clear_template = fill.FillTemplate(context,
-        args.image_parameters.complex_dtype,
-        types.dtype_to_ctype(args.image_parameters.complex_dtype))
-    clear = clear_template.instantiate(queue, gridder.buffer('grid').shape, allocator=allocator)
-    clear.bind(data=gridder.buffer('grid'))
     elapsed = 0.0
     N_compressed = 0
+    uv = gridder.buffer('uv').empty_like()
+    w_plane = gridder.buffer('w_plane').empty_like()
+    vis = gridder.buffer('vis').empty_like()
     for w_slice in range(reader.num_w_slices):
         gridder.num_vis = reader.len(0, w_slice)
         N_compressed += gridder.num_vis
         if gridder.num_vis > 0:
-            clear()
-            queue.finish()
+            gridder.buffer('grid').zero(queue)
             start = 0
             for chunk in reader.iter_slice(0, w_slice):
                 rng = slice(start, start + len(chunk))
-                gridder.buffer('uv')[rng, 0:2] = chunk['uv']
-                gridder.buffer('uv')[rng, 2:4] = chunk['sub_uv']
-                gridder.buffer('w_plane')[rng] = chunk['w_plane']
-                gridder.buffer('vis')[rng] = chunk['vis']
+                uv[rng, 0:2] = chunk['uv']
+                uv[rng, 2:4] = chunk['sub_uv']
+                w_plane[rng] = chunk['w_plane']
+                vis[rng] = chunk['vis']
                 start += len(chunk)
-            gridder()  # Forces data transfer
+            gridder.buffer('uv').set_async(queue, uv)
+            gridder.buffer('w_plane').set_async(queue, w_plane)
+            gridder.buffer('vis').set_async(queue, vis)
+            queue.finish()
             queue.start_tuning()
             gridder()
             elapsed += queue.stop_tuning()

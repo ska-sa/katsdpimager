@@ -399,17 +399,25 @@ class ConvolutionKernel(object):
 
 
 class ConvolutionKernelDevice(ConvolutionKernel):
-    """A :class:`ConvolutionKernel` that stores data in a device SVM array."""
-    def __init__(self, context, image_parameters, grid_parameters, pad=0):
-        out = accel.SVMArray(
-            context,
+    """A :class:`ConvolutionKernel` that stores data in a device array."""
+    def __init__(self, context, image_parameters, grid_parameters, pad=0, allocator=None):
+        if allocator is None:
+            allocator = accel.DeviceAllocator(context)
+        out = allocator.allocate(
             (grid_parameters.w_planes,
              grid_parameters.oversample,
              grid_parameters.kernel_width + 2 * pad),
             np.complex64)
-        out.fill(0)
+        if isinstance(out, accel.SVMArray):
+            host = out
+        else:
+            host = out.empty_like()
+        host.fill(0)
         super(ConvolutionKernelDevice, self).__init__(
-            image_parameters, grid_parameters, out[:, :, pad:grid_parameters.kernel_width + pad])
+            image_parameters, grid_parameters, host[:, :, pad:grid_parameters.kernel_width + pad])
+        if not isinstance(out, accel.SVMArray):
+            queue = context.create_command_queue()
+            out.set(queue, host)
         self.padded_data = out
         self.pad = pad
 
