@@ -10,7 +10,6 @@ import pkg_resources
 import numpy as np
 import timeit
 import json
-from collections import OrderedDict
 from astropy import units
 from katsdpimager import grid, preprocess, parameters, polarization, types, fft
 from katsdpsigproc import accel, fill
@@ -29,7 +28,10 @@ def add_parameters(args):
     """Augment args with extra fields for parameter objects"""
     grid_oversample = 8
     antialias_width = 7
-    kernel_width = 60
+    # This is used to pick the number of w slices. That allows the --kernel-width
+    # argument to vary ONLY the kernel width used in gridding, without
+    # simultaneously affecting the set of visibilities used.
+    nominal_kernel_width = 60
     eps_w = 0.001
     antennas = load_antennas()
     longest = 0.0
@@ -52,7 +54,7 @@ def add_parameters(args):
         image_parameters,
         longest,
         eps_w,
-        kernel_width,
+        nominal_kernel_width,
         antialias_width)
     w_planes = int(np.ceil(longest / w_step / w_slices))
     grid_parameters = parameters.GridParameters(
@@ -62,7 +64,7 @@ def add_parameters(args):
         w_slices=w_slices,
         w_planes=w_planes,
         max_w=longest,
-        kernel_width=kernel_width)
+        kernel_width=args.kernel_width)
     args.antennas = antennas
     args.array_parameters = array_parameters
     args.grid_parameters = grid_parameters
@@ -215,13 +217,14 @@ def benchmark_fft(args):
 
 
 def add_arguments(subparser, arguments):
-    arg_map = OrderedDict([
-        ('--polarizations', lambda: subparser.add_argument('--polarizations', type=int, default=4, choices=[1, 2, 3, 4], help='Number of polarizations')),
-        ('--frequency', lambda: subparser.add_argument('--frequency', type=float, default=1412000000.0, help='Observation frequency (Hz)')),
-        ('--int-time', lambda: subparser.add_argument('--int-time', type=float, default=2.0, help='Integration time (seconds)')),
-        ('--pixels', lambda: subparser.add_argument('--pixels', type=int, default=4608, help='Grid/image dimensions')),
-        ('--tuning', lambda: subparser.add_argument('--tuning', type=json.loads, help='Tuning arguments (JSON)'))
-    ])
+    arg_map = {
+        '--polarizations': lambda: subparser.add_argument('--polarizations', type=int, default=4, choices=[1, 2, 3, 4], help='Number of polarizations'),
+        '--frequency': lambda: subparser.add_argument('--frequency', type=float, default=1412000000.0, help='Observation frequency (Hz)'),
+        '--int-time': lambda: subparser.add_argument('--int-time', type=float, default=2.0, help='Integration time (seconds)'),
+        '--kernel-width': lambda: subparser.add_argument('--kernel-width', type=int, default=60, help='Convolutional kernel size in pixels'),
+        '--pixels': lambda: subparser.add_argument('--pixels', type=int, default=4608, help='Grid/image dimensions'),
+        '--tuning': lambda: subparser.add_argument('--tuning', type=json.loads, help='Tuning arguments (JSON)')
+    }
     for arg_name in arguments:
         arg_map[arg_name]()
 
@@ -236,11 +239,11 @@ def main():
 
     parser_grid = subparsers.add_parser('grid', help='gridding benchmark')
     parser_grid.set_defaults(func=benchmark_grid_degrid, template_class=grid.GridderTemplate)
-    add_arguments(parser_grid, ['--polarizations', '--frequency', '--int-time', '--tuning'])
+    add_arguments(parser_grid, ['--polarizations', '--frequency', '--int-time', '--kernel-width', '--tuning'])
 
     parser_degrid = subparsers.add_parser('degrid', help='degridding benchmark')
     parser_degrid.set_defaults(func=benchmark_grid_degrid, template_class=grid.DegridderTemplate)
-    add_arguments(parser_degrid, ['--polarizations', '--frequency', '--int-time', '--tuning'])
+    add_arguments(parser_degrid, ['--polarizations', '--frequency', '--int-time', '--kernel-width', '--tuning'])
 
     parser_ifft = subparsers.add_parser('ifft', help='grid-to-image FFT benchmark')
     add_arguments(parser_ifft, ['--pixels'])
