@@ -125,12 +125,16 @@ def make_compressed_vis(args, N):
 
     Returns
     -------
-    reader : :py:class:`katsdpimager.preprocess.VisibilityReaderMem`
+    reader : :py:class:`katsdpimager.preprocess.VisibilityReader`
         Reader that iterates the visibilities
     """
     uvw, weights, baselines, vis = make_vis(args, N)
-    collector = preprocess.VisibilityCollectorMem(
-            [args.image_parameters], args.grid_parameters, N)
+    if args.write:
+        collector = preprocess.VisibilityCollectorHDF5(args.write,
+                [args.image_parameters], args.grid_parameters, N)
+    else:
+        collector = preprocess.VisibilityCollectorMem(
+                [args.image_parameters], args.grid_parameters, N)
     collector.add(0, uvw, weights, baselines, vis)
     collector.close()
     reader = collector.reader()
@@ -223,7 +227,8 @@ def add_arguments(subparser, arguments):
         '--int-time': lambda: subparser.add_argument('--int-time', type=float, default=2.0, help='Integration time (seconds)'),
         '--kernel-width': lambda: subparser.add_argument('--kernel-width', type=int, default=60, help='Convolutional kernel size in pixels'),
         '--pixels': lambda: subparser.add_argument('--pixels', type=int, default=4608, help='Grid/image dimensions'),
-        '--tuning': lambda: subparser.add_argument('--tuning', type=json.loads, help='Tuning arguments (JSON)')
+        '--tuning': lambda: subparser.add_argument('--tuning', type=json.loads, help='Tuning arguments (JSON)'),
+        '--write': lambda: subparser.add_argument('--write', type=str, help='Write compressed visibilities to HDF5 file')
     }
     for arg_name in arguments:
         arg_map[arg_name]()
@@ -237,13 +242,15 @@ def main():
     parser_preprocess.set_defaults(func=benchmark_preprocess)
     add_arguments(parser_preprocess, ['--polarizations', '--frequency', '--int-time'])
 
+    grid_degrid_arguments = ['--polarizations', '--frequency', '--int-time', '--kernel-width',
+                             '--tuning', '--write']
     parser_grid = subparsers.add_parser('grid', help='gridding benchmark')
     parser_grid.set_defaults(func=benchmark_grid_degrid, template_class=grid.GridderTemplate)
-    add_arguments(parser_grid, ['--polarizations', '--frequency', '--int-time', '--kernel-width', '--tuning'])
+    add_arguments(parser_grid, grid_degrid_arguments)
 
     parser_degrid = subparsers.add_parser('degrid', help='degridding benchmark')
     parser_degrid.set_defaults(func=benchmark_grid_degrid, template_class=grid.DegridderTemplate)
-    add_arguments(parser_degrid, ['--polarizations', '--frequency', '--int-time', '--kernel-width', '--tuning'])
+    add_arguments(parser_degrid, grid_degrid_arguments)
 
     parser_ifft = subparsers.add_parser('ifft', help='grid-to-image FFT benchmark')
     add_arguments(parser_ifft, ['--pixels'])
