@@ -20,7 +20,7 @@ the kernel. Every grid point into this box will be updated for this
 visibility, and hence the kernel function needs zero padding (on all sides) of
 the same amount as the bin padding.
 
-.. tikz:: Mapping of workitems and workgroups to group points. One workgroup
+.. tikz:: Mapping of workitems and workgroups to grid points. One workgroup
    contributes to all the green cells. One workitem contributes to all the
    cells marked with a red dot. Here blocks are 2×2, tiles are 4×4 and bins
    are 8×8. The dashed lines show a kernel footprint, and the blue box shows
