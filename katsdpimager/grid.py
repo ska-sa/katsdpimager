@@ -518,7 +518,7 @@ def _autotune_arrays(command_queue, oversample, real_dtype, num_polarizations, b
 
 
 class GridderTemplate(object):
-    autotune_version = 4
+    autotune_version = 5
 
     def __init__(self, context, image_parameters, grid_parameters, tuning=None):
         if tuning is None:

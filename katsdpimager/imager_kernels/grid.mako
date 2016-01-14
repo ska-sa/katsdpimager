@@ -149,7 +149,7 @@ void grid(
                     writeback(out, out_row_stride, out_pol_stride, cur_u0, cur_v0, sums);
                 cur_u0 = u0;
                 cur_v0 = v0;
-#ifdef __CUDA_ARCH__
+#if defined(__CUDA_ARCH__) || defined(__NV_CL_C_VERSION)
                 /* CUDA 7 and 7.5 make an unfortunate de-optimisation choice:
                  * sums gets copied, then the original is zeroed, then the
                  * copies are atomically added to global memory. This adds an
