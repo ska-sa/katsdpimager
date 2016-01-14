@@ -3,6 +3,11 @@
 ##
 ## These operations have relaxed memory consistency, i.e. are not ordered with
 ## respect to any other operations.
+##
+## Defining KATSDPIMAGER_DISABLE_ATOMICS causes the operations to be done with
+## regular operations instead of atomics. This is obviously not safe, and is
+## provided as a debugging/profiling tool to measure the effect of atomics on
+## performance.
 
 ## For cases where floating-point atomics are not available, simulates them
 ## using integer atomic compare-and-swap.
@@ -21,7 +26,21 @@ DEVICE_FN void atomic_accum_${float_t}_add(GLOBAL atomic_accum_${float_t} *objec
 }
 </%def>
 
-#ifdef __OPENCL_VERSION__
+#ifdef KATSDPIMAGER_DISABLE_ATOMICS
+
+% for T in ['int', 'uint', 'float', 'double']:
+typedef struct
+{
+    ${T} value;
+} atomic_accum_${T};
+
+DEVICE_FN void atomic_accum_${T}_add(GLOBAL atomic_accum_${T} *object, ${T} operand)
+{
+    object->value += operand;
+}
+%endfor
+
+#elif defined(__OPENCL_VERSION__)
 
 #pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable
 
