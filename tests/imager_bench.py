@@ -93,18 +93,17 @@ def make_uvw(args, n_time):
     return uvw.reshape(3, uvw.shape[1] * n_time).T.copy()
 
 
-def make_vis(args, N):
+def make_vis(args, n_time):
     """Generate uncompressed visibilities
 
     Parameters
     ----------
     args : argparse.Namespace
         Command-line arguments
-    N : int
-        Number of visibilities (rounded down to a whole dump)
+    n_time : int
+        Number of time samples
     """
     n_baselines = len(args.antennas) * (len(args.antennas) - 1) // 2
-    n_time = N // n_baselines
     N = n_time * n_baselines
     uvw = make_uvw(args, n_time)
     weights = np.ones((N, args.polarizations), np.float32)
@@ -113,28 +112,28 @@ def make_vis(args, N):
     return uvw, weights, baselines, vis
 
 
-def make_compressed_vis(args, N):
+def make_compressed_vis(args, n_time):
     """Generate compressed visibilities
 
     Parameters
     ----------
     args : argparse.Namespace
         Command-line arguments
-    N : int
-        Number of *uncompressed* visibilities (rounded down to a whole dump)
+    n_time : int
+        Number of time samples
 
     Returns
     -------
     reader : :py:class:`katsdpimager.preprocess.VisibilityReader`
         Reader that iterates the visibilities
     """
-    uvw, weights, baselines, vis = make_vis(args, N)
+    uvw, weights, baselines, vis = make_vis(args, n_time)
     if args.write:
         collector = preprocess.VisibilityCollectorHDF5(args.write,
-                [args.image_parameters], args.grid_parameters, N)
+                [args.image_parameters], args.grid_parameters, len(vis))
     else:
         collector = preprocess.VisibilityCollectorMem(
-                [args.image_parameters], args.grid_parameters, N)
+                [args.image_parameters], args.grid_parameters, len(vis))
     collector.add(0, uvw, weights, baselines, vis)
     collector.close()
     reader = collector.reader()
@@ -143,23 +142,24 @@ def make_compressed_vis(args, N):
 
 def benchmark_preprocess(args):
     add_parameters(args)
-    N = 2 * 1024**2
-    uvw, weights, baselines, vis = make_vis(args, N)
+    n_time = 900
+    uvw, weights, baselines, vis = make_vis(args, n_time)
     start = timeit.default_timer()
     collector = preprocess.VisibilityCollectorMem(
-            [args.image_parameters], args.grid_parameters, N)
+            [args.image_parameters], args.grid_parameters, len(vis))
     collector.add(0, uvw, weights, baselines, vis)
     collector.close()
     end = timeit.default_timer()
     elapsed = end - start
-    print("preprocessed {} visibilities in {} seconds".format(N, elapsed))
-    print("{:.2f} Mvis/s".format(N / elapsed / 1e6))
+    print("preprocessed {} visibilities in {} seconds".format(len(vis), elapsed))
+    print("{:.2f} Mvis/s".format(len(vis) / elapsed / 1e6))
 
 
 def benchmark_grid_degrid(args):
-    N = 2 * 1024**2
+    n_time = 3600
     add_parameters(args)
-    reader = make_compressed_vis(args, N)
+    N = n_time * len(args.antennas) * (len(args.antennas) - 1) // 2
+    reader = make_compressed_vis(args, n_time)
 
     context = accel.create_some_context()
     queue = context.create_tuning_command_queue()
