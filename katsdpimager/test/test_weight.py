@@ -1,0 +1,99 @@
+"""Tests for :mod:`katsdpimager.weight`."""
+
+import numpy as np
+from katsdpsigproc.test.test_accel import device_test
+from katsdpimager import weight
+from nose.tools import *
+
+
+class TestGridWeights(object):
+    def setup(self):
+        self.grid_shape = (4, 100, 200)
+        self.uv = np.array([
+            [-10, 5, 0, 0],
+            [23, 17, 0, 0],
+            [-10, 5, 0, 0],
+            [-10, 5, 0, 0],
+            [-10, 6, 0, 0],
+            [-11, 5, 0, 0]], np.int16)
+        self.weights = np.array([
+            [1.0, 10.0, 100.0, 1000.0],
+            [2.0, 20.0, 200.0, 2000.0],
+            [4.0, 40.0, 400.0, 4000.0],
+            [8.0, 80.0, 800.0, 8000.0],
+            [16.0, 160.0, 1600.0, 16000.0],
+            [32.0, 320.0, 3200.0, 32000.0]], np.float32)
+
+    def _set_partial(self, command_queue, buffer, data):
+        """Load a device array from a smaller host array. The rest of the
+        array is filled with random values to ensure that the algorithm
+        doesn't depend on them being zero.
+        """
+        rs = np.random.RandomState(1)
+        host = buffer.empty_like()
+        host[:] = rs.uniform(size=host.shape)
+        sub_rect = [np.s_[0 : x] for x in data.shape]
+        host[sub_rect] = data
+        buffer.set(command_queue, host)
+
+    @device_test
+    def test(self, context, command_queue):
+        template = weight.GridWeightsTemplate(context, 4)
+        fn = template.instantiate(command_queue, self.grid_shape, 1000)
+        fn.ensure_all_bound()
+        self._set_partial(command_queue, fn.buffer('uv'), self.uv)
+        self._set_partial(command_queue, fn.buffer('weights'), self.weights)
+        fn.buffer('grid').zero(command_queue)
+        fn.num_vis = len(self.uv)
+        fn()
+        actual = fn.buffer('grid').get(command_queue)
+        expected = np.zeros(self.grid_shape, np.float32)
+        for i in range(4):
+            expected[i, 55, 90] = 13 * 10**i
+            expected[i, 67, 123] = 2 * 10**i
+            expected[i, 56, 90] = 16 * 10**i
+            expected[i, 55, 89] = 32 * 10**i
+        np.testing.assert_equal(expected, actual)
+
+
+class TestDensityWeights(object):
+    def setup(self):
+        rs = np.random.RandomState(1)
+        self.grid_shape = (4, 50, 107)
+        self.data = np.zeros(self.grid_shape, np.float32)
+        self.expected = np.zeros(self.grid_shape, np.float32)
+        n_indices = 100
+        indices = zip(*(rs.randint(0, x, size=n_indices) for x in self.grid_shape))
+        for index in indices:
+            self.data[index] = rs.uniform(low=0.1, high=2.0)
+            self.expected[index] = 1.0 / (2.5 * self.data[index] + 1.75)
+
+    @device_test
+    def test(self, context, command_queue):
+        template = weight.DensityWeightsTemplate(context, 4)
+        fn = template.instantiate(command_queue, self.grid_shape, 2.5, 1.75)
+        fn.ensure_all_bound()
+        fn.buffer('grid').set(command_queue, self.data)
+        fn()
+        actual = fn.buffer('grid').get(command_queue)
+        np.testing.assert_allclose(self.expected, actual, 1e-5, 1e-5)
+
+
+class TestMeanWeight(object):
+    def setup(self):
+        rs = np.random.RandomState(1)
+        self.grid_shape = (4, 50, 107)
+        self.data = rs.uniform(size=self.grid_shape).astype(np.float32)
+
+    @device_test
+    def test(self, context, command_queue):
+        template = weight.MeanWeightTemplate(context)
+        fn = template.instantiate(command_queue, self.grid_shape)
+        fn.ensure_all_bound()
+        fn.buffer('grid').set(command_queue, self.data)
+        actual = fn()
+        pol0 = self.data[0]
+        expected = np.sum(pol0 * pol0) / np.sum(pol0)
+        # The tolerance has to be very large here because the addition is
+        # numerically unstable.
+        np.testing.assert_allclose(expected, actual, rtol=1e-2)

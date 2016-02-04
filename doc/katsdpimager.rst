@@ -23,11 +23,13 @@ Submodules
    katsdpimager.loader
    katsdpimager.loader_core
    katsdpimager.loader_ms
+   katsdpimager.numba
    katsdpimager.parameters
    katsdpimager.polarization
    katsdpimager.preprocess
    katsdpimager.progress
    katsdpimager.types
+   katsdpimager.weight
 
 Module contents
 ---------------
