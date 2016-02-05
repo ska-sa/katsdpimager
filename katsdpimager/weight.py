@@ -306,10 +306,13 @@ class Weights(accel.OperationSequence):
         if self._fill is not None:
             self.buffer('grid').zero(self.command_queue)
 
-    def grid(self, num_vis):
+    def grid(self, uv, weights):
         self.ensure_all_bound()
         if self._grid_weights is not None:
-            self._grid_weights.num_vis = num_vis
+            N = len(uv)
+            self._grid_weights.num_vis = N
+            self.buffer('uv')[:N] = uv
+            self.buffer('weights')[:N] = weights
             return self._grid_weights()
 
     def finalize(self):
@@ -324,3 +327,36 @@ class Weights(accel.OperationSequence):
             self._density_weights()
         if self._fill is not None:
             self._fill()
+
+
+class WeightsHost(object):
+    def __init__(self, weight_type, weights_grid):
+        self.weight_type = weight_type
+        self.robustness = 0.0
+        self.weights_grid = weights_grid
+        assert weights_grid.shape[1] % 2 == 0 and weights_grid.shape[2] % 2 == 0, "Only even-sized grids are currently supported"
+
+    def clear(self):
+        if self.weight_type != NATURAL:
+            weights_grid.fill(0)
+
+    def grid(self, uv, weights):
+        shape = self.weights_grid.shape
+        # Bias uv coordinates to grid center
+        uv += np.array([[shape[2] // 2, shape[1] // 2]], np.int16)
+        for i in range(len(uv)):
+            self.weights_grid[:, uv[i, 1], uv[i, 0]] += weights[i, :]
+
+    def finalize(self):
+        if self.weight_type == NATURAL:
+            self.weights_grid.fill(1)
+        elif self.weight_type == UNIFORM:
+            np.reciprocal(self.weights_grid, out=self.weights_grid)
+        elif self.weight_type == ROBUST:
+            sum_sq = np.dot(self.weights_grid[0].flat, self.weights_grid[0].flat)
+            sum = np.sum(self.weights_grid[0])
+            mean_weight = sum_sq / sum
+            S2 = (5 * 10**(-self.robustness))**2 / mean_weight
+            self.weights_grid[:] = np.reciprocal(self.weights_grid * S2 + 1)
+        else:
+            raise ValueError('Unknown weight_type {}'.format(self.weight_type))

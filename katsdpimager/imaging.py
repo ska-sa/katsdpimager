@@ -113,9 +113,9 @@ class Imaging(accel.OperationSequence):
         self.ensure_all_bound()
         self._weights.clear()
 
-    def grid_weights(self, num_vis):
+    def grid_weights(self, uv, weights):
         self.ensure_all_bound()
-        self._weights.grid(num_vis)
+        self._weights.grid(uv, weights)
 
     def finalize_weights(self):
         self.ensure_all_bound()
@@ -168,7 +168,7 @@ class Imaging(accel.OperationSequence):
 class ImagingHost(object):
     """Host-only equivalent to :class:`Imaging`."""
 
-    def __init__(self, image_parameters, grid_parameters, clean_parameters):
+    def __init__(self, image_parameters, weight_parameters, grid_parameters, clean_parameters):
         lm_scale = float(image_parameters.pixel_size)
         lm_bias = -0.5 * image_parameters.pixels * lm_scale
         psf_shape = (len(image_parameters.polarizations),
@@ -177,6 +177,9 @@ class ImagingHost(object):
         self._degridder = grid.DegridderHost(image_parameters, grid_parameters)
         self._grid = self._gridder.values
         self._degrid = self._degridder.values
+        self._weights_grid = self._gridder.weights_grid
+        self._weights = weight.WeightsHost(weight_parameters.weight_type, self._weights_grid)
+        self._weights.robustness = weight_parameters.robustness
         self._layer = np.empty(self._grid.shape, image_parameters.complex_dtype)
         self._dirty = np.empty(self._grid.shape, image_parameters.real_dtype)
         self._model = np.empty(self._grid.shape, image_parameters.real_dtype)
@@ -199,6 +202,15 @@ class ImagingHost(object):
 
     def buffer(self, name):
         return self._buffer[name]
+
+    def clear_weights(self):
+        self._weights_grid.fill(0)
+
+    def grid_weights(self, uv, weights):
+        self._weights.grid(uv, weights)
+
+    def finalize_weights(self):
+        self._weights.finalize()
 
     def clear_grid(self):
         self._grid.fill(0)

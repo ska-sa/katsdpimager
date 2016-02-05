@@ -162,16 +162,12 @@ def make_weights(queue, reader, imager, weight_type, vis_block):
         if weight_type != weight.NATURAL:
             for w_slice in range(reader.num_w_slices):
                 for chunk in reader.iter_slice(0, w_slice, vis_block):
-                    # TODO: handle this uniformly between make_weights and make_dirty
-                    N = len(chunk)
-                    imager.buffer('uv')[:N, 0:2] = chunk.uv
-                    imager.buffer('weights')[:N] = chunk.weights
-                    imager.grid_weights(N)
+                    imager.grid_weights(chunk.uv, chunk.weights)
                     # Need to serialise calls to grid, since otherwise the next
                     # call will overwrite the incoming data before the previous
                     # iteration is done with it.
                     queue.finish()
-                    bar.next(N)
+                    bar.next(len(chunk.uv))
         else:
             bar.next(total)
         imager.finalize_weights()
@@ -344,7 +340,7 @@ def main():
         lm_scale = float(image_p.pixel_size)
         lm_bias = -0.5 * image_p.pixels * lm_scale
         if args.host:
-            imager = imaging.ImagingHost(image_p, grid_p, clean_p)
+            imager = imaging.ImagingHost(image_p, weight_p, grid_p, clean_p)
         else:
             allocator = accel.SVMAllocator(context)
             imager_template = imaging.ImagingTemplate(
