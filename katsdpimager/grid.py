@@ -84,15 +84,11 @@ Degridding is done similarly to gridding, with a few significant changes:
 Weights
 -------
 There are two sources of weighting: statistical weights and imaging weights
-(the latter combining density and taper weights) [Bri95_]. The statistical
+(the latter combining density and taper weights) [Bri95]_. The statistical
 weights are pre-multiplied into the visibilities before gridding (see
 :py:mod`preprocess`), and are handled outside this module for degridding. The
 imaging weights are stored in a grid and multiplied by the visibilities as
 they are loaded, and have no effect on degridding.
-
-.. [Bri95] Briggs, D. S. 1995. High fidelity deconvolution of moderately
-   resolved sources. PhD Thesis, The New Mexico Institute of Mining and Technology.
-   http://www.aoc.nrao.edu/dissertations/dbriggs/
 
 Future planned changes
 ----------------------

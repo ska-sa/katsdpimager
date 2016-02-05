@@ -1,23 +1,31 @@
 # -*- coding: utf-8 -*-
 
 r"""
-Computation of density weights, for uniform and robust weighting. This is done
-in stages:
+Computation of density weights, for uniform and robust weighting. Refer to
+[Bri95]_ for definitions. Computation of weights is done in up to four
+stages:
 
 1. The statistical weights are gridded, *without* any convolution. The subgrid
 coordinates are still passed so that the same data layouts can be shared with
-convolutional gridding, but they can be ignored.
+convolutional gridding, but they are be ignored.
 
-2. The total statistical weight per cell is converted into a density weight.
+2. For robust weighting, an "average" statistical weight is computed as
+
+.. math:: \overline{W} = \frac{\sum W_i^2}{\sum W_i},
+
+where the sums are over grid cells.
+
+3. The total statistical weight per cell is converted into a density weight.
 If :math:`W_i` is the total statistical weight for a cell, then a uniform
 weight is computed as :math:`1 / W` and a robust weight as :math:`1 / (WS^2 +
 1)`, where
 
-.. math:: S^2 = \frac{(5\cdot 10^{-R})^2 \sum W_i}{\sum W_i^2}
+.. math:: S^2 = \overline{W}(5\cdot 10^{-R})^2
 
-and :math:`R` is the robustness parameter.
+and :math:`R` is the robustness parameter. The conversion formula for robust
+weighting is taken from wsclean.
 
-3. During gridding, as visibilities are loaded the density weights are looked
+4. During gridding, as visibilities are loaded the density weights are looked
 up and multiplied in. The visibilities are already pre-weighted by the
 statistical weights.
 
@@ -29,6 +37,10 @@ Weights are processed separately per polarization. However, the
 robustness parameter :math:`S` is computed for the first polarization
 (generally Stokes I) and used for all polarizations, to avoid qualitatively
 different beam shapes for the different polarizations.
+
+.. [Bri95] Briggs, D. S. 1995. High fidelity deconvolution of moderately
+   resolved sources. PhD Thesis, The New Mexico Institute of Mining and Technology.
+   http://www.aoc.nrao.edu/dissertations/dbriggs/
 """
 
 import pkg_resources
@@ -42,6 +54,17 @@ ROBUST = 2
 
 
 class GridWeightsTemplate(object):
+    """Template for accumulating weights onto a grid.
+
+    Parameters
+    ----------
+    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+        Context for which kernels will be compiled
+    num_polarizations : int
+        Number of polarizations to grid
+    tuning : dict, optional
+        Tuning parameters (unused)
+    """
     def __init__(self, context, num_polarizations, tuning=None):
         self.context = context
         self.num_polarizations = num_polarizations
@@ -60,6 +83,41 @@ class GridWeightsTemplate(object):
 
 
 class GridWeights(accel.Operation):
+    """Instantiation of :class:`GridWeightsTemplate`.
+
+    The user should set some prefix of the `uv` and `weights` slots, set
+    :attr:`num_vis` to indicate how many weights are provided, and then call
+    the operation to grid them.
+
+    .. rubric:: Slots
+
+    **uv** : array of shape `max_vis` × 4, int16
+        UV coordinates of the grid points. The coordinates are biased by half
+        the grid size, so that (0, 0) refers to the centre of the grid.
+    **weights** : array of shape `max_vis` × `num_polarizations`, float32
+        Weights to accumulate
+    **grid** : array of shape `num_polarizations` × height × width, float32
+        Accumulated weights
+
+    Parameters
+    ----------
+    template : :class:`GridWeightsTemplate`
+        Operation template
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+        Command queue for the operation
+    grid_shape : tuple of ints
+        Shape for the grid, (polarizations, height, width)
+    max_vis : int
+        Maximum number of weights that can be gridded in one pass
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
+
+    Raises
+    ------
+    ValueError
+        if the grid width or height is odd, or if the number of polarizations
+        does not match `template`.
+    """
     def __init__(self, template, command_queue, grid_shape, max_vis, allocator=None):
         super(GridWeights, self).__init__(command_queue, allocator)
         self.template = template
@@ -78,6 +136,7 @@ class GridWeights(accel.Operation):
 
     @property
     def num_vis(self):
+        """The actual number of weights to grid"""
         return self._num_vis
 
     @num_vis.setter
@@ -119,6 +178,17 @@ class GridWeights(accel.Operation):
 
 
 class DensityWeightsTemplate(object):
+    """Template for converting cell sum of statistical weights to density weights.
+
+    Parameters
+    ----------
+    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+        Context for which kernels will be compiled
+    num_polarizations : int
+        Number of polarizations to grid
+    tuning : dict, optional
+        Tuning parameters (unused)
+    """
     def __init__(self, context, num_polarizations, tuning=None):
         self.context = context
         self.num_polarizations = num_polarizations
@@ -139,12 +209,34 @@ class DensityWeightsTemplate(object):
 
 
 class DensityWeights(accel.Operation):
+    """Instantiation of :class:`DensityWeightsTemplate`. This operation
+    modifies the grid in-place. The type of weights is controlled by two
+    attributes, :attr:`a` and :attr:`b`. For an input :math:`W`, the result
+    is :math:`1 / (aW + b)`. This allows for natural, uniform or robust
+    weights. If not altered, the default gives uniform weights.
+
+    .. rubric:: Slots
+
+    **grid** : array of shape `num_polarizations` × height × width, float32
+        On input, the sum of statistical weights per cell; on output, the density
+        weight for each cell.
+
+    Parameters
+    ----------
+    template : :class:`DensityWeightsTemplate`
+        Operation template
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+        Command queue for the operation
+    grid_shape : tuple of ints
+        Shape for the grid, (polarizations, height, width)
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
+    """
     def __init__(self, template, command_queue, grid_shape, allocator=None):
         super(DensityWeights, self).__init__(command_queue, allocator)
         self.template = template
         if grid_shape[0] != self.template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
-        # Default to uniform
         self.a = 1.0
         self.b = 0.0
         self.slots['grid'] = accel.IOSlot(
@@ -172,6 +264,8 @@ class DensityWeights(accel.Operation):
 
     def parameters(self):
         return {
+            'a': self.a,
+            'b': self.b,
             'wgs_x': self.template.wgs_x,
             'wgs_y': self.template.wgs_y,
             'num_polarizations': self.template.num_polarizations,
