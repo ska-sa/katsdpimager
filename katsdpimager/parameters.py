@@ -10,7 +10,7 @@ import astropy.units as units
 import math
 import numpy as np
 import katsdpimager.types
-import clean
+from . import clean, weight
 
 
 def is_smooth(x):
@@ -168,6 +168,32 @@ def w_slices(image_parameters, max_w, eps_w, kernel_width, antialias_width=0):
         else:
             lo = mid
     return hi
+
+
+class WeightParameters(object):
+    """Parameters affecting imaging weight calculations.
+
+    Parameters
+    ----------
+    weight_type : {:py:const:`weight.NATURAL`, :py:const:`weight.UNIFORM`, :py:const:`weight.ROBUST`}
+        Image weighting scheme
+    robustness : float, optional
+        Robustness parameter for robust weighting
+    """
+    def __init__(self, weight_type, robustness=0.0):
+        self.weight_type = weight_type
+        self.robustness = robustness
+
+    def __str__(self):
+        if self.weight_type == weight.NATURAL:
+            ans = 'natural'
+        elif self.weight_type == weight.UNIFORM:
+            ans = 'uniform'
+        elif self.weight_type == weight.ROBUST:
+            ans = 'robust ({:.3f})'.format(self.robustness)
+        else:
+            raise ValueError('Unknown weight type {}'.format(self.weight_type))
+        return 'Image weights: ' + ans
 
 
 class GridParameters(object):

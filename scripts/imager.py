@@ -13,7 +13,7 @@ import atexit
 import os
 import katsdpsigproc.accel as accel
 from katsdpimager import \
-    loader, parameters, polarization, preprocess, io, clean, imaging, progress, beam, numba
+    loader, parameters, polarization, preprocess, io, clean, weight, imaging, progress, beam, numba
 from contextlib import closing, contextmanager
 
 
@@ -63,6 +63,9 @@ def get_parser():
     group.add_argument('--pixels', type=int, help='Number of pixels in image [computed from array]')
     group.add_argument('--stokes', type=parse_stokes, default='I', help='Stokes parameters to image e.g. IQUV for full-Stokes [%(default)s]')
     group.add_argument('--precision', choices=['single', 'double'], default='single', help='Internal floating-point precision [%(default)s]')
+    group = parser.add_argument_group('Weighting options')
+    group.add_argument('--weight-type', choices=['natural', 'uniform', 'robust'], default='natural', help='Imaging density weights [%(default)s]')
+    group.add_argument('--robustness', type=float, default=0.0, help='Robustness parameter for --weight-type=robust [%(default)s]')
     group = parser.add_argument_group('Gridding options')
     group.add_argument('--grid-oversample', type=int, default=8, help='Oversampling factor for convolution kernels [%(default)s]')
     group.add_argument('--kernel-image-oversample', type=int, default=4, help='Oversampling factor for kernel generation [%(default)s]')
@@ -271,6 +274,12 @@ def main():
             dataset.frequency(args.channel), array_p, output_polarizations,
             (np.float32 if args.precision == 'single' else np.float64),
             args.pixel_size, args.pixels)
+        weight_types = {
+            'natural': weight.NATURAL,
+            'uniform': weight.UNIFORM,
+            'robust': weight.ROBUST
+        }
+        weight_p = parameters.WeightParameters(weight_types[args.weight_type], args.robustness)
         if args.max_w is None:
             args.max_w = array_p.longest_baseline
         elif args.max_w.unit.physical_type == 'dimensionless':
@@ -300,6 +309,7 @@ def main():
             args.psf_patch)
 
         log_parameters("Image parameters", image_p)
+        log_parameters("Weight parameters", weight_p)
         log_parameters("Grid parameters", grid_p)
         log_parameters("CLEAN parameters", clean_p)
 
@@ -311,7 +321,7 @@ def main():
         else:
             allocator = accel.SVMAllocator(context)
             imager_template = imaging.ImagingTemplate(
-                queue, array_p, image_p, grid_p, clean_p)
+                queue, array_p, image_p, weight_p, grid_p, clean_p)
             imager = imager_template.instantiate(args.vis_block, allocator)
             imager.ensure_all_bound()
         psf = imager.buffer('psf')
@@ -323,7 +333,7 @@ def main():
         collector = preprocess_visibilities(dataset, args, image_p, grid_p, polarization_matrix)
         reader = collector.reader()
 
-        #### Create dirty image ####
+        #### Create PSF ####
         slice_w_step = float(grid_p.max_w / image_p.wavelength / (grid_p.w_slices - 0.5))
         mid_w = np.arange(grid_p.w_slices) * slice_w_step
         make_dirty(queue, reader, 'PSF', 'weights', imager, mid_w, args.vis_block)
@@ -337,6 +347,7 @@ def main():
             with progress.step('Write PSF'):
                 io.write_fits_image(dataset, dirty, image_p, args.write_psf, restoring_beam)
 
+        #### Imaging ####
         imager.clear_model()
         for i in range(args.major):
             logger.info("Starting major cycle %d/%d", i + 1, args.major)

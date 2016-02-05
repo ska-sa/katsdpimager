@@ -71,8 +71,10 @@ class TestDensityWeights(object):
     @device_test
     def test(self, context, command_queue):
         template = weight.DensityWeightsTemplate(context, 4)
-        fn = template.instantiate(command_queue, self.grid_shape, 2.5, 1.75)
+        fn = template.instantiate(command_queue, self.grid_shape)
         fn.ensure_all_bound()
+        fn.a = 2.5
+        fn.b = 1.75
         fn.buffer('grid').set(command_queue, self.data)
         fn()
         actual = fn.buffer('grid').get(command_queue)

@@ -24,11 +24,16 @@ statistical weights.
 Note that all these steps use compressed visibilities. This works because the
 density weights are constant for a grid cell, and thus constant across the
 original visibilities that contribute to a compressed visibility.
+
+Weights are processed separately per polarization. However, the
+robustness parameter :math:`S` is computed for the first polarization
+(generally Stokes I) and used for all polarizations, to avoid qualitatively
+different beam shapes for the different polarizations.
 """
 
 import pkg_resources
 import numpy as np
-from katsdpsigproc import accel
+from katsdpsigproc import accel, fill
 
 
 NATURAL = 0
@@ -134,13 +139,14 @@ class DensityWeightsTemplate(object):
 
 
 class DensityWeights(accel.Operation):
-    def __init__(self, template, command_queue, grid_shape, a, b, allocator=None):
+    def __init__(self, template, command_queue, grid_shape, allocator=None):
         super(DensityWeights, self).__init__(command_queue, allocator)
         self.template = template
         if grid_shape[0] != self.template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
-        self.a = a
-        self.b = b
+        # Default to uniform
+        self.a = 1.0
+        self.b = 0.0
         self.slots['grid'] = accel.IOSlot(
             (grid_shape[0],
              accel.Dimension(grid_shape[1], self.template.wgs_y),
@@ -219,3 +225,99 @@ class MeanWeight(accel.Operation):
         )
         sums.get(self.command_queue, self._sums_host)
         return self._sums_host[1] / self._sums_host[0]
+
+
+class WeightsTemplate(object):
+    def __init__(self, context, weight_type, num_polarizations, grid_weights_tuning=None, mean_weight_tuning=None, density_weights_tuning=None):
+        self.context = context
+        self.weight_type = weight_type
+        if weight_type == NATURAL:
+            self.grid_weights = None
+            self.mean_weight = None
+            self.density_weights = None
+            self.fill = fill.FillTemplate(context, np.float32, 'float')
+        else:
+            self.grid_weights = GridWeightsTemplate(context, num_polarizations, tuning=grid_weights_tuning)
+            if weight_type == ROBUST:
+                self.mean_weight = MeanWeightTemplate(context, tuning=mean_weight_tuning)
+            else:
+                self.mean_weight = None
+            self.density_weights = DensityWeightsTuning(context, num_polarizations, tuning=density_weights_tuning)
+            self.fill = None
+
+    def instantiate(self, *args, **kwargs):
+        return Weights(self, *args, **kwargs)
+
+
+class Weights(accel.OperationSequence):
+    def __init__(self, template, command_queue, grid_shape, max_vis, allocator=None):
+        self.template = template
+        operations = []
+        compounds = {'grid': []}
+
+        if template.grid_weights is not None:
+            self._grid_weights = template.grid_weights.instantiate(
+                    command_queue, grid_shape, max_vis, allocator)
+            operations.append(('grid_weights', self._grid_weights))
+            compounds['grid'].append('grid_weights:grid')
+            compounds['uv'] = ['grid_weights:uv']
+            compounds['weights'] = ['grid_weights:weights']
+        else:
+            self._grid_weights = None
+
+        if template.fill is not None:
+            self._fill = template.fill.instantiate(
+                    command_queue, grid_shape, allocator)
+            self._fill.set_value(1)
+            operations.append(('fill', self._fill))
+            compounds['grid'].append('fill:data')
+        else:
+            self._fill = None
+
+        if template.mean_weight is not None:
+            self._mean_weight = template.mean_weight.instantiate(
+                    command_queue, grid_shape, allocator)
+            operations.append(('mean_weight', self._mean_weight))
+            compounds['grid'].append(('mean_weight:grid'))
+            self.robustness = 0.0
+        else:
+            self._mean_weight = None
+            self.robustness = None
+
+        if template.density_weights is not None:
+            self._density_weights = template.density_weights.instantiate(
+                    command_queue, grid_shape, allocator)
+            operations.append(('density_weights', self._density_weights))
+            compounds['grid'].append(('density_weights:grid'))
+        else:
+            self._density_weights = None
+
+        super(Weights, self).__init__(command_queue, operations, compounds, allocator=allocator)
+
+    def _run(self):
+        raise NotImplementedError('Weights should not be used as a callable')
+
+    def clear(self):
+        self.ensure_all_bound()
+        # If self._fill is set, it is not necessary to clear first because
+        # finalize will set all relevant values.
+        if self._fill is not None:
+            self.buffer('grid').zero(self.command_queue)
+
+    def grid(self, *args, **kwargs):
+        self.ensure_all_bound()
+        if self._grid_weights is not None:
+            return self._grid_weights()
+
+    def finalize(self):
+        self.ensure_all_bound()
+        if self._mean_weight is not None:
+            # It must be robust weighting
+            mean_weight = self._mean_weights()
+            S2 = (5 * 10**(-self.robustness))**2 / mean_weight
+            self._density_weights.a = S2
+            self._density_weights.b = 1.0
+        if self._density_weights is not None:
+            self._density_weights()
+        if self._fill is not None:
+            self._fill()

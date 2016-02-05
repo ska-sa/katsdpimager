@@ -4,17 +4,18 @@ objects together."""
 from __future__ import print_function, division
 import numpy as np
 from katsdpsigproc import accel
-from . import grid, image, clean, types
+from . import grid, weight, image, clean, types
 
 
 class ImagingTemplate(object):
     """Template holding all the other templates for imaging."""
 
     def __init__(self, command_queue, array_parameters, image_parameters,
-                 grid_parameters, clean_parameters):
+                 weight_parameters, grid_parameters, clean_parameters):
         self.command_queue = command_queue
         self.array_parameters = array_parameters
         self.image_parameters = image_parameters
+        self.weight_parameters = weight_parameters
         self.grid_parameters = grid_parameters
         self.clean_parameters = clean_parameters
         context = command_queue.context
@@ -25,6 +26,8 @@ class ImagingTemplate(object):
         # It would be nice if there was a cleaner way to handle this; possibly
         # by deferring creation of the FFT plan until instantiation.
         padded_layer_shape = layer_shape = image_shape[1:]
+        self.weights = weight.WeightsTemplate(
+            context, weight_parameters.weight_type, len(image_parameters.polarizations))
         self.gridder = grid.GridderTemplate(context, image_parameters, grid_parameters)
         self.degridder = grid.DegridderTemplate(context, image_parameters, grid_parameters)
         self.grid_image = image.GridImageTemplate(
@@ -58,6 +61,9 @@ class Imaging(accel.OperationSequence):
             template.command_queue, template.array_parameters, max_vis, allocator)
         grid_shape = self._gridder.slots['grid'].shape
         degrid_shape = self._degridder.slots['grid'].shape
+        self._weights = template.weights.instantiate(
+            template.command_queue, grid_shape, max_vis, allocator)
+        self._weights.robustness = template.weight_parameters.robustness
         self._grid_to_image = template.grid_image.instantiate_grid_to_image(
             grid_shape, lm_scale, lm_bias, allocator)
         self._image_to_grid = template.grid_image.instantiate_image_to_grid(
@@ -69,6 +75,7 @@ class Imaging(accel.OperationSequence):
         self._grid_to_image.bind(kernel1d=template.taper1d)
         self._image_to_grid.bind(kernel1d=template.untaper1d)
         operations = [
+            ('weights', self._weights),
             ('gridder', self._gridder),
             ('degridder', self._degridder),
             ('grid_to_image', self._grid_to_image),
@@ -77,7 +84,9 @@ class Imaging(accel.OperationSequence):
             ('scale', self._scale)
         ]
         compounds = {
-            'uv': ['gridder:uv', 'degridder:uv'],
+            'uv': ['weights:uv', 'gridder:uv', 'degridder:uv'],
+            'weights': ['weights:weights'],
+            'weights_grid': ['weights:grid'],
             'w_plane': ['gridder:w_plane', 'degridder:w_plane'],
             'vis': ['gridder:vis', 'degridder:vis'],
             'grid': ['gridder:grid', 'grid_to_image:grid'],
@@ -92,11 +101,25 @@ class Imaging(accel.OperationSequence):
             'peak_pos': ['clean:peak_pos'],
             'peak_pixel': ['clean:peak_pixel']
         }
+        # TODO: could alias weights with something, since it's only needed
+        # early on while setting up weights_grid
         super(Imaging, self).__init__(
             template.command_queue, operations, compounds, allocator=allocator)
 
     def __call__(self):
         raise NotImplementedError()
+
+    def clear_weights(self):
+        self.ensure_all_bound()
+        self._weights.clear()
+
+    def grid_weights(self):
+        self.ensure_all_bound()
+        self._weights.grid()
+
+    def finalize_weights(self):
+        self.ensure_all_bound()
+        self._weights.finalize()
 
     def clear_grid(self):
         self.ensure_all_bound()
