@@ -223,6 +223,8 @@ class MeanWeight(accel.Operation):
                          accel.roundup(grid.shape[1], self.template.wgs_y)),
             local_size=(self.template.wgs_x, self.template.wgs_y)
         )
+        if isinstance(sums, accel.SVMArray):
+            self.command_queue.finish()
         sums.get(self.command_queue, self._sums_host)
         return self._sums_host[1] / self._sums_host[0]
 
@@ -242,7 +244,7 @@ class WeightsTemplate(object):
                 self.mean_weight = MeanWeightTemplate(context, tuning=mean_weight_tuning)
             else:
                 self.mean_weight = None
-            self.density_weights = DensityWeightsTuning(context, num_polarizations, tuning=density_weights_tuning)
+            self.density_weights = DensityWeightsTemplate(context, num_polarizations, tuning=density_weights_tuning)
             self.fill = None
 
     def instantiate(self, *args, **kwargs):
@@ -304,16 +306,17 @@ class Weights(accel.OperationSequence):
         if self._fill is not None:
             self.buffer('grid').zero(self.command_queue)
 
-    def grid(self, *args, **kwargs):
+    def grid(self, num_vis):
         self.ensure_all_bound()
         if self._grid_weights is not None:
+            self._grid_weights.num_vis = num_vis
             return self._grid_weights()
 
     def finalize(self):
         self.ensure_all_bound()
         if self._mean_weight is not None:
             # It must be robust weighting
-            mean_weight = self._mean_weights()
+            mean_weight = self._mean_weight()
             S2 = (5 * 10**(-self.robustness))**2 / mean_weight
             self._density_weights.a = S2
             self._density_weights.b = 1.0

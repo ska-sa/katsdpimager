@@ -151,6 +151,33 @@ def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, po
     return collector
 
 
+def make_weights(queue, reader, imager, weight_type, vis_block):
+    imager.clear_weights()
+    total = 0
+    for w_slice in range(reader.num_w_slices):
+        total += reader.len(0, w_slice)
+    bar = progress.make_progressbar('Computing weights', max=total)
+    queue.finish()
+    with progress.finishing(bar):
+        if weight_type != weight.NATURAL:
+            for w_slice in range(reader.num_w_slices):
+                for chunk in reader.iter_slice(0, w_slice, vis_block):
+                    # TODO: handle this uniformly between make_weights and make_dirty
+                    N = len(chunk)
+                    imager.buffer('uv')[:N, 0:2] = chunk.uv
+                    imager.buffer('weights')[:N] = chunk.weights
+                    imager.grid_weights(N)
+                    # Need to serialise calls to grid, since otherwise the next
+                    # call will overwrite the incoming data before the previous
+                    # iteration is done with it.
+                    queue.finish()
+                    bar.next(N)
+        else:
+            bar.next(total)
+        imager.finalize_weights()
+        queue.finish()
+
+
 def make_dirty(queue, reader, name, field, imager, mid_w, vis_block, full_cycle=False):
     imager.clear_dirty()
     queue.finish()
@@ -332,6 +359,9 @@ def main():
         #### Preprocess visibilities ####
         collector = preprocess_visibilities(dataset, args, image_p, grid_p, polarization_matrix)
         reader = collector.reader()
+
+        #### Compute imaging weights ####
+        make_weights(queue, reader, imager, weight_p.weight_type, args.vis_block)
 
         #### Create PSF ####
         slice_w_step = float(grid_p.max_w / image_p.wavelength / (grid_p.w_slices - 0.5))

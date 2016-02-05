@@ -12,6 +12,17 @@ from nose.tools import *
 import mock
 
 
+def _middle(array, shape):
+    """Returns a view of the central part of `array` with size `shape`."""
+    index = []
+    for a, s in zip(array.shape, shape):
+        assert a >= s
+        assert (a - s) % 2 == 0
+        pad = (a - s) // 2
+        index.append(np.s_[pad : a - pad])
+    return array[index]
+
+
 class BaseTest(object):
     def setup(self):
         pixels = 256
@@ -72,6 +83,7 @@ class BaseTest(object):
         self.uv -= grid_cover // 2
         self.convolve_kernel = grid.ConvolutionKernel(
             self.image_parameters, self.grid_parameters)
+        self.weights_grid = rs.uniform(size=(4, grid_cover, grid_cover)).astype(np.float32)
 
     def do_grid(self, callback):
         max_vis = 1280
@@ -89,9 +101,12 @@ class BaseTest(object):
             kernel = np.conj(kernel, kernel)
             u = self.uv[i, 0] - uv_bias
             v = self.uv[i, 1] - uv_bias
+            weights_u = self.uv[i, 0] + self.weights_grid.shape[2] // 2
+            weights_v = self.uv[i, 1] + self.weights_grid.shape[1] // 2
             for j in range(4):
                 footprint = expected[j, v : v + kernel.shape[0], u : u + kernel.shape[1]]
-                footprint[:] += vis[i, j].astype(np.complex128) * kernel
+                weight = self.weights_grid[j, weights_v, weights_u]
+                footprint[:] += vis[i, j].astype(np.complex128) * weight * kernel
         np.testing.assert_allclose(expected, actual, 1e-5, 1e-8)
 
     def do_degrid(self, callback):
@@ -126,6 +141,10 @@ class TestGridder(BaseTest):
             fn.ensure_all_bound()
             grid_data = fn.buffer('grid')
             grid_data.fill(0)
+            weights_grid = fn.buffer('weights_grid')
+            weights_grid_host = weights_grid.empty_like()
+            _middle(weights_grid_host, self.weights_grid.shape)[:] = self.weights_grid
+            weights_grid.set_async(command_queue, weights_grid_host)
             fn.grid(self.uv, self.sub_uv, self.w_plane, vis)
             command_queue.finish()
             return grid_data
@@ -144,6 +163,7 @@ class TestGridderHost(BaseTest):
         def callback(max_vis, vis):
             gridder = grid.GridderHost(self.image_parameters, self.grid_parameters)
             gridder.clear()
+            _middle(gridder.weights_grid, self.weights_grid.shape)[:] = self.weights_grid
             gridder.grid(self.uv, self.sub_uv, self.w_plane, vis)
             return gridder.values
         self.do_grid(callback)
@@ -161,11 +181,7 @@ class TestDegridder(BaseTest):
                                       allocator=accel.SVMAllocator(context))
             fn.ensure_all_bound()
             grid_buffer = fn.buffer('grid')
-            pad1 = (grid_data.shape[1] - grid_buffer.shape[1]) // 2
-            pad2 = (grid_data.shape[2] - grid_buffer.shape[2]) // 2
-            middle1 = np.s_[pad1 : -pad1]
-            middle2 = np.s_[pad2 : -pad2]
-            grid_buffer.set(command_queue, grid_data[..., middle1, middle2])
+            grid_buffer.set(command_queue, _middle(grid_data, grid_buffer.shape))
             fn.degrid(self.uv, self.sub_uv, self.w_plane, vis)
             return vis
         self.do_degrid(callback)

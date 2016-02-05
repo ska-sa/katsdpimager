@@ -86,7 +86,7 @@ class Imaging(accel.OperationSequence):
         compounds = {
             'uv': ['weights:uv', 'gridder:uv', 'degridder:uv'],
             'weights': ['weights:weights'],
-            'weights_grid': ['weights:grid'],
+            'weights_grid': ['weights:grid', 'gridder:weights_grid'],
             'w_plane': ['gridder:w_plane', 'degridder:w_plane'],
             'vis': ['gridder:vis', 'degridder:vis'],
             'grid': ['gridder:grid', 'grid_to_image:grid'],
@@ -113,9 +113,9 @@ class Imaging(accel.OperationSequence):
         self.ensure_all_bound()
         self._weights.clear()
 
-    def grid_weights(self):
+    def grid_weights(self, num_vis):
         self.ensure_all_bound()
-        self._weights.grid()
+        self._weights.grid(num_vis)
 
     def finalize_weights(self):
         self.ensure_all_bound()

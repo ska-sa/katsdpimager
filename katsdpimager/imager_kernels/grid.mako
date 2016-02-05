@@ -63,11 +63,15 @@ void grid(
     GLOBAL atomic_accum_Complex * RESTRICT out,
     int out_row_stride,
     int out_pol_stride,
+    const GLOBAL float * RESTRICT weights,
+    int weights_row_stride,
+    int weights_pol_stride,
     const GLOBAL short4 * RESTRICT uv,
     const GLOBAL short * RESTRICT w_plane,
     const GLOBAL float2 * RESTRICT vis,
     const GLOBAL float2 * RESTRICT convolve_kernel,
     int uv_bias,
+    int weights_address_bias,
     int vis_per_workgroup,
     int nvis)
 {
@@ -79,7 +83,7 @@ void grid(
     LOCAL_DECL int2 batch_offset[BATCH_SIZE];
     // Index for first grid point to update
     LOCAL_DECL int2 batch_min_uv[BATCH_SIZE];
-    // Visibilities multiplied by weights
+    // Visibilities multiplied by all weights
     LOCAL_DECL float2 batch_vis[NPOLS][BATCH_SIZE];
 
     // In-register sums
@@ -103,11 +107,14 @@ void grid(
             int vis_id = batch_start + lid;
             short4 sample_uv = uv[vis_id];
             short sample_w_plane = w_plane[vis_id];
-            for (int p = 0; p < NPOLS; p++)
+            int weight_address = sample_uv.y * weights_row_stride + sample_uv.x + weights_address_bias;
+            for (int p = 0; p < NPOLS; p++, weight_address += weights_pol_stride)
             {
                 // TODO: could improve this using float4s where appropriate
                 int idx = vis_id * NPOLS + p;
-                batch_vis[p][lid] = vis[idx];
+                float sample_weight = weights[weight_address];
+                float2 sample_vis = vis[idx];
+                batch_vis[p][lid] = make_float2(sample_vis.x * sample_weight, sample_vis.y * sample_weight);
             }
             int2 min_uv = make_int2(sample_uv.x - uv_bias, sample_uv.y - uv_bias);
             int offset_w = sample_w_plane * CONVOLVE_KERNEL_W_STRIDE;

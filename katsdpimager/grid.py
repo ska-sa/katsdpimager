@@ -81,6 +81,19 @@ Degridding is done similarly to gridding, with a few significant changes:
   global memory. On the other hand, it reduces parallelism. Note, this
   variation is also being considered for gridding.
 
+Weights
+-------
+There are two sources of weighting: statistical weights and imaging weights
+(the latter combining density and taper weights) [Bri95_]. The statistical
+weights are pre-multiplied into the visibilities before gridding (see
+:py:mod`preprocess`), and are handled outside this module for degridding. The
+imaging weights are stored in a grid and multiplied by the visibilities as
+they are loaded, and have no effect on degridding.
+
+.. [Bri95] Briggs, D. S. 1995. High fidelity deconvolution of moderately
+   resolved sources. PhD Thesis, The New Mexico Institute of Mining and Technology.
+   http://www.aoc.nrao.edu/dissertations/dbriggs/
+
 Future planned changes
 ----------------------
 There are two possible ways to handle tiles. The current implementation puts
@@ -496,7 +509,7 @@ def _autotune_arrays(command_queue, oversample, real_dtype, num_polarizations, b
 
     Returns
     -------
-    grid, uv, w_plane, vis, convolve_kernel : :class:`katsdpsigproc.accel.DeviceArray`
+    grid, weights_grid, uv, w_plane, vis, convolve_kernel : :class:`katsdpsigproc.accel.DeviceArray`
         Device arrays to be passed to the kernels
     """
     context = command_queue.context
@@ -505,20 +518,22 @@ def _autotune_arrays(command_queue, oversample, real_dtype, num_polarizations, b
     uv_host = _autotune_uv(context, pixels, bin_size, oversample)
     num_vis = len(uv_host)
     uv = accel.DeviceArray(context, uv_host.shape, np.int16)
-    grid = accel.DeviceArray(context, (pixels, pixels, num_polarizations), complex_dtype)
+    grid = accel.DeviceArray(context, (num_polarizations, pixels, pixels), complex_dtype)
+    weights_grid = accel.DeviceArray(context, (num_polarizations, pixels, pixels), np.float32)
     w_plane = accel.DeviceArray(context, (num_vis,), np.int16)
     vis = accel.DeviceArray(context, (num_vis, num_polarizations), np.complex64)
     convolve_kernel = accel.DeviceArray(context, (1, oversample, bin_size + pad), np.complex64)
     uv.set(command_queue, uv_host)
     grid.zero(command_queue)
+    weights_grid.zero(command_queue)
     w_plane.zero(command_queue)
     vis.zero(command_queue)
     convolve_kernel.zero(command_queue)
-    return grid, uv, w_plane, vis, convolve_kernel
+    return grid, weights_grid, uv, w_plane, vis, convolve_kernel
 
 
 class GridderTemplate(object):
-    autotune_version = 5
+    autotune_version = 6
 
     def __init__(self, context, image_parameters, grid_parameters, tuning=None):
         if tuning is None:
@@ -564,7 +579,7 @@ class GridderTemplate(object):
         queue = context.create_tuning_command_queue()
         bin_size = 32
         pad = 3
-        grid, uv, w_plane, vis, convolve_kernel = _autotune_arrays(
+        grid, weights_grid, uv, w_plane, vis, convolve_kernel = _autotune_arrays(
                 queue, oversample, real_dtype, num_polarizations, bin_size, pad)
         num_vis = uv.shape[0]
 
@@ -610,7 +625,7 @@ class GridderTemplate(object):
                 Gridder.static_run(
                     queue, kernel, wgs_x, wgs_y, tile_x, tile_y, bin_size,
                     num_vis, uv_bias,
-                    grid, uv, w_plane, vis, convolve_kernel)
+                    grid, weights_grid, uv, w_plane, vis, convolve_kernel)
             return tune.make_measure(queue, fn)
 
         return tune.autotune(
@@ -625,12 +640,14 @@ class GridderTemplate(object):
 
 
 class GridDegrid(accel.Operation):
-    """Base class for :class:`Grid` and :class:`Degrid`.
+    """Base class for :class:`Gridder` and :class:`Degridder`.
 
     .. rubric:: Slots
 
     **grid** : array of pols × height × width, complex
-        Grid (output for :class:`Grid`, input for :class:`Degrid`)
+        Grid (output for :class:`Gridder`, input for :class:`Degridder`)
+    **weights_grid** : array of pols × height × width, float32
+        Grid of density weights (input for :class:`Gridder`, absent for :class:`Degridder`)
     **uv** : array of int16×4
         The first two elements for each visibility are the
         UV coordinates of the first grid cell to be updated. The other two are
@@ -709,6 +726,8 @@ class Gridder(GridDegrid):
 
     def __init__(self, *args, **kwargs):
         super(Gridder, self).__init__(*args, **kwargs)
+        num_polarizations = len(self.template.image_parameters.polarizations)
+        self.slots['weights_grid'] = accel.IOSlot(self.slots['grid'].shape, np.float32)
         self._kernel = self.template.program.get_kernel('grid')
 
     def grid(self, uv, sub_uv, w_plane, vis):
@@ -727,7 +746,7 @@ class Gridder(GridDegrid):
     @classmethod
     def static_run(cls, command_queue, kernel,
                    wgs_x, wgs_y, tile_x, tile_y, bin_size, num_vis, uv_bias,
-                   grid, uv, w_plane, vis, convolve_kernel):
+                   grid, weights_grid, uv, w_plane, vis, convolve_kernel):
         """Implementation of :meth:`_run` with all the parameters explicit.
         This is not intended for direct use, but is used for autotuning to
         execute the kernel while bypassing a lot of unwanted setup.
@@ -744,7 +763,7 @@ class Gridder(GridDegrid):
             Number of visibilities to grid
         uv_bias : int
             Bias for UV coordinates to center the kernel
-        grid, uv, w_plane, vis, convolve_kernel : :class:`~katsdpsigproc.accel.DeviceArray`-like
+        grid, weights_grid, uv, w_plane, vis, convolve_kernel : :class:`~katsdpsigproc.accel.DeviceArray`-like
             Data passed to the kernel
         """
         if num_vis == 0:
@@ -760,17 +779,24 @@ class Gridder(GridDegrid):
         # If it is not, then every workgroup will finish with a partial batch,
         # rather than only the last workgroup.
         vis_per_workgroup = accel.roundup(vis_per_workgroup, wgs_x * wgs_y)
+        half_u = weights_grid.shape[1] // 2
+        half_v = weights_grid.shape[2] // 2
+        weights_address_bias = half_v * weights_grid.padded_shape[2] + half_u
         command_queue.enqueue_kernel(
             kernel,
             [
                 grid.buffer,
                 np.int32(grid.padded_shape[2]),
                 np.int32(grid.padded_shape[1] * grid.padded_shape[2]),
+                weights_grid.buffer,
+                np.int32(weights_grid.padded_shape[2]),
+                np.int32(weights_grid.padded_shape[1] * weights_grid.padded_shape[2]),
                 uv.buffer,
                 w_plane.buffer,
                 vis.buffer,
                 convolve_kernel.buffer,
                 np.int32(uv_bias),
+                np.int32(weights_address_bias),
                 np.int32(vis_per_workgroup),
                 np.int32(num_vis)
             ],
@@ -792,6 +818,7 @@ class Gridder(GridDegrid):
             self.num_vis,
             uv_bias,
             self.buffer('grid'),
+            self.buffer('weights_grid'),
             self.buffer('uv'),
             self.buffer('w_plane'),
             self.buffer('vis'),
@@ -799,7 +826,7 @@ class Gridder(GridDegrid):
 
 
 class DegridderTemplate(object):
-    autotune_version = 2
+    autotune_version = 3
 
     def __init__(self, context, image_parameters, grid_parameters, tuning=None):
         if tuning is None:
@@ -843,7 +870,7 @@ class DegridderTemplate(object):
     def autotune(cls, context, oversample, real_dtype, num_polarizations):
         queue = context.create_tuning_command_queue()
         bin_size = 32
-        grid, uv, w_plane, vis, convolve_kernel = _autotune_arrays(
+        grid, weights_grid, uv, w_plane, vis, convolve_kernel = _autotune_arrays(
                 queue, oversample, real_dtype, num_polarizations, bin_size, 3)
         num_vis = uv.shape[0]
 
@@ -971,24 +998,26 @@ class Degridder(GridDegrid):
 
 
 @numba.jit(nopython=True)
-def _grid(kernel, values, uv, sub_uv, w_plane, vis, sample):
+def _grid(kernel, grid, weights_grid, uv, sub_uv, w_plane, vis, sample):
     """Internal implementation of :meth:`GridderHost.grid`, split out so that
     Numba can JIT it.
     """
     ksize = kernel.shape[2]
-    uv_bias = (ksize - 1) // 2 - values.shape[2] // 2
+    uv_bias = (ksize - 1) // 2 - grid.shape[2] // 2
     for row in range(uv.shape[0]):
         u0 = uv[row, 0] - uv_bias
         v0 = uv[row, 1] - uv_bias
         sub_u, sub_v = sub_uv[row]
+        weights_u = uv[row, 0] + weights_grid.shape[2] // 2
+        weights_v = uv[row, 1] + weights_grid.shape[1] // 2
         for i in range(vis.shape[1]):
-            sample[i] = vis[row, i]
+            sample[i] = vis[row, i] * weights_grid[i, weights_v, weights_u]
         for j in range(ksize):
             for k in range(ksize):
                 kernel_sample = kernel[w_plane[row], sub_v, j] * kernel[w_plane[row], sub_u, k]
                 weight = np.conj(kernel_sample)
-                for pol in range(values.shape[0]):
-                    values[pol, int(v0 + j), int(u0 + k)] += sample[pol] * weight
+                for pol in range(grid.shape[0]):
+                    grid[pol, int(v0 + j), int(u0 + k)] += sample[pol] * weight
 
 
 class GridderHost(object):
@@ -1000,6 +1029,7 @@ class GridderHost(object):
         pixels = image_parameters.pixels
         shape = (len(image_parameters.polarizations), pixels, pixels)
         self.values = np.empty(shape, image_parameters.complex_dtype)
+        self.weights_grid = np.empty(shape, np.float32)
 
     def clear(self):
         self.values.fill(0)
@@ -1019,7 +1049,7 @@ class GridderHost(object):
             Visibility data, indexed by sample and polarization, and
             pre-multiplied by all weights
         """
-        _grid(self.kernel.data, self.values,
+        _grid(self.kernel.data, self.values, self.weights_grid,
               uv, sub_uv, w_plane, vis,
               np.empty((vis.shape[1],), self.values.dtype))
 
