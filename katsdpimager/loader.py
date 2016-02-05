@@ -22,5 +22,5 @@ try:
     import katsdpimager.loader_ms
     _register_loader(katsdpimager.loader_ms.LoaderMS)
 except ImportError:
-    warning.warn("Failed to load loader_ms. Possibly python-casacore is missing or broken.",
-                 ImportWarning)
+    warnings.warn("Failed to load loader_ms. Possibly python-casacore is missing or broken.",
+                  ImportWarning)
