@@ -405,7 +405,7 @@ class Weights(accel.OperationSequence):
         if self._grid_weights is not None:
             N = len(uv)
             self._grid_weights.num_vis = N
-            self.buffer('uv')[:N] = uv
+            self.buffer('uv')[:N, 0:2] = uv
             self.buffer('weights')[:N] = weights
             return self._grid_weights()
 
