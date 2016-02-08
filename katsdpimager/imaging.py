@@ -197,7 +197,8 @@ class ImagingHost(object):
             'dirty': self._dirty,
             'model': self._model,
             'grid': self._grid,
-            'degrid': self._degrid
+            'degrid': self._degrid,
+            'weights_grid': self._weights_grid
         }
 
     def buffer(self, name):

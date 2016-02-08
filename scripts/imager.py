@@ -88,6 +88,7 @@ def get_parser():
     group.add_argument('--max-cache-size', type=int, default=None, help='Limit HDF5 cache size for preprocessing')
     group = parser.add_argument_group('Debugging options')
     group.add_argument('--host', action='store_true', help='Perform operations on the CPU')
+    group.add_argument('--write-weights', metavar='FILE', help='Write imaging weights to FITS file')
     group.add_argument('--write-psf', metavar='FILE', help='Write image of PSF to FITS file')
     group.add_argument('--write-grid', metavar='FILE', help='Write UV grid to FITS file')
     group.add_argument('--write-dirty', metavar='FILE', help='Write dirty image to FITS file')
@@ -358,6 +359,9 @@ def main():
 
         #### Compute imaging weights ####
         make_weights(queue, reader, imager, weight_p.weight_type, args.vis_block)
+        if args.write_weights is not None:
+            with progress.step('Write image weights'):
+                io.write_fits_image(dataset, imager.buffer('weights_grid'), image_p, args.write_weights, bunit=None)
 
         #### Create PSF ####
         slice_w_step = float(grid_p.max_w / image_p.wavelength / (grid_p.w_slices - 0.5))

@@ -73,7 +73,7 @@ def _fits_polarizations(header, axis, polarizations):
     return pol_permute
 
 
-def write_fits_image(dataset, image, image_parameters, filename, beam=None):
+def write_fits_image(dataset, image, image_parameters, filename, beam=None, bunit='JY/BEAM'):
     """Write an image to a FITS file.
 
     Parameters
@@ -89,6 +89,9 @@ def write_fits_image(dataset, image, image_parameters, filename, beam=None):
         File to write. It is silently overwritten if already present.
     beam : :class:`katsdpimager.beam.Beam`, optional
         Synthesized beam model to write to the header
+    bunit : str, optional
+        Value for the ``BUNIT`` header in the file. It can be explicitly set
+        to ``None`` to avoid writing this key.
 
     Raises
     ------
@@ -97,7 +100,8 @@ def write_fits_image(dataset, image, image_parameters, filename, beam=None):
         transform in the FITS header.
     """
     header = fits.Header()
-    header['BUNIT'] = 'JY/BEAM'
+    if bunit is not None:
+        header['BUNIT'] = bunit
     header['ORIGIN'] = 'katsdpimager'
 
     # Transformation from pixel coordinates to intermediate world coordinates,
