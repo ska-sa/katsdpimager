@@ -479,7 +479,7 @@ class Weights(accel.OperationSequence):
         self.ensure_all_bound()
         # If self._fill is set, it is not necessary to clear first because
         # finalize will set all relevant values.
-        if self._fill is not None:
+        if self._fill is None:
             self.buffer('grid').zero(self.command_queue)
 
     def grid(self, uv, weights):
