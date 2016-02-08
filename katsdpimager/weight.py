@@ -6,28 +6,28 @@ Computation of density weights, for uniform and robust weighting. Refer to
 stages:
 
 1. The statistical weights are gridded, *without* any convolution. The subgrid
-coordinates are still passed so that the same data layouts can be shared with
-convolutional gridding, but they are be ignored.
+   coordinates are still passed so that the same data layouts can be shared with
+   convolutional gridding, but they are be ignored.
 
 2. For robust weighting, an "average" statistical weight is computed as
 
-.. math:: \overline{W} = \frac{\sum W_i^2}{\sum W_i},
+   .. math:: \overline{W} = \frac{\sum W_i^2}{\sum W_i},
 
-where the sums are over grid cells.
+   where the sums are over grid cells.
 
 3. The total statistical weight per cell is converted into a density weight.
-If :math:`W_i` is the total statistical weight for a cell, then a uniform
-weight is computed as :math:`1 / W` and a robust weight as :math:`1 / (WS^2 +
-1)`, where
+   If :math:`W_i` is the total statistical weight for a cell, then a uniform
+   weight is computed as :math:`1 / W` and a robust weight as :math:`1 / (WS^2 +
+   1)`, where
 
-.. math:: S^2 = \overline{W}(5\cdot 10^{-R})^2
+   .. math:: S^2 = \overline{W}(5\cdot 10^{-R})^2
 
-and :math:`R` is the robustness parameter. The conversion formula for robust
-weighting is taken from wsclean.
+   and :math:`R` is the robustness parameter. The conversion formula for robust
+   weighting is taken from wsclean.
 
 4. During gridding, as visibilities are loaded the density weights are looked
-up and multiplied in. The visibilities are already pre-weighted by the
-statistical weights.
+   up and multiplied in. The visibilities are already pre-weighted by the
+   statistical weights.
 
 Note that all these steps use compressed visibilities. This works because the
 density weights are constant for a grid cell, and thus constant across the
@@ -273,6 +273,18 @@ class DensityWeights(accel.Operation):
 
 
 class MeanWeightTemplate(object):
+    """Template for computing the "mean weight", as defined by equation 3.17 in
+    [Bri95]_. The input is the gridded density weights. The kernel outputs the
+    sum of squared cell weights and the sum of weights, and the Python code
+    computes the mean weight from these. Only the first polarization is used.
+
+    Parameters
+    ----------
+    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+        Context for which kernels will be compiled
+    tuning : dict, optional
+        Tuning parameters (unused)
+    """
     def __init__(self, context, tuning=None):
         self.context = context
         # TODO: autotuning
@@ -291,6 +303,24 @@ class MeanWeightTemplate(object):
 
 
 class MeanWeight(accel.Operation):
+    """Instantiation of :class:`MeanWeightTemplate`.
+
+    .. rubric:: Slots
+
+    **grid** : array of shape `num_polarizations` × height × width, float32
+        The sum of statistical weights per cell
+
+    Parameters
+    ----------
+    template : :class:`MeanWeightTemplate`
+        Operation template
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+        Command queue for the operation
+    grid_shape : tuple of ints
+        Shape for the grid, (polarizations, height, width)
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
+    """
     def __init__(self, template, command_queue, grid_shape, allocator=None):
         super(MeanWeight, self).__init__(command_queue, allocator)
         self.template = template
@@ -324,6 +354,20 @@ class MeanWeight(accel.Operation):
 
 
 class WeightsTemplate(object):
+    """Compound template for computing imaging weights.
+
+    Parameters
+    ----------
+    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+        Context for which kernels will be compiled
+    weight_type : {:const:`NATURAL`, :const:`UNIFORM`, :const:`ROBUST`}
+        Weighting method
+    num_polarizations : int
+        Number of polarizations
+    grid_weights_tuning, mean_weights_tuning, density_weights_tuning : dict, optional
+        Tuning parameters passed to :class:`GridWeightsTemplate`,
+        :class:`MeanWeightsTemplate` and :class:`DensityWeightsTemplate` respectively
+    """
     def __init__(self, context, weight_type, num_polarizations, grid_weights_tuning=None, mean_weight_tuning=None, density_weights_tuning=None):
         self.context = context
         self.weight_type = weight_type
@@ -346,6 +390,44 @@ class WeightsTemplate(object):
 
 
 class Weights(accel.OperationSequence):
+    """Instantiation of :class:`WeightsTemplate`. The steps to use it are:
+
+     1. If using :const:`ROBUST` weighting, set :attr:`robustness`.
+     2. Call :meth:`clear`.
+     3. For each batch of weights, call :meth:`grid`.
+     4. Call :meth:`finalize`.
+
+    .. rubric:: Slots
+
+    **uv** : array of shape `max_vis` × 4, int16
+        UV coordinates of the grid points. The coordinates are biased by half
+        the grid size, so that (0, 0) refers to the centre of the grid.
+    **weights** : array of shape `max_vis` × `num_polarizations`, float32
+        Weights to accumulate
+    **grid** : array of shape `num_polarizations` × height × width, float32
+        Accumulated weights
+
+    .. note::
+
+        The **uv** and **weights** slots will be absent if the template was
+        created with :const:`NATURAL` weighting.
+
+    Parameters
+    ----------
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+        Command queue for the operation
+    grid_shape : tuple of ints
+        Shape for the grid, (polarizations, height, width)
+    max_vis : int
+        Maximum number of weights that can be gridded in one pass
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
+
+    Attributes
+    ----------
+    robustness : float
+        Parameter for robust weighting
+    """
     def __init__(self, template, command_queue, grid_shape, max_vis, allocator=None):
         self.template = template
         operations = []
@@ -424,6 +506,20 @@ class Weights(accel.OperationSequence):
 
 
 class WeightsHost(object):
+    """Equivalent to :class:`Weights` that runs on the host.
+
+    Parameters
+    ----------
+    weight_type : {:const:`NATURAL`, :const:`UNIFORM`, :const:`ROBUST`}
+        Weighting method
+    weights_grid : array-like, float
+        Grid for weights
+
+    Attributes
+    ----------
+    robustness : float
+        Parameter for robust weighting
+    """
     def __init__(self, weight_type, weights_grid):
         self.weight_type = weight_type
         self.robustness = 0.0
