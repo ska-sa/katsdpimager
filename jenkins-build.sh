@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e -x
 
-pip install -U pip setuptools wheel
+pip install -r ~/docker-base/pre-requirements.txt
 install-requirements.py -d ~/docker-base/base-requirements.txt -d ~/docker-base/gpu-requirements.txt \
     -r requirements.txt
 if [ "$1" = "" ]; then
