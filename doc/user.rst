@@ -22,17 +22,18 @@ these packaging tools, but there are some additional requirements:
 
 Installation
 ============
-Once the pre-requisites from the previous section are present, install the
-``imager-support`` branch of katsdpsigproc:
+Once the pre-requisites from the previous section are present, install
+katsdpsigproc:
 
 .. code-block:: sh
 
-   git clone -b imager-support git@github.com:ska-sa/katsdpsigproc
+   git clone git@github.com:ska-sa/katsdpsigproc
    cd katsdpsigproc
    pip install .
 
-Then install katsdpimager, from the ``imager-dev`` branch of katsdppipelines.
-You can also try the ``master`` branch, but it lags behind:
+Then install katsdpimager from the katsdppipelines repository. The cutting
+edge is the ``imager-dev`` branch of katsdppipelines; the ``master`` branch
+contains code that has been reviewed.
 
 .. code-block:: sh
 
