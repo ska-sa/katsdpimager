@@ -27,5 +27,6 @@ scipy
 singledispatch
 six
 git+ssh://git@github.com/ska-sa/katsdpsigproc#egg=katsdpsigproc
+git+ssh://git@github.com/ska-sa/katversion#egg=katversion
 traceback2
 unittest2
