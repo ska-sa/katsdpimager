@@ -248,7 +248,7 @@ def antialias_w_kernel(
     kernel with the W correction in image space, to obtain a closed-form
     function we can evaluate in image space. This is then Fourier-transformed
     to UV space. To reduce aliasing, the image-space function is oversampled by
-    a factor of `uv_oversample`, and the transform result is then truncated.
+    a factor of `image_oversample`, and the transform result is then truncated.
 
     All the continuous functions that we are approximating in UV space are
     expressed as functions of the number of wavelengths.

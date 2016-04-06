@@ -50,7 +50,7 @@ setup(
     tests_require=tests_require,
     extras_require={
         'test': tests_require,
-        'doc': ['sphinx>=1.3.0'],
+        'doc': ['sphinx>=1.3.0', 'sphinxcontrib-tikz'] + tests_require,
         'cpu': ['numba'],
         'report': ['aplpy', 'matplotlib', 'mako'],
         'benchmark': ['katpoint']
