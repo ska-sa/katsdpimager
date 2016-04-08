@@ -62,7 +62,7 @@ DEVICE_FN void load(
     }
 }
 
-struct subgroup_local
+typedef struct
 {
     int2 batch_offset[BATCH_SIZE];
     // Index for first grid point to update
@@ -71,7 +71,7 @@ struct subgroup_local
     Complex batch_vis[NPOLS][BATCH_SIZE];
     // Scratch area for reductions
     scratch_t scratch;
-};
+} subgroup_local;
 
 KERNEL REQD_WORK_GROUP_SIZE(${wgs_x}, ${wgs_y}, ${wgs_z})
 void degrid(
