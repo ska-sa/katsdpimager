@@ -16,6 +16,7 @@ nose
 numba
 numpy
 pbr
+pkginfo
 progress==1.2
 py
 pycuda
