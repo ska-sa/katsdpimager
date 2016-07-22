@@ -39,7 +39,7 @@ setup(
     description="GPU-accelerated radio-astronomy imager",
     author="Bruce Merry and Ludwig Schwardt",
     packages=find_packages(),
-    package_data={'': ['imager_kernels**/*.mako']},
+    package_data={'': ['imager_kernels/*.mako', 'imager_kernels/*/*.mako']},
     scripts=["scripts/imager.py"],
     ext_package='katsdpimager',
     ext_modules=extensions,
