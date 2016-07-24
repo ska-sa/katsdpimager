@@ -13,7 +13,7 @@ Mako
 MarkupSafe
 mock
 nose
-numba
+numba==0.22.1; platform_machine == 'x86_64'
 numpy
 pbr
 pkginfo
