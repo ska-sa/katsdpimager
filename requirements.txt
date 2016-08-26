@@ -7,6 +7,7 @@ enum34
 funcsigs
 futures
 h5py
+katversion
 linecache2
 llvmlite
 Mako
@@ -28,7 +29,6 @@ scipy
 singledispatch
 six
 git+ssh://git@github.com/ska-sa/katsdpsigproc#egg=katsdpsigproc
-git+ssh://git@github.com/ska-sa/katversion
 traceback2
 trollius
 unittest2
