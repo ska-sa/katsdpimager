@@ -1,0 +1,36 @@
+#!groovy
+
+def katsdp = fileLoader.fromGit('scripts/katsdp.groovy', 'git@github.com:ska-sa/katsdpjenkins', 'master', 'katpull', '')
+env.BRANCH_NAME = 'master'
+
+katsdp.commonBuild(maintainer: 'bmerry@ska.ac.za') {
+    String workdir = 'git/katsdpimager'
+    String testdir = "$workdir/tests"
+    katsdp.stagePrepare(subdir: 'katsdpimager')
+
+    stage 'Generate report'
+    katsdp.simpleNode(label: 'cuda', timeout: [time: 8, units: 'HOURS']) {
+        deleteDir()
+        katsdp.unpackGit()
+        katsdp.unpackVenv()
+        // Meqtrees won't run against our virtualenv, since it uses system
+        // Python, so run it outside the virtualenv closure
+        dir(testdir) {
+            sh 'makems && mv simple.ms_p0 simple.ms'
+            // makems hard-codes LOFAR antenna information; replace with MeerKAT
+            sh 'rm -r simple.ms/ANTENNA && cp -a MeerKAT64_ANTENNAS simple.ms/ANTENNA'
+            // Create the Sky model
+            sh 'tigger-convert --rename --format "name ra_h ra_m ra_s dec_d dec_m dec_s i q u v" -f simple.lsm.txt simple.lsm.html'
+            sh 'meqtree-pipeliner.py -c batch.tdlconf "[turbo-sim]" ms_sel.msname=simple.ms /usr/lib/python2.7/dist-packages/Cattery/Siamese/turbo-sim.py =_tdl_job_1_simulate_MS'
+        }
+        katsdp.virtualenv('venv') {
+            katsdp.installRequirements('git/katsdpimager/report-requirements.txt')
+            sh 'pip install --no-index -v ./git/katsdpimager[report]'
+            dir(testdir) {
+                sh './images_report.py simple.ms report'
+                sh 'cp simple.lsm.txt simple.lsm.html makems.cfg batch.tdlconf report/'
+            }
+        }
+        publishHTML(target: [reportName: 'Test images', reportDir: "$testdir/report", reportFiles: 'index.html'])
+    }
+}

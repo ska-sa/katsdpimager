@@ -13,9 +13,10 @@ Mako
 MarkupSafe
 mock
 nose
-numba
+numba==0.22.1; platform_machine == 'x86_64'
 numpy
 pbr
+pkginfo
 progress==1.2
 py
 pycuda
@@ -29,4 +30,5 @@ six
 git+ssh://git@github.com/ska-sa/katsdpsigproc#egg=katsdpsigproc
 git+ssh://git@github.com/ska-sa/katversion
 traceback2
+trollius
 unittest2

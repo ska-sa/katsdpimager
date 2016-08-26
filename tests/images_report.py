@@ -132,9 +132,13 @@ class Image(object):
 def write_index(args, images, build_info, modes):
     template_filename = os.path.join(os.path.dirname(__file__), 'report.html.mako')
     template = Template(filename=template_filename)
+    try:
+        commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'])
+    except subprocess.CalledProcessError:
+        commit = 'Unknown'
     with io.open(os.path.join(args.output_dir, 'index.html'), 'w', encoding='utf-8') as f:
         f.write(template.render_unicode(
-            revision=os.environ.get('GIT_COMMIT', 'Unknown'),
+            revision=commit,
             modes=modes,
             stokes=args.stokes,
             images=images,
