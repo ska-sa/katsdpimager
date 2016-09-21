@@ -66,16 +66,6 @@ STOKES_COEFF = np.array([
     [1, -1, 0, 0]], np.complex64)
 
 
-@contextmanager
-def _np_seterr(*args, **kwargs):
-    """Context-manager version of :py:func:`np.seterr` that restores the
-    previous state on exit from the context.
-    """
-    old = np.seterr(*args, **kwargs)
-    yield
-    np.seterr(**old)
-
-
 def polarization_matrix(outputs, inputs):
     """Return a matrix that will map the input polarizations to the outputs.
 
@@ -176,7 +166,7 @@ def apply_polarization_matrix_weights(weights, matrix):
     # Transform weights to variance estimates. The abs() is to force
     # negative zeros to positive zeros, so that the reciprocal
     # is +inf.
-    with _np_seterr(divide='ignore'):
+    with np.errstate(divide='ignore'):
         variance = np.reciprocal(np.abs(weights))
     weight_matrix = np.multiply(matrix, matrix.conj()).real  # Square of abs, element-wise
     variance = apply_polarization_matrix(variance, weight_matrix)
