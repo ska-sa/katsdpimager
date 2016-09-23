@@ -2,11 +2,17 @@
 from setuptools import setup, find_packages, Extension
 import ctypes.util
 import sys
+import glob
 try:
     import numpy
     numpy_include = numpy.get_include()
 except ImportError:
     numpy_include = None
+try:
+    import pkgconfig
+    eigen3 = pkgconfig.parse('eigen3')
+except ImportError:
+    eigen3 = {'include_dirs': set()}
 
 tests_require = ['nose', 'mock', 'scipy']
 
@@ -28,9 +34,11 @@ extensions = [
         '_preprocess',
         sources=['katsdpimager/preprocess.cpp'],
         language='c++',
-        include_dirs=[numpy_include],
+        include_dirs=[numpy_include] + list(eigen3.get('include_dirs', [])),
+        depends=glob.glob('katsdpimager/*.h'),
         extra_compile_args=['-std=c++0x', '-g0'],
-        libraries=[bp_library, 'boost_system'])
+        libraries=[bp_library, 'boost_system'] + list(eigen3.get('libraries', []))
+    )
 ]
 
 setup(
@@ -43,7 +51,7 @@ setup(
     scripts=["scripts/imager.py"],
     ext_package='katsdpimager',
     ext_modules=extensions,
-    setup_requires=['numpy'],
+    setup_requires=['numpy', 'pkgconfig'],
     install_requires=[
         'numpy', 'katsdpsigproc', 'python-casacore', 'astropy', 'progress',
         'pycuda', 'scikit-cuda', 'h5py', 'ansicolors'

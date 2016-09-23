@@ -67,7 +67,7 @@ STOKES_COEFF = np.array([
 
 
 def polarization_matrix(outputs, inputs):
-    """Return a matrix that will map the input polarizations to the outputs.
+    """Return a Mueller matrix that will map the input polarizations to the outputs.
 
     The matrix is computed using linear algebra. Let `s` represent the Stokes
     parameters (IQUV). The inputs correspond to :math:`As`, for some matrix
@@ -76,6 +76,9 @@ def polarization_matrix(outputs, inputs):
 
     If redundant inputs are given, then the solution is not uniquely
     determined.
+
+    This function is general, and does not require 4 inputs and outputs, or
+    even the same number of inputs and outputs.
 
     Raises
     ------
@@ -95,16 +98,44 @@ def polarization_matrix(outputs, inputs):
     # In the common cases, the values are all multiples of 0.25, but lstsq has
     # rounding errors. Round off anything that is close enough to a multiple.
     # In particular, tiny values will be flushed to zero, which is important
-    # to apply_polarization_matrix.
+    # to apply_mueller_matrix.
     Xr = np.round(np.float32(4) * X) * np.float32(0.25)
     np.putmask(X, np.isclose(X, Xr), Xr)
     assert X.dtype == np.complex64
     return X.T
 
 
-def apply_polarization_matrix(data, matrix):
-    """Convert polarization basis in data using a matrix computed by
-    :py:func:`polarization_matrix`. Rather than using a straight
+def polarization_matrices(outputs, inputs):
+    """Compute a pair of Mueller matrices for conversion via a circular (RL)
+    frame.
+
+    Parameters
+    ----------
+    outputs : list
+        Output polarizations
+    inputs : list
+        Input polarizations
+
+    Returns
+    -------
+    from_circular : matrix
+        Mueller matrix from circular frame to `output`
+    to_circular : matrix
+        Mueller matrix from `inputs` to circular frame
+
+    Raises
+    ------
+    ValueError
+        If `inputs` are not a full polarization basis
+    """
+    circular = [STOKES_RR, STOKES_RL, STOKES_LR, STOKES_LL]
+    return polarization_matrix(outputs, circular), polarization_matrix(circular, inputs)
+
+
+def apply_mueller_matrix(data, matrix):
+    """
+    Convert visibility data using a matrix, such as that computed by
+    :py:func`polarization_matrix`. Rather than using a straight
     matrix product, only the non-zero elements of the matrix are taken into
     account. Apart from reducing computation, this makes this function
     suitable when some of the input values are non-finite but do not
@@ -139,8 +170,8 @@ def apply_polarization_matrix(data, matrix):
     return out
 
 
-def apply_polarization_matrix_weights(weights, matrix):
-    """Apply a polarization change to weights. It is suitable
+def apply_mueller_matrix_weights(weights, matrix):
+    """Apply a Mueller matrix to `weights`. It is suitable
     even when some weights are zero, indicating flagged data.
 
     Parameters
@@ -169,5 +200,5 @@ def apply_polarization_matrix_weights(weights, matrix):
     with np.errstate(divide='ignore'):
         variance = np.reciprocal(np.abs(weights))
     weight_matrix = np.multiply(matrix, matrix.conj()).real  # Square of abs, element-wise
-    variance = apply_polarization_matrix(variance, weight_matrix)
+    variance = apply_mueller_matrix(variance, weight_matrix)
     return np.reciprocal(variance)

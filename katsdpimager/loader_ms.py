@@ -7,6 +7,18 @@ import argparse
 import astropy.units as units
 
 
+def _getcol_virtual(table, name, start, count):
+    """Wrap the getcol function to fetch elements one at a time. This is
+    needed because casacore 2.1 doesn't support fetching a range of rows on
+    virtual columns (VirtualScalarColumn doesn't overload
+    getScalarColumnCells).
+    """
+    out = np.empty((count,), table.coldatatype(name))
+    for i in range(count):
+        out[i] = table.getcell(name, start + i)
+    return out
+
+
 class LoaderMS(katsdpimager.loader_core.LoaderBase):
     def __init__(self, filename, options):
         super(LoaderMS, self).__init__(filename, options)
@@ -18,11 +30,18 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         parser.add_argument('--field', type=int, default=0, help='Field to image [%(default)s]')
         args = parser.parse_args(options)
         self._main = casacore.tables.table(filename, ack=False)
-        self._antenna = casacore.tables.table(filename + '::ANTENNA', ack=False)
-        self._data_description = casacore.tables.table(filename + '::DATA_DESCRIPTION', ack=False)
-        self._field = casacore.tables.table(filename + '::FIELD', ack=False)
-        self._spectral_window = casacore.tables.table(filename + '::SPECTRAL_WINDOW', ack=False)
-        self._polarization = casacore.tables.table(filename + '::POLARIZATION', ack=False)
+        # Adds virtual columns for parallactic angle, amongst others
+        try:
+            casacore.tables.addDerivedMSCal(filename)
+        except RuntimeError:
+            pass  # Above fails if the columns already exist
+        self._filename = filename
+        self._antenna = casacore.tables.table(self._main.getkeyword('ANTENNA'), ack=False)
+        self._data_description = casacore.tables.table(self._main.getkeyword('DATA_DESCRIPTION'), ack=False)
+        self._field = casacore.tables.table(self._main.getkeyword('FIELD'), ack=False)
+        self._spectral_window = casacore.tables.table(self._main.getkeyword('SPECTRAL_WINDOW'), ack=False)
+        self._polarization = casacore.tables.table(self._main.getkeyword('POLARIZATION'), ack=False)
+        self._feed = casacore.tables.table(self._main.getkeyword('FEED'), ack=False)
         self._data_col = args.data
         self._field_id = args.field
         self._data_desc_id = args.data_desc
@@ -37,6 +56,19 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             'POLARIZATION_ID', args.data_desc)
         self._spectral_window_id = self._data_description.getcell(
             'SPECTRAL_WINDOW_ID', args.data_desc)
+        # Load per-antenna feed angles. For now, only a constant value per
+        # antenna is supported, rather than per feed or per receptor within a
+        # feed. This avoids the need for more per-visibility indexing.
+        antenna_id = self._feed.getcol('ANTENNA_ID')
+        receptor_angle = self._feed.getcol('RECEPTOR_ANGLE')
+        antenna_angle = [None] * (np.max(antenna_id) + 1)
+        for i in range(len(antenna_id)):
+            for angle in receptor_angle[i]:
+                if (antenna_angle[antenna_id[i]] is not None
+                        and not np.allclose(antenna_angle[antenna_id[i]], angle)):
+                    raise ValueError('Multiple feed angles for one antenna is not supported')
+                antenna_angle[antenna_id[i]] = angle
+        self._antenna_angle = antenna_angle * units.rad   # TODO check QuantumUnits
 
     @classmethod
     def match(cls, filename):
@@ -91,6 +123,10 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             valid = np.logical_and(valid, data_desc_id == self._data_desc_id)
             valid = np.logical_and(valid, antenna1 != antenna2)
             data = self._main.getcol(self._data_col, start, end - start)[valid, channel, ...]
+            pa1 = _getcol_virtual(self._main, 'PA1', start, end - start)[valid, ...] * units.rad
+            pa2 = _getcol_virtual(self._main, 'PA2', start, end - start)[valid, ...] * units.rad
+            feed_angle1 = pa1 + self._antenna_angle[antenna1[valid]]
+            feed_angle2 = pa2 + self._antenna_angle[antenna2[valid]]
             # Note: UVW is negated due to differing sign conventions
             uvw = -self._main.getcol('UVW', start, end - start)[valid, ...]
             uvw = units.Quantity(uvw, units.m, copy=False)
@@ -103,6 +139,7 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             weight = weight * np.logical_not(flag[:, channel, :])
             baseline = (antenna1 * self._antenna.nrows() + antenna2)[valid, ...]
             yield dict(uvw=uvw, weights=weight, baselines=baseline, vis=data,
+                       feed_angle1=feed_angle1, feed_angle2=feed_angle2,
                        progress=end, total=self._main.nrows())
 
     def close(self):
@@ -112,3 +149,9 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         self._field.close()
         self._spectral_window.close()
         self._polarization.close()
+        self._feed.close()
+        try:
+            casacore.tables.removeDerivedMSCal(self._filename)
+        except RuntimeError:
+            # Above fails if the columns don't exist
+            pass

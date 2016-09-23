@@ -115,7 +115,8 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
         """
         raise NotImplementedError()
 
-    def add(self, channel, uvw, weights, baselines, vis, polarization_matrix=None):
+    def add(self, channel, uvw, weights, baselines, vis,
+            feed_angle1, feed_angle2, mueller_stokes, mueller_circular):
         """Add a set of visibilities to the collector. Each of the provided
         arrays must have the same size on the first axis.
 
@@ -127,7 +128,7 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
         uvw : Quantity array, Quantity
             N×3 array of UVW coordinates.
         weights : array, float32
-            N×P array of weights, where P is the number of polarizations.
+            N×Q array of weights, where Q is the number of input polarizations.
             Flags must be folded into the weights.
         baselines : array, int
             1D array of integer, indicating baseline IDs. The IDs are
@@ -136,10 +137,15 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
             Negative baseline IDs indicate autocorrelations, which will
             be discarded.
         vis : array, complex64
-            N×P array of visibilities.
-        polarization_matrix : matrix, optional
-            If specified, the input visibilities are transformed by this
-            matrix.
+            N×Q array of visibilities.
+        feed_angle1, feed_angle2 : array, float32
+            Feed angles in radians for the two antennas in the baseline,
+            for rotating from feed-relative to celestial frame.
+        mueller_stokes : matrix
+            Converts from circular polarization to output Stokes parameters (4×Q)
+        mueller_circular : matrix
+            Converts from input polarizations to circular frame (P×4, where P
+            is the number of output polarizations)
         """
 
         # Force to single precision, since that's what the C++ code demands.
@@ -148,15 +154,14 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
         weights = weights.astype(np.float32)
         vis = vis.astype(np.complex64)
         uvw = uvw.astype(np.float32)
-        if polarization_matrix is not None:
-            weights = polarization.apply_polarization_matrix_weights(weights, polarization_matrix)
-            vis = polarization.apply_polarization_matrix(vis, polarization_matrix)
-
+        feed_angle1 = feed_angle1.astype(np.float32)
+        feed_angle2 = feed_angle2.astype(np.float32)
         ip = self.image_parameters[channel]
         super(VisibilityCollector, self).add(
             channel,
             ip.cell_size.to(units.m).value,
-            uvw, weights, baselines, vis)
+            uvw, weights, baselines, vis, feed_angle1, feed_angle2,
+            mueller_stokes, mueller_circular)
 
     def reader(self):
         """Create and return a reader object that can be used to iterate over

@@ -124,7 +124,7 @@ class DummyCommandQueue(object):
         pass
 
 
-def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, polarization_matrix):
+def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, polarization_matrices):
     bar = None
     if args.tmp_file:
         handle, filename = tempfile.mkstemp('.h5')
@@ -141,7 +141,8 @@ def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, po
                 bar = progress.make_progressbar("Preprocessing vis", max=chunk['total'])
             collector.add(
                 0, chunk['uvw'], chunk['weights'], chunk['baselines'], chunk['vis'],
-                polarization_matrix)
+                chunk['feed_angle1'], chunk['feed_angle2'],
+                *polarization_matrices)
             bar.goto(chunk['progress'])
     finally:
         if bar is not None:
@@ -291,7 +292,7 @@ def main():
         #### Determine parameters ####
         input_polarizations = dataset.polarizations()
         output_polarizations = args.stokes
-        polarization_matrix = polarization.polarization_matrix(output_polarizations, input_polarizations)
+        polarization_matrices = polarization.polarization_matrices(output_polarizations, input_polarizations)
         array_p = dataset.array_parameters()
         image_p = parameters.ImageParameters(
             args.q_fov, args.image_oversample,
@@ -354,7 +355,7 @@ def main():
         grid_data = imager.buffer('grid')
 
         #### Preprocess visibilities ####
-        collector = preprocess_visibilities(dataset, args, image_p, grid_p, polarization_matrix)
+        collector = preprocess_visibilities(dataset, args, image_p, grid_p, polarization_matrices)
         reader = collector.reader()
 
         #### Compute imaging weights ####

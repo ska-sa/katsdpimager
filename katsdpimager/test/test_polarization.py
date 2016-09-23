@@ -62,7 +62,7 @@ class TestPolarizationMatrix(object):
         assert_raises(ValueError, polarization.polarization_matrix, self.IQUV, self.XY_DIAG)
 
 
-class TestApplyPolarizationMatrixWeighted(object):
+class TestApplyMuellerMatrixWeighted(object):
     def setup(self):
         self.inputs = [
             polarization.STOKES_XX,
@@ -89,8 +89,8 @@ class TestApplyPolarizationMatrixWeighted(object):
         expected_weights = np.array([
             [8, 8, 8 / 3, 8 / 3],
             [16 / 3, 16 / 3, 32 / 9, 32 / 9]], np.float32)
-        actual_vis = polarization.apply_polarization_matrix(vis, self.pm)
-        actual_weights = polarization.apply_polarization_matrix_weights(
+        actual_vis = polarization.apply_mueller_matrix(vis, self.pm)
+        actual_weights = polarization.apply_mueller_matrix_weights(
             weights, self.pm)
         np.testing.assert_allclose(actual_vis, expected_vis)
         np.testing.assert_allclose(actual_weights, expected_weights)
@@ -108,8 +108,8 @@ class TestApplyPolarizationMatrixWeighted(object):
         expected_weights = np.array([
             [8, 8, 0, 0],
             [0, 0, 32 / 9, 32 / 9]], np.float32)
-        actual_vis = polarization.apply_polarization_matrix(vis, self.pm)
-        actual_weights = polarization.apply_polarization_matrix_weights(
+        actual_vis = polarization.apply_mueller_matrix(vis, self.pm)
+        actual_weights = polarization.apply_mueller_matrix_weights(
             weights, self.pm)
         np.testing.assert_allclose(actual_vis, expected_vis)
         np.testing.assert_allclose(actual_weights, expected_weights)

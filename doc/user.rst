@@ -15,10 +15,13 @@ these packaging tools, but there are some additional requirements:
    testing is only done with 7.0 and later (but see :ref:`cpu`).
  - `Casacore`_ 2.x, compiled with Python support
  - libhdf5, including development headers (``libhdf5-dev`` in Debian/Ubuntu)
+ - `Eigen3`_ (`libeigen3-dev` in Debian/Ubuntu)
  - Boost.Python
  - A C++ compiler such as GCC
 
 .. _Casacore: https://github.com/casacore/casacore
+
+.. _Eigen3: http://eigen.tuxfamily.org
 
 Installation
 ============

@@ -91,8 +91,11 @@ class BaseTestVisibilityCollector(object):
             [1.5 + 1.3j, 1.1 + 2.7j, 1.0 - 2j, 2.5 + 1j],
             [1.2 + 3.4j, 5.6 + 7.8j, 9.0 + 1.2j, 3.4 + 5.6j],
             ], dtype=np.complex64)
+        pa1 = pa2 = np.zeros(4, np.float32)
+        mueller_stokes = mueller_circular = np.matrix(np.identity(4, np.complex64))
         with closing(self.factory(self.image_parameters, self.grid_parameters, 64)) as collector:
-            collector.add(0, uvw, weights, baselines, vis)
+            collector.add(0, uvw, weights, baselines, vis, pa1, pa2,
+                          mueller_stokes, mueller_circular)
         self.check(collector, [[np.rec.fromarrays([
             [[96, 18], [-42, -85]],
             [[6, 3], [3, 1]],

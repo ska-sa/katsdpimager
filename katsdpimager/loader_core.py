@@ -100,6 +100,9 @@ class LoaderBase(object):
          - 'vis': visibilities
          - 'weights': imaging weights
          - 'baselines': arbitrary integer baseline IDs; negative IDs indicate autocorrelations
+         - 'feed_angle1': angle between feed and sky (parallactic angle plus a fixed
+           offset for the feed), for the first antenna in the baseline
+         - 'feed_angle2': angle between feed and sky for the second antenna in the baseline
          - 'progress': progress made through the file, in some arbitrary units
          - 'total': size of the file, in same units as 'progress'
 
