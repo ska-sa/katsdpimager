@@ -17,7 +17,7 @@ nose
 numba==0.22.1; platform_machine == 'x86_64'
 numpy
 pbr
-pkgconfig
+pkgconfig==1.1.0
 pkginfo
 progress==1.2
 py
