@@ -31,6 +31,9 @@ katsdp.commonBuild(maintainer: 'bmerry@ska.ac.za') {
                 sh 'cp simple.lsm.txt simple.lsm.html makems.cfg batch.tdlconf report/'
             }
         }
-        publishHTML(target: [reportName: 'Test images', reportDir: "$testdir/report", reportFiles: 'index.html'])
+        publishHTML(target: [reportName: 'Test images',
+                             reportDir: "$testdir/report",
+                             reportFiles: 'index.html',
+                             keepAll: true])
     }
 }
