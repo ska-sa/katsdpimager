@@ -115,6 +115,7 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         parser.add_argument('--data', type=str, metavar='COLUMN', default='DATA', help='Column containing visibilities to image [%(default)s]')
         parser.add_argument('--data-desc', type=int, default=0, help='Data description ID to image [%(default)s]')
         parser.add_argument('--field', type=int, default=0, help='Field to image [%(default)s]')
+        parser.add_argument('--pol-frame', choices=['sky', 'feed'], help='Reference frame for polarization [%(default)s]')
         args = parser.parse_args(options)
         self._main = casacore.tables.table(filename, ack=False)
         # Adds virtual columns for parallactic angle, amongst others
@@ -143,19 +144,23 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             'POLARIZATION_ID', args.data_desc)
         self._spectral_window_id = self._data_description.getcell(
             'SPECTRAL_WINDOW_ID', args.data_desc)
-        # Load per-antenna feed angles. For now, only a constant value per
-        # antenna is supported, rather than per feed or per receptor within a
-        # feed. This avoids the need for more per-visibility indexing.
-        antenna_id = _getcol(self._feed, 'ANTENNA_ID')
-        receptor_angle = _getcol(self._feed, 'RECEPTOR_ANGLE', 0, -1, 'rad', units.rad)
-        antenna_angle = [None] * (np.max(antenna_id) + 1)
-        for i in range(len(antenna_id)):
-            for angle in receptor_angle[i]:
-                if (antenna_angle[antenna_id[i]] is not None
-                        and not np.allclose(antenna_angle[antenna_id[i]], angle, atol=1e-8 * units.rad)):
-                    raise ValueError('Multiple feed angles for one antenna is not supported')
-                antenna_angle[antenna_id[i]] = angle
-        self._antenna_angle = units.Quantity(antenna_angle)
+        self._feed_angle_correction = args.pol_frame == 'feed'
+        if self._feed_angle_correction:
+            # Load per-antenna feed angles. For now, only a constant value per
+            # antenna is supported, rather than per feed or per receptor within a
+            # feed. This avoids the need for more per-visibility indexing.
+            antenna_id = _getcol(self._feed, 'ANTENNA_ID')
+            receptor_angle = _getcol(self._feed, 'RECEPTOR_ANGLE', 0, -1, 'rad', units.rad)
+            antenna_angle = [None] * (np.max(antenna_id) + 1)
+            for i in range(len(antenna_id)):
+                for angle in receptor_angle[i]:
+                    if (antenna_angle[antenna_id[i]] is not None
+                            and not np.allclose(antenna_angle[antenna_id[i]], angle, atol=1e-8 * units.rad)):
+                        raise ValueError('Multiple feed angles for one antenna is not supported')
+                    antenna_angle[antenna_id[i]] = angle
+            self._antenna_angle = units.Quantity(antenna_angle)
+        else:
+            self._antenna_angle = None
 
     @classmethod
     def match(cls, filename):
@@ -199,10 +204,14 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             valid = np.logical_and(valid, data_desc_id == self._data_desc_id)
             valid = np.logical_and(valid, antenna1 != antenna2)
             data = _getcol(self._main, self._data_col, start, end - start, 'Jy', units.Jy)[valid, channel, ...]
-            pa1 = _getcol(self._main, 'PA1', start, end - start, 'rad', units.rad, virtual=True)[valid, ...]
-            pa2 = _getcol(self._main, 'PA2', start, end - start, 'rad', units.rad, virtual=True)[valid, ...]
-            feed_angle1 = pa1 + self._antenna_angle[antenna1[valid]]
-            feed_angle2 = pa2 + self._antenna_angle[antenna2[valid]]
+            if self._feed_angle_correction:
+                pa1 = _getcol(self._main, 'PA1', start, end - start, 'rad', units.rad, virtual=True)[valid, ...]
+                pa2 = _getcol(self._main, 'PA2', start, end - start, 'rad', units.rad, virtual=True)[valid, ...]
+                feed_angle1 = pa1 + self._antenna_angle[antenna1[valid]]
+                feed_angle2 = pa2 + self._antenna_angle[antenna2[valid]]
+            else:
+                feed_angle1 = units.Quantity(np.zeros(data.shape[0], np.float32), units.rad)
+                feed_angle2 = feed_angle1.copy()
             # Note: UVW is negated due to differing sign conventions
             uvw = -_getcol(self._main, 'UVW', start, end - start, 'm', units.m, 'uvw', 'ITRF')[valid, ...]
             if 'WEIGHT_SPECTRUM' in self._main.colnames():
