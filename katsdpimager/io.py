@@ -5,8 +5,15 @@ import numpy as np
 import astropy.units as units
 import astropy.io.fits as fits
 import katsdpimager.polarization as polarization
+import logging
+
+
+_logger = logging.getLogger(__name__)
+
 
 #: Maps internal polarization constants to those used in FITS
+# FITS swaps the meaning of X and Y relative to IEEE definitions (see AIPS
+# memo 114).
 _FITS_POLARIZATIONS = {
     polarization.STOKES_I: 1,
     polarization.STOKES_Q: 2,
@@ -16,10 +23,10 @@ _FITS_POLARIZATIONS = {
     polarization.STOKES_LL: -2,
     polarization.STOKES_RL: -3,
     polarization.STOKES_LR: -4,
-    polarization.STOKES_XX: -5,
-    polarization.STOKES_YY: -6,
-    polarization.STOKES_XY: -7,
-    polarization.STOKES_YX: -8
+    polarization.STOKES_YY: -5,
+    polarization.STOKES_XX: -6,
+    polarization.STOKES_YX: -7,
+    polarization.STOKES_XY: -8
 }
 
 
