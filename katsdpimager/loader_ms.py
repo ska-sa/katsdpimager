@@ -5,7 +5,10 @@ import casacore.tables
 import casacore.quanta
 import numpy as np
 import argparse
+import itertools
 import astropy.units as units
+import astropy.time
+import astropy.coordinates
 
 
 def _getcol(table, name, start=0, count=-1,
@@ -118,11 +121,6 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         parser.add_argument('--pol-frame', choices=['sky', 'feed'], help='Reference frame for polarization [%(default)s]')
         args = parser.parse_args(options)
         self._main = casacore.tables.table(filename, ack=False)
-        # Adds virtual columns for parallactic angle, amongst others
-        try:
-            casacore.tables.addDerivedMSCal(filename)
-        except RuntimeError:
-            pass  # Above fails if the columns already exist
         self._filename = filename
         self._antenna = casacore.tables.table(self._main.getkeyword('ANTENNA'), ack=False)
         self._data_description = casacore.tables.table(self._main.getkeyword('DATA_DESCRIPTION'), ack=False)
@@ -170,10 +168,7 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         return _getcol(self._antenna, 'DISH_DIAMETER', 0, -1, 'm', units.m)
 
     def antenna_positions(self):
-        # We don't actually care about the frame of the positions, because
-        # they're only used to compute the baseline lengths. Thus, no
-        # restrictions are placed on MEASINFO.
-        return _getcol(self._antenna, 'POSITION', 0, -1, 'm', units.m)
+        return _getcol(self._antenna, 'POSITION', 0, -1, 'm', units.m, 'position', 'ITRF')
 
     def phase_centre(self):
         value = _getcell(self._field, 'PHASE_DIR', self._field_id,
@@ -192,36 +187,68 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
     def data_iter(self, channel, max_rows=None):
         if max_rows is None:
             max_rows = self._main.nrows()
+        # PHASE_DIR is used as an approximation to the antenna pointing
+        # direction, for the purposes of parallactic angle correction. This
+        # probably doesn't generalise well beyond dishes with single-pixel
+        # feeds.
+        pointing = self.phase_centre()
+        pointing = astropy.coordinates.SkyCoord(ra=pointing[0], dec=pointing[1], frame='icrs')
+        pos = self.antenna_positions()
+        pos = astropy.coordinates.EarthLocation.from_geocentric(pos[:, 0], pos[:, 1], pos[:, 2])
+        feed_angle = units.Quantity(np.empty(len(pos)), unit=units.rad, copy=False)
+
         for start in xrange(0, self._main.nrows(), max_rows):
             end = min(self._main.nrows(), start + max_rows)
-            flag_row = _getcol(self._main, 'FLAG_ROW', start, end - start)
-            field_id = _getcol(self._main, 'FIELD_ID', start, end - start)
-            data_desc_id = _getcol(self._main, 'DATA_DESC_ID', start, end - start)
-            antenna1 = _getcol(self._main, 'ANTENNA1', start, end - start)
-            antenna2 = _getcol(self._main, 'ANTENNA2', start, end - start)
+            nrows = end - start
+            flag_row = _getcol(self._main, 'FLAG_ROW', start, nrows)
+            field_id = _getcol(self._main, 'FIELD_ID', start, nrows)
+            data_desc_id = _getcol(self._main, 'DATA_DESC_ID', start, nrows)
+            antenna1 = _getcol(self._main, 'ANTENNA1', start, nrows)
+            antenna2 = _getcol(self._main, 'ANTENNA2', start, nrows)
             valid = np.logical_not(flag_row)
             valid = np.logical_and(valid, field_id == self._field_id)
             valid = np.logical_and(valid, data_desc_id == self._data_desc_id)
             valid = np.logical_and(valid, antenna1 != antenna2)
-            data = _getcol(self._main, self._data_col, start, end - start, 'Jy', units.Jy)[valid, channel, ...]
+            antenna1 = antenna1[valid]
+            antenna2 = antenna2[valid]
+            data = _getcol(self._main, self._data_col, start, nrows, 'Jy', units.Jy)[valid, channel, ...]
+            feed_angle1 = units.Quantity(np.zeros(data.shape[0]), units.rad)
+            feed_angle2 = feed_angle1.copy()
             if self._feed_angle_correction:
-                pa1 = _getcol(self._main, 'PA1', start, end - start, 'rad', units.rad, virtual=True)[valid, ...]
-                pa2 = _getcol(self._main, 'PA2', start, end - start, 'rad', units.rad, virtual=True)[valid, ...]
-                feed_angle1 = pa1 + self._antenna_angle[antenna1[valid]]
-                feed_angle2 = pa2 + self._antenna_angle[antenna2[valid]]
-            else:
-                feed_angle1 = units.Quantity(np.zeros(data.shape[0], np.float32), units.rad)
-                feed_angle2 = feed_angle1.copy()
+                time = _getcol(self._main, 'TIME_CENTROID', start, nrows, 's', units.s, 'epoch', 'UTC')[valid, ...]
+                # Find indices at which time changes, so that we only need to compute
+                # parallactic angles once per antenna per time. time_change
+                # will contain the first index of each group, *except* the first (0).
+                time_change = np.where(np.diff(time))[0] + 1
+                prev_idx = 0
+                for next_idx in itertools.chain(time_change, [len(time)]):
+                    idxs = np.s_[prev_idx : next_idx]
+                    # Convert time to days, to form an MJD. We go via seconds first
+                    # so that files without QuantumUnits default to seconds.
+                    this_time = astropy.time.Time(time[prev_idx].to(units.d), format='mjd', scale='utc')
+                    pole_cirs = astropy.coordinates.SkyCoord(ra=0, dec=90, unit=units.deg, obstime=this_time, frame='cirs')
+                    # Convert to CIRS outside of the per-antenna loop, so that
+                    # precession-nutation calculations do not need to be repeated.
+                    pointing_cirs = pointing.transform_to(astropy.coordinates.CIRS(obstime=this_time))
+                    for i in range(len(pos)):
+                        altaz_frame = astropy.coordinates.AltAz(location=pos[i], obstime=this_time)
+                        pole_altaz = pole_cirs.transform_to(altaz_frame)
+                        pointing_altaz = pointing_cirs.transform_to(altaz_frame)
+                        feed_angle[i] = (pointing_altaz.position_angle(pole_altaz)
+                                         + self._antenna_angle[i])
+                    feed_angle1[idxs] = feed_angle[antenna1[idxs]]
+                    feed_angle2[idxs] = feed_angle[antenna2[idxs]]
+                    prev_idx = next_idx
             # Note: UVW is negated due to differing sign conventions
-            uvw = -_getcol(self._main, 'UVW', start, end - start, 'm', units.m, 'uvw', 'ITRF')[valid, ...]
+            uvw = -_getcol(self._main, 'UVW', start, nrows, 'm', units.m, 'uvw', 'ITRF')[valid, ...]
             if 'WEIGHT_SPECTRUM' in self._main.colnames():
-                weight = _getcol(self._main, 'WEIGHT_SPECTRUM', start, end - start)[
+                weight = _getcol(self._main, 'WEIGHT_SPECTRUM', start, nrows)[
                     valid, channel, ...]
             else:
-                weight = _getcol(self._main, 'WEIGHT', start, end - start)[valid, ...]
-            flag = _getcol(self._main, 'FLAG', start, end - start)[valid, ...]
+                weight = _getcol(self._main, 'WEIGHT', start, nrows)[valid, ...]
+            flag = _getcol(self._main, 'FLAG', start, nrows)[valid, ...]
             weight = weight * np.logical_not(flag[:, channel, :])
-            baseline = (antenna1 * self._antenna.nrows() + antenna2)[valid, ...]
+            baseline = (antenna1 * self._antenna.nrows() + antenna2)
             yield dict(uvw=uvw, weights=weight, baselines=baseline, vis=data,
                        feed_angle1=feed_angle1, feed_angle2=feed_angle2,
                        progress=end, total=self._main.nrows())
@@ -234,8 +261,3 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         self._spectral_window.close()
         self._polarization.close()
         self._feed.close()
-        try:
-            casacore.tables.removeDerivedMSCal(self._filename)
-        except RuntimeError:
-            # Above fails if the columns don't exist
-            pass
