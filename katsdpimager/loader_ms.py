@@ -192,9 +192,10 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         # probably doesn't generalise well beyond dishes with single-pixel
         # feeds.
         pointing = self.phase_centre()
-        pointing = astropy.coordinates.SkyCoord(ra=pointing[0], dec=pointing[1], frame='icrs')
+        pointing = astropy.coordinates.SkyCoord(ra=pointing[0], dec=pointing[1], frame='fk5')
         pos = self.antenna_positions()
         pos = astropy.coordinates.EarthLocation.from_geocentric(pos[:, 0], pos[:, 1], pos[:, 2])
+        pole = astropy.coordinates.SkyCoord(ra=0 * units.deg, dec=90 * units.deg, frame='fk5')
 
         for start in xrange(0, self._main.nrows(), max_rows):
             end = min(self._main.nrows(), start + max_rows)
@@ -220,18 +221,15 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
                 time, inverse = np.unique(time_full, return_inverse=True)
                 # Convert time from MJD seconds to MJD.
                 time = astropy.time.Time(time / 86400.0, format='mjd', scale='utc')
-                # TODO: using the apparent rather than the astrometric pole
-                # seems to be what other packages (like casacore) does, but it
-                # doesn't make sense to me.
-                pole_cirs = astropy.coordinates.SkyCoord(ra=0 * units.deg, dec=90 * units.deg,
-                                                         obstime=time, frame='cirs')
+                cirs_frame = astropy.coordinates.CIRS(obstime=time)
+                pole_cirs = pole.transform_to(cirs_frame)
                 pointing_cirs = pointing.transform_to(astropy.coordinates.CIRS(obstime=time))
                 feed_angle = units.Quantity(
                     np.empty((len(time), len(pos))), unit=units.rad, copy=False)
                 for i in range(len(pos)):
                     altaz_frame = astropy.coordinates.AltAz(location=pos[i], obstime=time)
                     pole_altaz = pole_cirs.transform_to(altaz_frame)
-                    pointing_altaz = pole_cirs.transform_to(altaz_frame)
+                    pointing_altaz = pointing_cirs.transform_to(altaz_frame)
                     pa = pointing_altaz.position_angle(pole_altaz)
                     feed_angle[:, i] = pa + self._antenna_angle[i]
                 feed_angle1 = feed_angle[inverse, antenna1]
