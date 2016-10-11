@@ -195,7 +195,6 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         pointing = astropy.coordinates.SkyCoord(ra=pointing[0], dec=pointing[1], frame='icrs')
         pos = self.antenna_positions()
         pos = astropy.coordinates.EarthLocation.from_geocentric(pos[:, 0], pos[:, 1], pos[:, 2])
-        feed_angle = units.Quantity(np.empty(len(pos)), unit=units.rad, copy=False)
 
         for start in xrange(0, self._main.nrows(), max_rows):
             end = min(self._main.nrows(), start + max_rows)
@@ -215,30 +214,28 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             feed_angle1 = units.Quantity(np.zeros(data.shape[0]), units.rad)
             feed_angle2 = feed_angle1.copy()
             if self._feed_angle_correction:
-                time = _getcol(self._main, 'TIME_CENTROID', start, nrows, 's', units.s, 'epoch', 'UTC')[valid, ...]
-                # Find indices at which time changes, so that we only need to compute
-                # parallactic angles once per antenna per time. time_change
-                # will contain the first index of each group, *except* the first (0).
-                time_change = np.where(np.diff(time))[0] + 1
-                prev_idx = 0
-                for next_idx in itertools.chain(time_change, [len(time)]):
-                    idxs = np.s_[prev_idx : next_idx]
-                    # Convert time to days, to form an MJD. We go via seconds first
-                    # so that files without QuantumUnits default to seconds.
-                    this_time = astropy.time.Time(time[prev_idx].to(units.d), format='mjd', scale='utc')
-                    pole_cirs = astropy.coordinates.SkyCoord(ra=0, dec=90, unit=units.deg, obstime=this_time, frame='cirs')
-                    # Convert to CIRS outside of the per-antenna loop, so that
-                    # precession-nutation calculations do not need to be repeated.
-                    pointing_cirs = pointing.transform_to(astropy.coordinates.CIRS(obstime=this_time))
-                    for i in range(len(pos)):
-                        altaz_frame = astropy.coordinates.AltAz(location=pos[i], obstime=this_time)
-                        pole_altaz = pole_cirs.transform_to(altaz_frame)
-                        pointing_altaz = pointing_cirs.transform_to(altaz_frame)
-                        feed_angle[i] = (pointing_altaz.position_angle(pole_altaz)
-                                         + self._antenna_angle[i])
-                    feed_angle1[idxs] = feed_angle[antenna1[idxs]]
-                    feed_angle2[idxs] = feed_angle[antenna2[idxs]]
-                    prev_idx = next_idx
+                time_full = _getcol(self._main, 'TIME_CENTROID', start, nrows, 's', None, 'epoch', 'UTC')[valid, ...]
+                # Each time will be repeated per baseline, but we do not need to repeat all the
+                # calculations for each time. Extract just the unique times.
+                time, inverse = np.unique(time_full, return_inverse=True)
+                # Convert time from MJD seconds to MJD.
+                time = astropy.time.Time(time / 86400.0, format='mjd', scale='utc')
+                # TODO: using the apparent rather than the astrometric pole
+                # seems to be what other packages (like casacore) does, but it
+                # doesn't make sense to me.
+                pole_cirs = astropy.coordinates.SkyCoord(ra=0 * units.deg, dec=90 * units.deg,
+                                                         obstime=time, frame='cirs')
+                pointing_cirs = pointing.transform_to(astropy.coordinates.CIRS(obstime=time))
+                feed_angle = units.Quantity(
+                    np.empty((len(time), len(pos))), unit=units.rad, copy=False)
+                for i in range(len(pos)):
+                    altaz_frame = astropy.coordinates.AltAz(location=pos[i], obstime=time)
+                    pole_altaz = pole_cirs.transform_to(altaz_frame)
+                    pointing_altaz = pole_cirs.transform_to(altaz_frame)
+                    pa = pointing_altaz.position_angle(pole_altaz)
+                    feed_angle[:, i] = pa + self._antenna_angle[i]
+                feed_angle1 = feed_angle[inverse, antenna1]
+                feed_angle2 = feed_angle[inverse, antenna2]
             # Note: UVW is negated due to differing sign conventions
             uvw = -_getcol(self._main, 'UVW', start, nrows, 'm', units.m, 'uvw', 'ITRF')[valid, ...]
             if 'WEIGHT_SPECTRUM' in self._main.colnames():
