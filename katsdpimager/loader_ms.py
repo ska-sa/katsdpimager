@@ -219,8 +219,13 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
                 # Each time will be repeated per baseline, but we do not need to repeat all the
                 # calculations for each time. Extract just the unique times.
                 time, inverse = np.unique(time_full, return_inverse=True)
-                # Convert time from MJD seconds to MJD.
+                # Convert time from MJD seconds to MJD. We do this here rather
+                # than by passing 'd' to _getcol, because not all measurement sets
+                # specify the units and we want to assume seconds if not specified.
                 time = astropy.time.Time(time / 86400.0, format='mjd', scale='utc')
+                # Convert to CIRS, which is closer to AltAz in astropy's
+                # conversion graph. This avoids duplicating precision-nutation
+                # calculations for every antenna.
                 cirs_frame = astropy.coordinates.CIRS(obstime=time)
                 pole_cirs = pole.transform_to(cirs_frame)
                 pointing_cirs = pointing.transform_to(astropy.coordinates.CIRS(obstime=time))
