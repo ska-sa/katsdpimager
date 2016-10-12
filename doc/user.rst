@@ -12,7 +12,7 @@ these packaging tools, but there are some additional requirements:
  - An SSH key that is authorised for Github access to the SKA South Africa
    private repositories.
  - An NVIDIA GPU with the CUDA toolkit. At least version 6.0 is required, but
-   testing is only done with 7.0 and later (but see :ref:`cpu`).
+   testing is only done with 7.5 and later (but see :ref:`cpu`).
  - `Casacore`_ 2.x, compiled with Python support
  - libhdf5, including development headers (``libhdf5-dev`` in Debian/Ubuntu)
  - `Eigen3`_ (`libeigen3-dev` in Debian/Ubuntu)
@@ -89,7 +89,7 @@ Input selection options
 
    Selects the channel to image from a multi-channel input, counting from 0.
 
-.. option:: --input-option <KEY>=<VALUE>
+.. option:: -i <KEY>=<VALUE>, --input-option <KEY>=<VALUE>
 
    Passes an option to an input backend. At the moment the only backend is for
    measurement sets, which supports the following key-value pairs:
@@ -101,6 +101,13 @@ Input selection options
      Data description in the measurement set to image, starting from 0
    field=<INDEX>
      Field in the measurement set to image, starting from 0
+   pol-frame=sky | feed
+     Reference frame for polarization. Use ``feed`` if the visibilities
+     correspond to the feeds on altitude-azimuth mount dishes. The default
+     assumes that X is towards the north celestial pole (IAU/IEEE
+     definition).
+
+   To provide multiple key-value pairs, specify :option:`-i` multiple times.
 
 Output image options
 ^^^^^^^^^^^^^^^^^^^^
