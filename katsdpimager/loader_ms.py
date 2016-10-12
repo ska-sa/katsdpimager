@@ -13,8 +13,7 @@ import astropy.coordinates
 
 def _getcol(table, name, start=0, count=-1,
             casacore_units=None, astropy_units=None,
-            measinfo_type=None, measinfo_ref=None,
-            virtual=False):
+            measinfo_type=None, measinfo_ref=None):
     """Wrap the getcol function to fetch a batch of data from a row, applying
     scaling to the expected units. Scaling is done manually rather than with
     :mod:`casacore.quanta`, because the latter only operates (slowly) on
@@ -46,20 +45,8 @@ def _getcol(table, name, start=0, count=-1,
     measinfo_ref : str, optional
         If specified, requires the ``MEASINFO`` field keyword to have this
         reference.
-    virtual : bool, optional
-        Set to `True` for virtual columns. This is needed because casacore 2.1
-        doesn't support fetching a range of rows on virtual columns
-        (VirtualScalarColumn doesn't overload getScalarColumnCells).
     """
-    if virtual:
-        if count < 0:
-            count = table.nrows() - start
-        data = np.empty((count,), table.coldatatype(name))
-        for i in range(count):
-            data[i] = table.getcell(name, start + i)
-    else:
-        data = table.getcol(name, start, count)
-
+    data = table.getcol(name, start, count)
     keywords = table.getcolkeywords(name)
     quantum_units = keywords.get('QuantumUnits')
     if quantum_units is not None:
@@ -101,11 +88,10 @@ def _getcol(table, name, start=0, count=-1,
 
 def _getcell(table, name, row,
              casacore_units=None, astropy_units=None,
-             measinfo_type=None, measinfo_ref=None,
-             virtual=False):
+             measinfo_type=None, measinfo_ref=None):
     """Like :meth:`_getcol`, but for a single cell"""
     data = _getcol(table, name, row, 1, casacore_units, astropy_units,
-                   measinfo_type, measinfo_ref, virtual)
+                   measinfo_type, measinfo_ref)
     return data[0]
 
 
