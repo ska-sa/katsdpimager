@@ -5,7 +5,6 @@ import casacore.tables
 import casacore.quanta
 import numpy as np
 import argparse
-import itertools
 import astropy.units as units
 import astropy.time
 import astropy.coordinates
@@ -158,7 +157,7 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
 
     def phase_centre(self):
         value = _getcell(self._field, 'PHASE_DIR', self._field_id,
-                        'rad', units.rad, 'direction', 'J2000')
+                         'rad', units.rad, 'direction', 'J2000')
         if tuple(value.shape) != (1, 2):
             raise ValueError('Unsupported shape for PHASE_DIR: {}'.format(value.shape))
         return value[0, :]

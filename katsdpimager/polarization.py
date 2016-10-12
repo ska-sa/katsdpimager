@@ -29,7 +29,6 @@ different from those used in FITS:
 """
 
 import numpy as np
-from contextlib import contextmanager
 
 STOKES_I = 1
 STOKES_Q = 2

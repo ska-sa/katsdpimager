@@ -319,9 +319,9 @@ class ConvolveBeamTemplate(object):
         self.shape = shape
         complex_dtype = katsdpimager.types.real_to_complex(self.dtype)
         self.fft = fft.FftTemplate(command_queue, 2, shape, dtype, complex_dtype,
-                padded_shape_image, padded_shape_fourier)
+                                   padded_shape_image, padded_shape_fourier)
         self.ifft = fft.FftTemplate(command_queue, 2, shape, complex_dtype, dtype,
-                padded_shape_fourier, padded_shape_image)
+                                    padded_shape_fourier, padded_shape_image)
         self.fourier_beam = FourierBeamTemplate(command_queue.context, dtype, tuning)
 
     def instantiate(self, *args, **kwargs):

@@ -142,7 +142,7 @@ def write_fits_image(dataset, image, image_parameters, filename, beam=None, buni
         header['BMAJ'] = major.to(units.deg).value
         header['BMIN'] = minor.to(units.deg).value
         header['BPA'] = beam.theta.to(units.deg).value
-    pol_permute = _fits_polarizations(header, 3, image_parameters.polarizations)
+    _fits_polarizations(header, 3, image_parameters.polarizations)
 
     # l axis is reversed, because RA increases right-to-left.
     hdu = fits.PrimaryHDU(image[:, :, ::-1], header)

@@ -1,13 +1,11 @@
 #!/usr/bin/env python
 from __future__ import print_function, division
-import math
 import sys
 import argparse
 import astropy.units as units
 import numpy as np
 import logging
 import colors
-import functools
 import tempfile
 import atexit
 import os
@@ -33,6 +31,7 @@ def parse_quantity(str_value):
             pass
     raise ValueError('Could not parse {} as a quantity'.format(str_value))
 
+
 def parse_stokes(str_value):
     ans = []
     for p in str_value:
@@ -47,6 +46,7 @@ def parse_stokes(str_value):
         elif cnt > 0:
             ans.append(polarization.STOKES_NAMES.index(p))
     return sorted(ans)
+
 
 def get_parser():
     parser = argparse.ArgumentParser()
@@ -96,6 +96,7 @@ def get_parser():
     group.add_argument('--write-residuals', metavar='FILE', help='Write image residuals to FITS file')
     group.add_argument('--vis-limit', type=int, metavar='N', help='Use only the first N visibilities')
     return parser
+
 
 def data_iter(dataset, args):
     """Wrapper around :py:meth:`katsdpimager.loader_core.LoaderBase.data_iter`
@@ -149,7 +150,8 @@ def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, po
             bar.finish()
         collector.close()
     logger.info("Compressed %d visibilities to %d (%.2f%%)",
-        collector.num_input, collector.num_output, 100.0 * collector.num_output / collector.num_input)
+                collector.num_input, collector.num_output,
+                100.0 * collector.num_output / collector.num_input)
     return collector
 
 
@@ -211,6 +213,7 @@ def make_dirty(queue, reader, name, field, imager, mid_w, vis_block, full_cycle=
             imager.grid_to_image(mid_w[w_slice])
             queue.finish()
 
+
 def extract_psf(image, psf):
     """Copy the central region of `image` to `psf`.
 
@@ -254,6 +257,7 @@ def configure_logging(args):
     logger.addHandler(log_handler)
     logger.setLevel(args.log_level.upper())
 
+
 def log_parameters(name, params):
     if logger.isEnabledFor(logging.INFO):
         s = str(params)
@@ -263,10 +267,12 @@ def log_parameters(name, params):
             if line:
                 logger.info('    ' + line)
 
+
 @contextmanager
 def dummy_context():
     """Do-nothing context manager used in place of a device context."""
     yield
+
 
 def main():
     parser = get_parser()
@@ -339,8 +345,6 @@ def main():
         log_parameters("CLEAN parameters", clean_p)
 
         #### Create data and operation instances ####
-        lm_scale = float(image_p.pixel_size)
-        lm_bias = -0.5 * image_p.pixels * lm_scale
         if args.host:
             imager = imaging.ImagingHost(image_p, weight_p, grid_p, clean_p)
         else:

@@ -368,7 +368,9 @@ class WeightsTemplate(object):
         Tuning parameters passed to :class:`GridWeightsTemplate`,
         :class:`MeanWeightsTemplate` and :class:`DensityWeightsTemplate` respectively
     """
-    def __init__(self, context, weight_type, num_polarizations, grid_weights_tuning=None, mean_weight_tuning=None, density_weights_tuning=None):
+    def __init__(self, context, weight_type, num_polarizations,
+                 grid_weights_tuning=None, mean_weight_tuning=None,
+                 density_weights_tuning=None):
         self.context = context
         self.weight_type = weight_type
         if weight_type == NATURAL:
@@ -524,11 +526,12 @@ class WeightsHost(object):
         self.weight_type = weight_type
         self.robustness = 0.0
         self.weights_grid = weights_grid
-        assert weights_grid.shape[1] % 2 == 0 and weights_grid.shape[2] % 2 == 0, "Only even-sized grids are currently supported"
+        assert weights_grid.shape[1] % 2 == 0 and weights_grid.shape[2] % 2 == 0, \
+            "Only even-sized grids are currently supported"
 
     def clear(self):
         if self.weight_type != NATURAL:
-            weights_grid.fill(0)
+            self.weights_grid.fill(0)
 
     def grid(self, uv, weights):
         shape = self.weights_grid.shape
