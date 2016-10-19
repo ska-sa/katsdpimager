@@ -11,13 +11,11 @@ import astropy.time
 import astropy.coordinates
 
 
-def _getcol(table, name, start=0, count=-1,
-            casacore_units=None, astropy_units=None,
-            measinfo_type=None, measinfo_ref=None):
-    """Wrap the getcol function to fetch a batch of data from a row, applying
-    scaling to the expected units. Scaling is done manually rather than with
-    :mod:`casacore.quanta`, because the latter only operates (slowly) on
-    scalars while a direct scaling is vectorised.
+def _get(table, name, data, casacore_units=None, astropy_units=None,
+         measinfo_type=None, measinfo_ref=None):
+    """Apply scaling to data loaded from a column. Scaling is done manually
+    rather than with :mod:`casacore.quanta`, because the latter only operates
+    (slowly) on scalars while a direct scaling is vectorised.
 
     Because not all writers specify the units for all quantities, units are
     allowed to be missing.
@@ -28,10 +26,9 @@ def _getcol(table, name, start=0, count=-1,
         Table from which to load
     name : str
         Column name
-    start : int
-        First row to load
-    count : int
-        Number of rows to load
+    data : array-like
+        Raw data loaded from the column. The leading dimension must index
+        rows.
     casacore_units : str, optional
         Expected unit. A column with compatible units will be converted.
         Use ``None`` for unitless quantities.
@@ -46,7 +43,6 @@ def _getcol(table, name, start=0, count=-1,
         If specified, requires the ``MEASINFO`` field keyword to have this
         reference.
     """
-    data = table.getcol(name, start, count)
     keywords = table.getcolkeywords(name)
     quantum_units = keywords.get('QuantumUnits')
     if quantum_units is not None:
@@ -86,13 +82,104 @@ def _getcol(table, name, start=0, count=-1,
     return data
 
 
+def _getcol(table, name, start=0, count=-1,
+            casacore_units=None, astropy_units=None,
+            measinfo_type=None, measinfo_ref=None):
+    """Wrap the getcol method to fetch a batch of data from a column, applying
+    scaling to the expected units. See :func:`_get` for details.
+
+    Parameters
+    ----------
+    table : `casacore.tables.table`
+        Table from which to load
+    name : str
+        Column name
+    start : int
+        First row to load
+    count : int
+        Number of rows to load
+    casacore_units : str, optional
+        Expected unit. A column with compatible units will be converted.
+        Use ``None`` for unitless quantities.
+    astropy_units : :class:`astropy.units.Unit`, optional
+        Astropy unit equivalent to `casacore_units`, used for the return
+        value. Use ``None`` for unitless quantities (the return value will
+        then be a plain numpy array).
+    measinfo_type : str, optional
+        If specified, requires the ``MEASINFO`` field keyword to have this
+        type.
+    measinfo_ref : str, optional
+        If specified, requires the ``MEASINFO`` field keyword to have this
+        reference.
+    """
+    data = table.getcol(name, start, count)
+    return _get(table, name, data, casacore_units, astropy_units, measinfo_type, measinfo_ref)
+
+
+def _getcolslice(table, name, blc, trc, inc=[], start=0, count=-1,
+                 casacore_units=None, astropy_units=None,
+                 measinfo_type=None, measinfo_ref=None):
+    """Wrap the getcol method to fetch a batch of data from a column with
+    slicing, applying scaling to the expected units. See :func:`_get` for
+    details.
+
+    Parameters
+    ----------
+    table : `casacore.tables.table`
+        Table from which to load
+    name : str
+        Column name
+    blc : list
+        Bottom left corner for array slice
+    trc : list
+        Top right corner for array slice (inclusive)
+    ind : list
+        Strides
+    start : int
+        First row to load
+    count : int
+        Number of rows to load
+    casacore_units : str, optional
+        Expected unit. A column with compatible units will be converted.
+        Use ``None`` for unitless quantities.
+    astropy_units : :class:`astropy.units.Unit`, optional
+        Astropy unit equivalent to `casacore_units`, used for the return
+        value. Use ``None`` for unitless quantities (the return value will
+        then be a plain numpy array).
+    measinfo_type : str, optional
+        If specified, requires the ``MEASINFO`` field keyword to have this
+        type.
+    measinfo_ref : str, optional
+        If specified, requires the ``MEASINFO`` field keyword to have this
+        reference.
+    """
+    data = table.getcolslice(name, blc, trc, inc, start, count)
+    return _get(table, name, data, casacore_units, astropy_units, measinfo_type, measinfo_ref)
+
+
+def _getcolchannel(table, name, channel, start=0, count=-1,
+                   casacore_units=None, astropy_units=None,
+                   measinfo_type=None, measinfo_ref=None):
+    """Convenience wrapper around :func:`_getcolslice` for columns where the
+    shape is channels by polarizations, and one channel is desired. The
+    dimension corresponding to channel is removed.
+    """
+    return _getcolslice(table, name, [channel, -1], [channel, -1], [],
+                        start, count, casacore_units, astropy_units,
+                        measinfo_type, measinfo_ref)[:, 0]
+
+
 def _getcell(table, name, row,
              casacore_units=None, astropy_units=None,
              measinfo_type=None, measinfo_ref=None):
     """Like :meth:`_getcol`, but for a single cell"""
+    data = table.getcell(name, row)
+    # Temporary add a leading dimension, required by _get
+    data = data[np.newaxis, :]
     data = _getcol(table, name, row, 1, casacore_units, astropy_units,
                    measinfo_type, measinfo_ref)
-    return data[0]
+    out = _get(table, name, data, casacore_units, astropy_units, measinfo_type, measinfo_ref)
+    return out[0]
 
 
 class LoaderMS(katsdpimager.loader_core.LoaderBase):
@@ -182,7 +269,6 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         pos = self.antenna_positions()
         pos = astropy.coordinates.EarthLocation.from_geocentric(pos[:, 0], pos[:, 1], pos[:, 2])
         pole = astropy.coordinates.SkyCoord(ra=0 * units.deg, dec=90 * units.deg, frame='fk5')
-
         for start in xrange(0, self._main.nrows(), max_rows):
             end = min(self._main.nrows(), start + max_rows)
             nrows = end - start
@@ -197,7 +283,7 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             valid = np.logical_and(valid, antenna1 != antenna2)
             antenna1 = antenna1[valid]
             antenna2 = antenna2[valid]
-            data = _getcol(self._main, self._data_col, start, nrows, 'Jy', units.Jy)[valid, channel, ...]
+            data = _getcolchannel(self._main, self._data_col, channel, start, nrows, 'Jy', units.Jy)[valid, ...]
             feed_angle1 = units.Quantity(np.zeros(data.shape[0]), units.rad)
             feed_angle2 = feed_angle1.copy()
             if self._feed_angle_correction:
@@ -228,12 +314,11 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             # Note: UVW is negated due to differing sign conventions
             uvw = -_getcol(self._main, 'UVW', start, nrows, 'm', units.m, 'uvw', 'ITRF')[valid, ...]
             if 'WEIGHT_SPECTRUM' in self._main.colnames():
-                weight = _getcol(self._main, 'WEIGHT_SPECTRUM', start, nrows)[
-                    valid, channel, ...]
+                weight = _getcolchannel(self._main, 'WEIGHT_SPECTRUM', channel, start, nrows)[valid, ...]
             else:
                 weight = _getcol(self._main, 'WEIGHT', start, nrows)[valid, ...]
-            flag = _getcol(self._main, 'FLAG', start, nrows)[valid, ...]
-            weight = weight * np.logical_not(flag[:, channel, :])
+            flag = _getcolchannel(self._main, 'FLAG', channel, start, nrows)[valid, ...]
+            weight = weight * np.logical_not(flag)
             baseline = (antenna1 * self._antenna.nrows() + antenna2)
             yield dict(uvw=uvw, weights=weight, baselines=baseline, vis=data,
                        feed_angle1=feed_angle1, feed_angle2=feed_angle2,
