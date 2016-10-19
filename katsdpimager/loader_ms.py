@@ -266,6 +266,9 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
     def polarizations(self):
         return _getcell(self._polarization, 'CORR_TYPE', self._polarization_id)
 
+    def has_feed_angles(self):
+        return self._feed_angle_correction
+
     def data_iter(self, channel, max_rows=None):
         if max_rows is None:
             max_rows = self._main.nrows()
@@ -293,8 +296,8 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             antenna1 = antenna1[valid]
             antenna2 = antenna2[valid]
             data = _getcolchannel(self._main, self._data_col, channel, start, nrows, 'Jy', units.Jy)[valid, ...]
-            feed_angle1 = units.Quantity(np.zeros(data.shape[0]), units.rad)
-            feed_angle2 = feed_angle1.copy()
+            feed_angle1 = None
+            feed_angle2 = None
             if self._feed_angle_correction:
                 time_full = _getcol(self._main, 'TIME_CENTROID', start, nrows, 's', None, 'epoch', 'UTC')[valid, ...]
                 # Each time will be repeated per baseline, but we do not need to repeat all the
@@ -329,9 +332,12 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             flag = _getcolchannel(self._main, 'FLAG', channel, start, nrows)[valid, ...]
             weight = weight * np.logical_not(flag)
             baseline = (antenna1 * self._antenna.nrows() + antenna2)
-            yield dict(uvw=uvw, weights=weight, baselines=baseline, vis=data,
-                       feed_angle1=feed_angle1, feed_angle2=feed_angle2,
+            ret = dict(uvw=uvw, weights=weight, baselines=baseline, vis=data,
                        progress=end, total=self._main.nrows())
+            if self._feed_angle_correction:
+                ret['feed_angle1'] = feed_angle1
+                ret['feed_angle2'] = feed_angle2
+            yield ret
 
     def close(self):
         self._main.close()

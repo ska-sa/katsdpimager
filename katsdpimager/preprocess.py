@@ -154,8 +154,10 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
         weights = weights.astype(np.float32)
         vis = vis.astype(np.complex64)
         uvw = uvw.astype(np.float32)
-        feed_angle1 = feed_angle1.astype(np.float32)
-        feed_angle2 = feed_angle2.astype(np.float32)
+        if feed_angle1 is not None:
+            feed_angle1 = feed_angle1.astype(np.float32)
+        if feed_angle2 is not None:
+            feed_angle2 = feed_angle2.astype(np.float32)
         ip = self.image_parameters[channel]
         super(VisibilityCollector, self).add(
             channel,

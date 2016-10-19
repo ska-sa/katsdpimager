@@ -92,6 +92,12 @@ class LoaderBase(object):
         """
         raise NotImplementedError('Abstract base class')
 
+    def has_feed_angles(self):
+        """Return whether the data iterator will return `feed_angle1` and
+        `feed_angle2`.
+        """
+        raise NotImplementedError('Abstract base class')
+
     def data_iter(self, channel, max_rows=None):
         """Return an iterator that yields the data in chunks. Each chunk is a
         dictionary containing numpy arrays with the following keys:
@@ -101,7 +107,7 @@ class LoaderBase(object):
          - 'weights': imaging weights
          - 'baselines': arbitrary integer baseline IDs; negative IDs indicate autocorrelations
          - 'feed_angle1': angle between feed and sky (parallactic angle plus a fixed
-           offset for the feed), for the first antenna in the baseline
+           offset for the feed), for the first antenna in the baseline.
          - 'feed_angle2': angle between feed and sky for the second antenna in the baseline
          - 'progress': progress made through the file, in some arbitrary units
          - 'total': size of the file, in same units as 'progress'
@@ -120,6 +126,9 @@ class LoaderBase(object):
 
         If `max_rows` is given, it limits the number of rows to return in each
         chunk.
+
+        If :meth:`has_feed_angles` returns ``False``, then `feed_angle1` and
+        `feed_angle2` will be absent.
         """
         raise NotImplementedError('Abstract base class')
 

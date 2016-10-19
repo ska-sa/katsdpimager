@@ -105,7 +105,8 @@ Input selection options
      Reference frame for polarization. Use ``feed`` if the visibilities
      correspond to the feeds on altitude-azimuth mount dishes. The default
      assumes that X is towards the north celestial pole (IAU/IEEE
-     definition).
+     definition). When using this option, the input must have a full four
+     polarizations.
 
    To provide multiple key-value pairs, specify :option:`-i` multiple times.
 

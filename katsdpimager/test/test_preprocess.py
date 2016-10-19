@@ -66,7 +66,7 @@ class BaseTestVisibilityCollector(object):
             pass
         self.check(collector, [[np.rec.recarray(0, collector.store_dtype)] for channel in range(2)])
 
-    def test_simple(self):
+    def _test_impl(self, use_feed_angles):
         uvw = np.array([
             [12.1, 2.3, 4.7],
             [-3.4, 7.6, 2.5],
@@ -91,10 +91,16 @@ class BaseTestVisibilityCollector(object):
             [1.5 + 1.3j, 1.1 + 2.7j, 1.0 - 2j, 2.5 + 1j],
             [1.2 + 3.4j, 5.6 + 7.8j, 9.0 + 1.2j, 3.4 + 5.6j],
             ], dtype=np.complex64)
-        pa1 = pa2 = np.zeros(4, np.float32)
-        mueller_stokes = mueller_circular = np.matrix(np.identity(4, np.complex64))
+        if use_feed_angles:
+            # TODO: use non-trivial feed angles and matrices
+            feed_angle1 = feed_angle2 = np.zeros(4, np.float32)
+            mueller_stokes = mueller_circular = np.matrix(np.identity(4, np.complex64))
+        else:
+            feed_angle1 = feed_angle2 = mueller_circular = None
+            mueller_stokes = np.matrix(np.identity(4, np.complex64))
         with closing(self.factory(self.image_parameters, self.grid_parameters, 64)) as collector:
-            collector.add(0, uvw, weights, baselines, vis, pa1, pa2,
+            collector.add(0, uvw, weights, baselines, vis,
+                          feed_angle1, feed_angle2,
                           mueller_stokes, mueller_circular)
         self.check(collector, [[np.rec.fromarrays([
             [[96, 18], [-42, -85]],
@@ -104,6 +110,12 @@ class BaseTestVisibilityCollector(object):
              [0.75 + 0.65j, 0.66 + 1.62j, 0.7 - 1.4j, 2.0 + 0.8j]],
             [64, 65]
             ], dtype=collector.store_dtype)]])
+
+    def test_simple(self):
+        self._test_impl(False)
+
+    def test_feed_angles(self):
+        self._test_impl(True)
 
 
 def test_is_prime():
