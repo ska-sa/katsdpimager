@@ -215,6 +215,15 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             'POLARIZATION_ID', args.data_desc)
         self._spectral_window_id = self._data_description.getcell(
             'SPECTRAL_WINDOW_ID', args.data_desc)
+        # Detect whether we have a usable WEIGHT_SPECTRUM column. Measurement
+        # sets in the wild sometimes have the column but with 0x0 shape.
+        try:
+            self._main.getcellslice('WEIGHT_SPECTRUM', 0, [0, 0], [0, 0])
+        except RuntimeError:
+            self._has_weight_spectrum = False
+        else:
+            self._has_weight_spectrum = True
+
         self._feed_angle_correction = args.pol_frame == 'feed'
         if self._feed_angle_correction:
             # Load per-antenna feed angles. For now, only a constant value per
@@ -313,7 +322,7 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
                 feed_angle2 = feed_angle[inverse, antenna2]
             # Note: UVW is negated due to differing sign conventions
             uvw = -_getcol(self._main, 'UVW', start, nrows, 'm', units.m, 'uvw', 'ITRF')[valid, ...]
-            if 'WEIGHT_SPECTRUM' in self._main.colnames():
+            if self._has_weight_spectrum:
                 weight = _getcolchannel(self._main, 'WEIGHT_SPECTRUM', channel, start, nrows)[valid, ...]
             else:
                 weight = _getcol(self._main, 'WEIGHT', start, nrows)[valid, ...]
