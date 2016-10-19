@@ -166,7 +166,9 @@ def convolve_beam(model, beam, out=None):
         out = np.empty_like(model)
     model_ft = np.fft.fftn(model, axes=[1, 2])
     M = beam_covariance_sqrt(beam)
-    amplitude = 2 * np.pi * beam.model.amplitude * np.linalg.det(M)
+    # Due to https://github.com/astropy/astropy/issues/1105, the determinant
+    # can be negative; hence, the np.abs is necessary.
+    amplitude = 2 * np.pi * beam.model.amplitude * np.abs(np.linalg.det(M))
     u = np.fft.fftfreq(model.shape[1])
     v = np.fft.fftfreq(model.shape[2])
     # Coords is shape (model.shape[1], model.shape[2], 2) - pairs of coordinates
@@ -252,7 +254,9 @@ class FourierBeam(accel.Operation):
         if self.beam is None:
             raise ValueError('Must set beam')
         M = beam_covariance_sqrt(self.beam)
-        amplitude = 2 * np.pi * self.beam.model.amplitude * np.linalg.det(M)
+        # Due to https://github.com/astropy/astropy/issues/1105, the determinant
+        # can be negative; hence, the np.abs is necessary.
+        amplitude = 2 * np.pi * self.beam.model.amplitude * np.abs(np.linalg.det(M))
         # CUFFT, unlikely numpy.fft, does not normalize the inverse transform.
         # We fold the normalization into the amplitude
         amplitude /= self.image_shape[0] * self.image_shape[1]
