@@ -29,7 +29,7 @@ import h5py
 import numpy as np
 import math
 import logging
-from katsdpimager import polarization, grid, types, _preprocess
+from katsdpimager import _preprocess
 import astropy.units as units
 
 

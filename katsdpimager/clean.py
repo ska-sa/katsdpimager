@@ -624,7 +624,6 @@ class CleanHost(object):
     def __call__(self):
         """Execute a single CLEAN minor cycle."""
         peak_tile = np.unravel_index(np.argmax(self._tile_max), self._tile_max.shape)
-        peak = self._tile_max[peak_tile]
         peak_pos = self._tile_pos[peak_tile]
         (y0, x0, y1, x1) = self._subtract_psf(peak_pos[0], peak_pos[1])
         tile_y0 = y0 // self.tile_size

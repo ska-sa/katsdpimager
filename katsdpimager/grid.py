@@ -116,11 +116,9 @@ devices, and even then may limit the block size.
 """
 
 from __future__ import division, print_function
-from . import parameters
 import numpy as np
 import math
 import pkg_resources
-import astropy.units as units
 import katsdpsigproc.accel as accel
 import katsdpsigproc.tune as tune
 import katsdpimager.types
@@ -297,8 +295,6 @@ def antialias_w_kernel(
     uv_width = width * cell_wavelengths * image_oversample
     # Compute other support and step sizes
     image_step = 1 / uv_width
-    uv_step = uv_width / pixels
-    image_width = image_step * pixels
     # Determine sample points in image space
     l = (np.arange(pixels) - (pixels // 2)) * image_step
     # Evaluate function in image space
@@ -722,7 +718,6 @@ class Gridder(GridDegrid):
 
     def __init__(self, *args, **kwargs):
         super(Gridder, self).__init__(*args, **kwargs)
-        num_polarizations = len(self.template.image_parameters.polarizations)
         self.slots['weights_grid'] = accel.IOSlot(self.slots['grid'].shape, np.float32)
         self._kernel = self.template.program.get_kernel('grid')
 
@@ -804,8 +799,8 @@ class Gridder(GridDegrid):
 
     def _run(self):
         kernel_width = self.template.grid_parameters.kernel_width
-        uv_bias = ((kernel_width - 1) // 2 + self.template.convolve_kernel.pad
-                   - self.slots['grid'].shape[-1] // 2)
+        uv_bias = ((kernel_width - 1) // 2 + self.template.convolve_kernel.pad -
+                   self.slots['grid'].shape[-1] // 2)
         self.static_run(
             self.command_queue, self._kernel,
             self.template.wgs_x, self.template.wgs_y,
@@ -978,8 +973,8 @@ class Degridder(GridDegrid):
 
     def _run(self):
         kernel_width = self.template.grid_parameters.kernel_width
-        uv_bias = ((kernel_width - 1) // 2 + self.template.convolve_kernel.pad
-                   - self.slots['grid'].shape[-1] // 2)
+        uv_bias = ((kernel_width - 1) // 2 + self.template.convolve_kernel.pad -
+                   self.slots['grid'].shape[-1] // 2)
         self.static_run(
             self.command_queue, self._kernel,
             self.template.wgs_x, self.template.wgs_y, self.template.wgs_z,
@@ -1020,7 +1015,6 @@ class GridderHost(object):
     def __init__(self, image_parameters, grid_parameters):
         self.image_parameters = image_parameters
         self.grid_parameters = grid_parameters
-        kernel_size = int(math.ceil(grid_parameters.kernel_width))
         self.kernel = ConvolutionKernel(image_parameters, grid_parameters)
         pixels = image_parameters.pixels
         shape = (len(image_parameters.polarizations), pixels, pixels)
@@ -1073,7 +1067,6 @@ class DegridderHost(object):
     def __init__(self, image_parameters, grid_parameters):
         self.image_parameters = image_parameters
         self.grid_parameters = grid_parameters
-        kernel_size = int(math.ceil(grid_parameters.kernel_width))
         self.kernel = ConvolutionKernel(image_parameters, grid_parameters)
         pixels = image_parameters.pixels
         shape = (len(image_parameters.polarizations), pixels, pixels)

@@ -4,7 +4,7 @@ objects together."""
 from __future__ import print_function, division
 import numpy as np
 from katsdpsigproc import accel
-from . import grid, weight, image, clean, types
+from . import grid, weight, image, clean
 
 
 class ImagingTemplate(object):

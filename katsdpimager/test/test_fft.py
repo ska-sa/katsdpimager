@@ -1,7 +1,6 @@
 """Tests for :mod:`katsdpimager.fft`"""
 
 import numpy as np
-import math
 import katsdpimager.fft as fft
 import katsdpsigproc.accel as accel
 from katsdpsigproc.test.test_accel import device_test, cuda_test

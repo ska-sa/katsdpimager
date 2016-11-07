@@ -14,7 +14,6 @@ import os
 import os.path
 import shutil
 import sys
-import errno
 import subprocess
 import logging
 import timeit
@@ -22,9 +21,11 @@ import io
 import glob
 from contextlib import closing
 
+
 MODE_CLEAN = 'Clean'
 MODE_DIRTY = 'Dirty'
 MODES = [MODE_CLEAN, MODE_DIRTY]
+
 
 class BuildInfo(object):
     """Runs a command and stores the output and exit code. The output is also
@@ -54,6 +55,7 @@ class BuildInfo(object):
         self.elapsed = end - start
         logging.info("Elapsed time %.3f", self.elapsed)
 
+
 class Image(object):
     def __init__(self, name, filebase, clean_fits_pattern, dirty_fits_pattern, cmd_patterns, clean_globs=[]):
         self.name = name
@@ -78,7 +80,7 @@ class Image(object):
         cmds = [[
                 Template(x).render_unicode(ms=ms, output_dir=output_dir, stokes=stokes)
                 for x in pattern
-            ] for pattern in self.cmd_patterns]
+                ] for pattern in self.cmd_patterns]
         logging.info("Running %s...", cmds)
         build_info = BuildInfo(cmds)
         # Clean up unwanted files, making sure not to delete any files we
@@ -144,6 +146,7 @@ def write_index(args, images, build_info, modes):
             images=images,
             build_info=build_info))
 
+
 def write_build_log(args, image, build_info, modes):
     template_filename = os.path.join(os.path.dirname(__file__), 'build_log.html.mako')
     template = Template(filename=template_filename)
@@ -151,10 +154,11 @@ def write_build_log(args, image, build_info, modes):
         f.write(template.render_unicode(
             image=image, build_info=build_info, modes=modes, stokes=args.stokes))
 
+
 def run(args, images, modes):
     try:
         os.makedirs(args.output_dir)
-    except OSError as e:
+    except OSError:
         if not os.path.isdir(args.output_dir):
             raise
     build_info = {}
@@ -174,6 +178,7 @@ def run(args, images, modes):
         if info.returncode != 0:
             return 1
     return 0
+
 
 def main():
     parser = argparse.ArgumentParser()

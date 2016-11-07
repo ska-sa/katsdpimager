@@ -5,14 +5,13 @@
 from __future__ import print_function, absolute_import, division
 import argparse
 import katpoint
-import ephem
 import pkg_resources
 import numpy as np
 import timeit
 import json
 from astropy import units
-from katsdpimager import grid, preprocess, parameters, polarization, types, fft
-from katsdpsigproc import accel, fill
+from katsdpimager import grid, preprocess, parameters, polarization, fft
+from katsdpsigproc import accel
 
 
 def load_antennas():
@@ -129,7 +128,8 @@ def make_compressed_vis(args, n_time):
     """
     uvw, weights, baselines, vis = make_vis(args, n_time)
     if args.write:
-        collector = preprocess.VisibilityCollectorHDF5(args.write,
+        collector = preprocess.VisibilityCollectorHDF5(
+                args.write,
                 [args.image_parameters], args.grid_parameters, len(vis))
     else:
         collector = preprocess.VisibilityCollectorMem(

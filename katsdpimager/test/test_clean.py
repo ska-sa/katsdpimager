@@ -3,11 +3,8 @@
 from __future__ import division, print_function
 import numpy as np
 import scipy.signal
-import katsdpimager.clean as clean
-import katsdpimager.parameters as parameters
-import katsdpimager.polarization as polarization
+from .. import clean
 from katsdpsigproc.test.test_accel import device_test
-import mock
 from nose.tools import *
 
 

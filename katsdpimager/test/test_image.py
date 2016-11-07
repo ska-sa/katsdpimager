@@ -3,7 +3,6 @@
 import numpy as np
 import math
 import katsdpimager.image as image
-import katsdpsigproc.accel as accel
 from katsdpsigproc.test.test_accel import device_test
 
 
