@@ -52,5 +52,5 @@ static_assert(double(MulZ<double>(1.5) + MulZ<double>(2.5)) == 4.0, "MulZ::opera
 static_assert(double(MulZ<double>(1.5) - MulZ<double>(2.5)) == -1.0, "MulZ::operator- is broken");
 static_assert(double(MulZ<double>(1.5) * MulZ<double>(2.5)) == 3.75, "MulZ::operator* is broken");
 static_assert(double(MulZ<double>(0.0) * MulZ<double>(2.5)) == 0.0, "MulZ::operator* is broken");
-static_assert(double(MulZ<double>(0.0) * MulZ<double>(1.0 / 0.0)) == 0.0, "MulZ::operator* is broken");
+static_assert(double(MulZ<double>(0.0) * MulZ<double>(std::numeric_limits<double>::infinity())) == 0.0, "MulZ::operator* is broken");
 static_assert(double(MulZ<double>(std::numeric_limits<double>::quiet_NaN()) * MulZ<double>(0.0)) == 0.0, "MulZ::operator* is broken");
