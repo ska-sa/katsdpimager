@@ -9,7 +9,7 @@ katsdp.commonBuild(maintainer: 'bmerry@ska.ac.za') {
     katsdp.stagePrepare(subdir: 'katsdpimager')
 
     stage 'Generate report'
-    katsdp.simpleNode(label: 'cuda', timeout: [time: 8, units: 'HOURS']) {
+    katsdp.simpleNode(label: 'cuda', timeout: [time: 8, unit: 'HOURS']) {
         deleteDir()
         katsdp.unpackGit()
         katsdp.unpackVenv()
