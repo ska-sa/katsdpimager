@@ -254,6 +254,10 @@ def configure_logging(args):
         log_handler.setFormatter(ColorFormatter(fmt))
     else:
         log_handler.setFormatter(logging.Formatter(fmt))
+    # In case some other module has decided to configure logging, remove any
+    # existing handlers.
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
     logger.addHandler(log_handler)
     logger.setLevel(args.log_level.upper())
 
