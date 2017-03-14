@@ -134,7 +134,8 @@ def make_compressed_vis(args, n_time):
     else:
         collector = preprocess.VisibilityCollectorMem(
                 [args.image_parameters], args.grid_parameters, len(vis))
-    collector.add(0, uvw, weights, baselines, vis)
+    mueller = np.identity(4, np.complex64)
+    collector.add(0, uvw, weights, baselines, vis, None, None, mueller, None)
     collector.close()
     reader = collector.reader()
     return reader
