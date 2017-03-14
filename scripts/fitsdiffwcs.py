@@ -72,7 +72,7 @@ def main():
     header = files[0].hdulist[0].header.copy()
     header['ORIGIN'] = 'fitsdiffwcs'
     hdu = fits.PrimaryHDU(delta, header)
-    hdu.writeto(args.file[2], clobber=True)
+    hdu.writeto(args.file[2], overwrite=True)
 
 if __name__ == '__main__':
     main()

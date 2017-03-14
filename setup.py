@@ -53,7 +53,7 @@ setup(
     ext_modules=extensions,
     setup_requires=['numpy', 'pkgconfig'],
     install_requires=[
-        'numpy', 'katsdpsigproc', 'python-casacore', 'astropy', 'progress',
+        'numpy', 'katsdpsigproc', 'python-casacore', 'astropy>=1.3', 'progress',
         'pycuda', 'scikit-cuda', 'h5py', 'ansicolors'
     ],
     tests_require=tests_require,

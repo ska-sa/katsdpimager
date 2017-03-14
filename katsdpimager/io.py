@@ -146,7 +146,7 @@ def write_fits_image(dataset, image, image_parameters, filename, beam=None, buni
 
     # l axis is reversed, because RA increases right-to-left.
     hdu = fits.PrimaryHDU(image[:, :, ::-1], header)
-    hdu.writeto(filename, clobber=True)
+    hdu.writeto(filename, overwrite=True)
 
 
 def _split_array(x, dtype):
@@ -210,4 +210,4 @@ def write_fits_grid(grid, image_parameters, filename):
     header['CDELT4'] = 1.0
 
     hdu = fits.PrimaryHDU(grid[:, pol_permute, :, :], header)
-    hdu.writeto(filename, clobber=True)
+    hdu.writeto(filename, overwrite=True)
