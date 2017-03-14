@@ -251,6 +251,9 @@ class VisibilityCollectorHDF5(VisibilityCollector):
         self._length[channel, w_slice] += N
         if self._length[channel, w_slice] > self._dataset.shape[2]:
             self._dataset.resize(self._length[channel, w_slice], axis=2)
+        # Work around FutureWarning in numpy 1.12 by first creating a view of
+        # elements that contains only the fields we want.
+        elements = np.ndarray(elements.shape, self.store_dtype, elements, 0, elements.strides)
         # This slightly contorted access is for performance reasons: see
         # https://github.com/h5py/h5py/issues/492
         self._dataset[channel : channel+1, w_slice : w_slice+1, old_length : self._length[channel, w_slice]] = \
@@ -288,6 +291,9 @@ class VisibilityCollectorMem(VisibilityCollector):
 
     def _emit(self, elements):
         dataset = self.datasets[elements[0]['channel']][elements[0]['w_slice']]
+        # Work around FutureWarning in numpy 1.12 by first creating a view of
+        # elements that contains only the fields we want.
+        elements = np.ndarray(elements.shape, self.store_dtype, elements, 0, elements.strides)
         dataset.append(elements.astype(self.store_dtype))
 
     def reader(self):
