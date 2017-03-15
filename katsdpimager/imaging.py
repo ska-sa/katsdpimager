@@ -230,6 +230,15 @@ class ImagingHost(object):
     def buffer(self, name):
         return self._buffer[name]
 
+    @property
+    def num_vis(self):
+        return self._gridder.num_vis
+
+    @num_vis.setter
+    def num_vis(self, value):
+        self._gridder.num_vis = value
+        self._degridder.num_vis = value
+
     def clear_weights(self):
         self._weights_grid.fill(0)
 
