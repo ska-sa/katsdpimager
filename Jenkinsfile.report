@@ -1,9 +1,10 @@
 #!groovy
 
-def katsdp = fileLoader.fromGit('scripts/katsdp.groovy', 'git@github.com:ska-sa/katsdpjenkins', 'master', 'katpull', '')
-env.BRANCH_NAME = 'master'
+@Library('katsdpjenkins') _
 
-katsdp.commonBuild(maintainer: 'bmerry@ska.ac.za') {
+env.BRANCH_NAME = 'imager-dev'
+
+katsdp.commonBuild() {
     String workdir = 'git/katsdpimager'
     String testdir = "$workdir/tests"
     katsdp.stagePrepare(subdir: 'katsdpimager')
@@ -44,3 +45,4 @@ katsdp.commonBuild(maintainer: 'bmerry@ska.ac.za') {
                              keepAll: true])
     }
 }
+katsdp.mail('bmerry@ska.ac.za')
