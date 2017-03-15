@@ -704,6 +704,15 @@ class GridDegrid(accel.Operation):
                 n, self.max_vis))
         self._num_vis = n
 
+    def set_coordinates(self, uv, sub_uv, w_plane):
+        N = len(uv)
+        if len(sub_uv) != N or len(w_plane) != N:
+            raise ValueError('Lengths do not match')
+        self.num_vis = N
+        self.buffer('uv')[:N, 0:2] = uv
+        self.buffer('uv')[:N, 2:4] = sub_uv
+        self.buffer('w_plane')[:N] = w_plane
+
     def parameters(self):
         return {
             'grid_parameters': self.template.grid_parameters,
@@ -721,16 +730,13 @@ class Gridder(GridDegrid):
         self.slots['weights_grid'] = accel.IOSlot(self.slots['grid'].shape, np.float32)
         self._kernel = self.template.program.get_kernel('grid')
 
-    def grid(self, uv, sub_uv, w_plane, vis):
+    def grid(self, vis):
         """Add visibilities to the grid, with convolutional gridding using the
-        anti-aliasing filter."""
-        N = len(uv)
-        if len(sub_uv) != N or len(w_plane) != N or len(vis) != N:
+        anti-aliasing filter. The coordinates for the visibilities must first
+        be set by calling :meth:`set_coordinates`."""
+        N = self.num_vis
+        if len(vis) != N:
             raise ValueError('Lengths do not match')
-        self.num_vis = N
-        self.buffer('uv')[:N, 0:2] = uv
-        self.buffer('uv')[:N, 2:4] = sub_uv
-        self.buffer('w_plane')[:N] = w_plane
         self.buffer('vis')[:N] = vis
         return self()
 
@@ -930,15 +936,12 @@ class Degridder(GridDegrid):
         super(Degridder, self).__init__(*args, **kwargs)
         self._kernel = self.template.program.get_kernel('degrid')
 
-    def degrid(self, uv, sub_uv, w_plane, vis):
-        """Degrid visibilities into `vis`."""
-        N = len(uv)
-        if len(sub_uv) != N or len(w_plane) != N or len(vis) != N:
+    def degrid(self, vis):
+        """Degrid visibilities into `vis`. The UVW coordinates must have first
+        been set with :meth:`set_coordinates`."""
+        N = self.num_vis
+        if len(vis) != N:
             raise ValueError('Lengths do not match')
-        self.num_vis = N
-        self.buffer('uv')[:N, 0:2] = uv
-        self.buffer('uv')[:N, 2:4] = sub_uv
-        self.buffer('w_plane')[:N] = w_plane
         self()
         self.command_queue.finish()
         vis[:] = self.buffer('vis')[:N]
@@ -1020,12 +1023,16 @@ class GridderHost(object):
         shape = (len(image_parameters.polarizations), pixels, pixels)
         self.values = np.empty(shape, image_parameters.complex_dtype)
         self.weights_grid = np.empty(shape, np.float32)
+        self.uv = None
+        self.sub_uv = None
+        self.w_plane = None
 
     def clear(self):
         self.values.fill(0)
 
-    def grid(self, uv, sub_uv, w_plane, vis):
-        """Add visibilities to the grid, with convolutional gridding.
+    def set_coordinates(self, uv, sub_uv, w_plane):
+        """Set UVW coordinates for the visibilities that will be passed to
+        :meth:`grid`. This method copies the values passed.
 
         Parameters
         ----------
@@ -1035,12 +1042,22 @@ class GridderHost(object):
             Preprocessed grid UV sub-pixel coordinates
         w_plane : 1D array, integer
             Preprocessed grid W plane coordinates
+        """
+        self.uv = uv[:]
+        self.sub_uv = sub_uv[:]
+        self.w_plane = w_plane[:]
+
+    def grid(self, vis):
+        """Add visibilities to the grid, with convolutional gridding.
+
+        Parameters
+        ----------
         vis : 2D ndarray of complex or real
             Visibility data, indexed by sample and polarization, and
             pre-multiplied by all weights
         """
         _grid(self.kernel.data, self.values, self.weights_grid,
-              uv, sub_uv, w_plane, vis,
+              self.uv, self.sub_uv, self.w_plane, vis,
               np.empty((vis.shape[1],), self.values.dtype))
 
 
@@ -1071,11 +1088,19 @@ class DegridderHost(object):
         pixels = image_parameters.pixels
         shape = (len(image_parameters.polarizations), pixels, pixels)
         self.values = np.empty(shape, image_parameters.complex_dtype)
+        self.uv = None
+        self.sub_uv = None
+        self.w_plane = None
 
-    def degrid(self, uv, sub_uv, w_plane, vis):
+    def set_coordinates(self, uv, sub_uv, w_plane):
+        self.uv = uv[:]
+        self.sub_uv = sub_uv[:]
+        self.w_plane = w_plane[:]
+
+    def degrid(self, vis):
         """Compute visibilities from the grid. See :meth:`GridderHost.grid`
         for details of the parameters.
         """
         _degrid(self.kernel.data, self.values,
-                uv, sub_uv, w_plane, vis,
+                self.uv, self.sub_uv, self.w_plane, vis,
                 np.empty((vis.shape[1],), self.values.dtype))

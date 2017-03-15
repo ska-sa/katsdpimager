@@ -133,6 +133,12 @@ class Imaging(accel.OperationSequence):
         self.ensure_all_bound()
         self.buffer('model').zero(self.command_queue)
 
+    def set_coordinates(self, *args, **kwargs):
+        self.ensure_all_bound()
+        # The gridder and degridder share their coordinates, so we can use
+        # either here.
+        self._gridder.set_coordinates(*args, **kwargs)
+
     def grid(self, *args, **kwargs):
         self.ensure_all_bound()
         self._gridder.grid(*args, **kwargs)
@@ -221,6 +227,10 @@ class ImagingHost(object):
 
     def clear_model(self):
         self._model.fill(0)
+
+    def set_coordinates(self, *args, **kwargs):
+        self._gridder.set_coordinates(*args, **kwargs)
+        self._degridder.set_coordinates(*args, **kwargs)
 
     def grid(self, *args, **kwargs):
         self._gridder.grid(*args, **kwargs)

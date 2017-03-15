@@ -145,7 +145,8 @@ class TestGridder(BaseTest):
             weights_grid_host = weights_grid.empty_like()
             _middle(weights_grid_host, self.weights_grid.shape)[:] = self.weights_grid
             weights_grid.set_async(command_queue, weights_grid_host)
-            fn.grid(self.uv, self.sub_uv, self.w_plane, vis)
+            fn.set_coordinates(self.uv, self.sub_uv, self.w_plane)
+            fn.grid(vis)
             command_queue.finish()
             return grid_data
         self.do_grid(callback)
@@ -164,7 +165,8 @@ class TestGridderHost(BaseTest):
             gridder = grid.GridderHost(self.image_parameters, self.grid_parameters)
             gridder.clear()
             _middle(gridder.weights_grid, self.weights_grid.shape)[:] = self.weights_grid
-            gridder.grid(self.uv, self.sub_uv, self.w_plane, vis)
+            gridder.set_coordinates(self.uv, self.sub_uv, self.w_plane)
+            gridder.grid(vis)
             return gridder.values
         self.do_grid(callback)
 
@@ -182,7 +184,8 @@ class TestDegridder(BaseTest):
             fn.ensure_all_bound()
             grid_buffer = fn.buffer('grid')
             grid_buffer.set(command_queue, _middle(grid_data, grid_buffer.shape))
-            fn.degrid(self.uv, self.sub_uv, self.w_plane, vis)
+            fn.set_coordinates(self.uv, self.sub_uv, self.w_plane)
+            fn.degrid(vis)
             return vis
         self.do_degrid(callback)
 
@@ -201,6 +204,7 @@ class TestDegridderHost(BaseTest):
             vis = np.zeros((n_vis, 4), np.complex128)
             degridder = grid.DegridderHost(self.image_parameters, self.grid_parameters)
             degridder.values[:] = grid_data
-            degridder.degrid(self.uv, self.sub_uv, self.w_plane, vis)
+            degridder.set_coordinates(self.uv, self.sub_uv, self.w_plane)
+            degridder.degrid(vis)
             return vis
         self.do_degrid(callback)

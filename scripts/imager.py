@@ -195,14 +195,14 @@ def make_dirty(queue, reader, name, field, imager, mid_w, vis_block, full_cycle=
         queue.finish()
         with progress.finishing(bar):
             for chunk in reader.iter_slice(0, w_slice, vis_block):
+                imager.set_coordinates(chunk.uv, chunk.sub_uv, chunk.w_plane)
                 if full_cycle:
-                    # TODO: this will transfer the coordinate data twice. Also,
-                    # it makes unnecessary copies of the visibilities, which
-                    # should ideally stay on the GPU.
+                    # TODO: this transfers the visibilities from the GPU
+                    # and back again, which is very inefficient.
                     predicted = np.empty_like(chunk[field])
-                    imager.degrid(chunk.uv, chunk.sub_uv, chunk.w_plane, predicted)
+                    imager.degrid(predicted)
                     chunk[field] -= predicted * chunk.weights
-                imager.grid(chunk.uv, chunk.sub_uv, chunk.w_plane, chunk[field])
+                imager.grid(chunk[field])
                 # Need to serialise calls to grid, since otherwise the next
                 # call will overwrite the incoming data before the previous
                 # iteration is done with it.
