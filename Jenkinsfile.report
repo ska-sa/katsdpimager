@@ -8,7 +8,7 @@ String workdir = 'git/katsdpimager'
 String testdir = "$workdir/tests"
 katsdp.stagePrepare(subdir: 'katsdpimager')
 
-stage 'Generate report' {
+stage('Generate report') {
     katsdp.simpleNode(label: 'cuda', timeout: [time: 8, unit: 'HOURS']) {
         deleteDir()
         katsdp.unpackGit()
