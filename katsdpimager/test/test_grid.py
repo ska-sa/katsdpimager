@@ -116,8 +116,10 @@ class BaseTest(object):
         shape = (4, pixels, pixels)
         rs = np.random.RandomState(seed=2)
         grid_data = (rs.uniform(-1, 1, size=shape) + 1j * rs.uniform(-1, 1, size=shape)).astype(np.complex128)
-        vis = callback(max_vis, grid_data)
-        expected = np.zeros_like(vis)
+        vis = (rs.uniform(-1, 1, size=(n_vis, 4)) +
+               1j * rs.uniform(-1, 1, size=(n_vis, 4))).astype(np.complex128)
+        weights = rs.uniform(0.5, 1.5, size=(n_vis, 4)).astype(np.float64)
+        expected = np.zeros_like(vis.copy())
         uv_bias = (self.convolve_kernel.data.shape[-1] - 1) // 2 - pixels // 2
         for i in range(n_vis):
             kernel = np.outer(self.convolve_kernel.data[self.w_plane[i], self.sub_uv[i, 1], :],
@@ -126,8 +128,9 @@ class BaseTest(object):
             v = self.uv[i, 1] - uv_bias
             for j in range(4):
                 footprint = grid_data[j, v : v + kernel.shape[0], u : u + kernel.shape[1]]
-                expected[i, j] = np.dot(kernel.ravel(), footprint.ravel())
-        np.testing.assert_allclose(expected, vis, 1e-5)
+                expected[i, j] = vis[i, j] - weights[i, j] * np.dot(kernel.ravel(), footprint.ravel())
+        residuals = callback(max_vis, grid_data, weights, vis)
+        np.testing.assert_allclose(expected, residuals, 1e-5)
 
 
 class TestGridder(BaseTest):
@@ -145,8 +148,10 @@ class TestGridder(BaseTest):
             weights_grid_host = weights_grid.empty_like()
             _middle(weights_grid_host, self.weights_grid.shape)[:] = self.weights_grid
             weights_grid.set_async(command_queue, weights_grid_host)
+            fn.num_vis = len(self.uv)
             fn.set_coordinates(self.uv, self.sub_uv, self.w_plane)
-            fn.grid(vis)
+            fn.set_vis(vis)
+            fn()
             command_queue.finish()
             return grid_data
         self.do_grid(callback)
@@ -165,8 +170,10 @@ class TestGridderHost(BaseTest):
             gridder = grid.GridderHost(self.image_parameters, self.grid_parameters)
             gridder.clear()
             _middle(gridder.weights_grid, self.weights_grid.shape)[:] = self.weights_grid
+            gridder.num_vis = len(self.uv)
             gridder.set_coordinates(self.uv, self.sub_uv, self.w_plane)
-            gridder.grid(vis)
+            gridder.set_vis(vis)
+            gridder()
             return gridder.values
         self.do_grid(callback)
 
@@ -175,18 +182,21 @@ class TestDegridder(BaseTest):
     """Tests for :class:`grid.Degridder`"""
     @device_test
     def test(self, context, command_queue):
-        def callback(max_vis, grid_data):
+        def callback(max_vis, grid_data, weights, vis):
             n_vis = len(self.w_plane)
-            vis = np.zeros((n_vis, 4), np.complex128)
             template = grid.DegridderTemplate(context, self.image_parameters, self.grid_parameters)
             fn = template.instantiate(command_queue, self.array_parameters, max_vis,
                                       allocator=accel.SVMAllocator(context))
             fn.ensure_all_bound()
             grid_buffer = fn.buffer('grid')
             grid_buffer.set(command_queue, _middle(grid_data, grid_buffer.shape))
+            fn.num_vis = n_vis
             fn.set_coordinates(self.uv, self.sub_uv, self.w_plane)
-            fn.degrid(vis)
-            return vis
+            fn.set_weights(weights)
+            fn.set_vis(vis)
+            fn()
+            command_queue.finish()
+            return fn.buffer('vis')[:n_vis]
         self.do_degrid(callback)
 
     @device_test
@@ -199,12 +209,14 @@ class TestDegridder(BaseTest):
 class TestDegridderHost(BaseTest):
     """Tests for :class:`grid.DegridderHost`"""
     def test(self):
-        def callback(max_vis, grid_data):
+        def callback(max_vis, grid_data, weights, vis):
             n_vis = len(self.w_plane)
-            vis = np.zeros((n_vis, 4), np.complex128)
             degridder = grid.DegridderHost(self.image_parameters, self.grid_parameters)
             degridder.values[:] = grid_data
+            degridder.num_vis = n_vis
             degridder.set_coordinates(self.uv, self.sub_uv, self.w_plane)
-            degridder.degrid(vis)
+            degridder.set_weights(weights)
+            degridder.set_vis(vis)
+            degridder()
             return vis
         self.do_degrid(callback)

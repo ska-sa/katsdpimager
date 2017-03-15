@@ -80,6 +80,7 @@ void degrid(
     int grid_pol_stride,
     const GLOBAL short4 * RESTRICT uv,
     const GLOBAL short * RESTRICT w_plane,
+    const GLOBAL float * RESTRICT weights,
     GLOBAL float2 * RESTRICT vis,
     const GLOBAL float2 * RESTRICT convolve_kernel,
     int uv_bias,
@@ -179,13 +180,19 @@ void degrid(
         {
             // TODO: could improve this using float4s where appropriate
             int idx = vis_id * NPOLS + p;
+            float2 residual = vis[idx];
+            float weight = weights[idx];
+            float2 predicted;
 % if real_type == 'float':
-            vis[idx] = lclp->batch_vis[p][lid];
+            predicted = lclp->batch_vis[p][lid];
 % else:
-            vis[idx] = make_float2(
+            predicted = make_float2(
                 lclp->batch_vis[p][lid].x,
                 lclp->batch_vis[p][lid].y);
 % endif
+            residual.x -= predicted.x * weight;
+            residual.y -= predicted.y * weight;
+            vis[idx] = residual;
         }
     }
 }

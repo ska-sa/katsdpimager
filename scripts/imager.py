@@ -195,14 +195,13 @@ def make_dirty(queue, reader, name, field, imager, mid_w, vis_block, full_cycle=
         queue.finish()
         with progress.finishing(bar):
             for chunk in reader.iter_slice(0, w_slice, vis_block):
+                imager.num_vis = len(chunk.uv)
                 imager.set_coordinates(chunk.uv, chunk.sub_uv, chunk.w_plane)
+                imager.set_vis(chunk[field])
                 if full_cycle:
-                    # TODO: this transfers the visibilities from the GPU
-                    # and back again, which is very inefficient.
-                    predicted = np.empty_like(chunk[field])
-                    imager.degrid(predicted)
-                    chunk[field] -= predicted * chunk.weights
-                imager.grid(chunk[field])
+                    imager.set_degridder_weights(chunk.weights)
+                    imager.degrid()
+                imager.grid()
                 # Need to serialise calls to grid, since otherwise the next
                 # call will overwrite the incoming data before the previous
                 # iteration is done with it.
