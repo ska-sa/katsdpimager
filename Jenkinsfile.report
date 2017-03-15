@@ -4,12 +4,11 @@
 
 env.BRANCH_NAME = 'imager-dev'
 
-katsdp.commonBuild() {
-    String workdir = 'git/katsdpimager'
-    String testdir = "$workdir/tests"
-    katsdp.stagePrepare(subdir: 'katsdpimager')
+String workdir = 'git/katsdpimager'
+String testdir = "$workdir/tests"
+katsdp.stagePrepare(subdir: 'katsdpimager')
 
-    stage 'Generate report'
+stage 'Generate report' {
     katsdp.simpleNode(label: 'cuda', timeout: [time: 8, unit: 'HOURS']) {
         deleteDir()
         katsdp.unpackGit()
@@ -22,7 +21,8 @@ katsdp.commonBuild() {
          */
         katsdp.virtualenv('venv') {
             katsdp.installRequirements('git/katsdpimager/report-requirements.txt')
-            sh 'pip install --no-index -v ./git/katsdpimager[report]'
+            sh 'pip install --no-deps -v ./git/katsdpimager[report]'
+            sh 'pip check'
             dir(testdir) {
                 sh 'tigger-convert --rename --format "name ra_h ra_m ra_s dec_d dec_m dec_s i q u v" -f simple.lsm.txt simple.lsm.html'
             }
