@@ -261,11 +261,18 @@ class ImagingHost(object):
         self._gridder.set_coordinates(*args, **kwargs)
         self._degridder.set_coordinates(*args, **kwargs)
 
-    def grid(self, *args, **kwargs):
-        self._gridder.grid(*args, **kwargs)
+    def set_vis(self, *args, **kwargs):
+        self._gridder.set_vis(*args, **kwargs)
+        self._degridder.set_vis(*args, **kwargs)
 
-    def degrid(self, *args, **kwargs):
-        self._degridder.degrid(*args, **kwargs)
+    def set_degridder_weights(self, *args, **kwargs):
+        self._degridder.set_weights(*args, **kwargs)
+
+    def grid(self):
+        self._gridder()
+
+    def degrid(self):
+        self._degridder()
 
     def grid_to_image(self, w):
         self._grid_to_image.set_w(w)
