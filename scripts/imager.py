@@ -150,7 +150,7 @@ def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, po
             if bar is None:
                 bar = progress.make_progressbar("Preprocessing vis", max=chunk['total'])
             collector.add(
-                chunk['channel'],
+                chunk['channel'] - args.start_channel,
                 chunk['uvw'], chunk['weights'], chunk['baselines'], chunk['vis'],
                 chunk.get('feed_angle1'), chunk.get('feed_angle2'),
                 *polarization_matrices)
@@ -165,17 +165,17 @@ def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, po
     return collector
 
 
-def make_weights(queue, reader, channel, imager, weight_type, vis_block):
+def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block):
     imager.clear_weights()
     total = 0
-    for w_slice in range(reader.num_w_slices(channel)):
-        total += reader.len(channel, w_slice)
+    for w_slice in range(reader.num_w_slices(rel_channel)):
+        total += reader.len(rel_channel, w_slice)
     bar = progress.make_progressbar('Computing weights', max=total)
     queue.finish()
     with progress.finishing(bar):
         if weight_type != weight.NATURAL:
-            for w_slice in range(reader.num_w_slices(channel)):
-                for chunk in reader.iter_slice(channel, w_slice, vis_block):
+            for w_slice in range(reader.num_w_slices(rel_channel)):
+                for chunk in reader.iter_slice(rel_channel, w_slice, vis_block):
                     imager.grid_weights(chunk.uv, chunk.weights)
                     # Need to serialise calls to grid, since otherwise the next
                     # call will overwrite the incoming data before the previous
@@ -188,15 +188,15 @@ def make_weights(queue, reader, channel, imager, weight_type, vis_block):
         queue.finish()
 
 
-def make_dirty(queue, reader, channel, name, field, imager, mid_w, vis_block, full_cycle=False):
+def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block, full_cycle=False):
     imager.clear_dirty()
     queue.finish()
-    for w_slice in range(reader.num_w_slices(channel)):
-        N = reader.len(channel, w_slice)
+    for w_slice in range(reader.num_w_slices(rel_channel)):
+        N = reader.len(rel_channel, w_slice)
         if N == 0:
             logger.info("Skipping slice %d which has no visibilities", w_slice + 1)
             continue
-        label = '{} {}/{}'.format(name, w_slice + 1, reader.num_w_slices(channel))
+        label = '{} {}/{}'.format(name, w_slice + 1, reader.num_w_slices(rel_channel))
         if full_cycle:
             with progress.step('FFT {}'.format(label)):
                 imager.model_to_grid(mid_w[w_slice])
@@ -204,7 +204,7 @@ def make_dirty(queue, reader, channel, name, field, imager, mid_w, vis_block, fu
         imager.clear_grid()
         queue.finish()
         with progress.finishing(bar):
-            for chunk in reader.iter_slice(channel, w_slice, vis_block):
+            for chunk in reader.iter_slice(rel_channel, w_slice, vis_block):
                 imager.num_vis = len(chunk.uv)
                 imager.set_coordinates(chunk.uv, chunk.sub_uv, chunk.w_plane)
                 imager.set_vis(chunk[field])
@@ -360,6 +360,7 @@ class ChannelParameters(object):
 
 def process_channel(args, dataset, context, queue, reader, channel_p, array_p, weight_p):
     channel = channel_p.channel
+    rel_channel = channel - args.start_channel
     image_p = channel_p.image_p
     grid_p = channel_p.grid_p
     clean_p = channel_p.clean_p
@@ -379,7 +380,7 @@ def process_channel(args, dataset, context, queue, reader, channel_p, array_p, w
     grid_data = imager.buffer('grid')
 
     #### Compute imaging weights ####
-    make_weights(queue, reader, channel,
+    make_weights(queue, reader, rel_channel,
                  imager, weight_p.weight_type, args.vis_block)
     if args.write_weights is not None:
         with progress.step('Write image weights'):
@@ -389,7 +390,7 @@ def process_channel(args, dataset, context, queue, reader, channel_p, array_p, w
     #### Create PSF ####
     slice_w_step = float(grid_p.max_w / image_p.wavelength / (grid_p.w_slices - 0.5))
     mid_w = np.arange(grid_p.w_slices) * slice_w_step
-    make_dirty(queue, reader, channel,
+    make_dirty(queue, reader, rel_channel,
                'PSF', 'weights', imager, mid_w, args.vis_block)
     # Normalization
     scale = np.reciprocal(dirty[..., dirty.shape[1] // 2, dirty.shape[2] // 2])
@@ -406,7 +407,7 @@ def process_channel(args, dataset, context, queue, reader, channel_p, array_p, w
     imager.clear_model()
     for i in range(args.major):
         logger.info("Starting major cycle %d/%d", i + 1, args.major)
-        make_dirty(queue, reader, channel,
+        make_dirty(queue, reader, rel_channel,
                    'image', 'vis', imager, mid_w, args.vis_block, i != 0)
         imager.scale_dirty(scale)
         queue.finish()

@@ -344,12 +344,13 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             weight = weight * np.logical_not(flag)
             baseline = (antenna1 * self._antenna.nrows() + antenna2)
             for i in range(start_channel, stop_channel):
+                rel_channel = i - start_channel
                 ret = dict(channel=i,
                            uvw=uvw,
-                           weights=weight[:, i, :],
+                           weights=weight[:, rel_channel, :],
                            baselines=baseline,
-                           vis=data[:, i, :],
-                           progress=start * num_channels + (end - start) * (i - start_channel),
+                           vis=data[:, rel_channel, :],
+                           progress=start * num_channels + (end - start) * rel_channel,
                            total=self._main.nrows() * num_channels)
                 if self._feed_angle_correction:
                     ret['feed_angle1'] = feed_angle1
