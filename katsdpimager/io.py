@@ -80,7 +80,7 @@ def _fits_polarizations(header, axis, polarizations):
     return pol_permute
 
 
-def write_fits_image(dataset, image, image_parameters, filename, beam=None, bunit='JY/BEAM'):
+def write_fits_image(dataset, image, image_parameters, filename, channel, beam=None, bunit='JY/BEAM'):
     """Write an image to a FITS file.
 
     Parameters
@@ -92,8 +92,10 @@ def write_fits_image(dataset, image, image_parameters, filename, beam=None, buni
         a 2M x 2N image, the phase centre is at coordinates (M, N).
     image_parameters : :class:`katsdpimager.parameters.ImageParameters`
         Metadata associated with the image
-    filename : `str`
+    filename : str
         File to write. It is silently overwritten if already present.
+    channel : int
+        Channel number to substitute into `filename` with printf formatting.
     beam : :class:`katsdpimager.beam.Beam`, optional
         Synthesized beam model to write to the header
     bunit : str, optional
@@ -146,6 +148,8 @@ def write_fits_image(dataset, image, image_parameters, filename, beam=None, buni
 
     # l axis is reversed, because RA increases right-to-left.
     hdu = fits.PrimaryHDU(image[:, :, ::-1], header)
+    if '%' in filename:
+        filename = filename % (channel,)
     hdu.writeto(filename, overwrite=True)
 
 
@@ -171,7 +175,7 @@ def _split_array(x, dtype):
     return np.asarray(np.lib.stride_tricks.DummyArray(interface, base=x))
 
 
-def write_fits_grid(grid, image_parameters, filename):
+def write_fits_grid(grid, image_parameters, filename, channel):
     """Writes a UV grid to a FITS file.
 
     Parameters
@@ -182,6 +186,8 @@ def write_fits_grid(grid, image_parameters, filename):
         Metadata used to set headers
     filename : str
         File to write. It is silently overwritten if already present.
+    channel : int
+        Channel number to substitute into `filename` with printf formatting.
 
     Raises
     ------
@@ -210,4 +216,6 @@ def write_fits_grid(grid, image_parameters, filename):
     header['CDELT4'] = 1.0
 
     hdu = fits.PrimaryHDU(grid[:, pol_permute, :, :], header)
+    if '%' in filename:
+        filename = filename % (channel,)
     hdu.writeto(filename, overwrite=True)

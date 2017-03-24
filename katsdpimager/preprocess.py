@@ -78,20 +78,24 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
     image_parameters : list of :class:`katsdpimager.parameters.ImageParameters`
         The image parameters for each channel. They must all have the same set
         of polarizations.
-    grid_parameters : :class:`katsdpimager.parameters.GridParameters`
-        Gridding parameters
+    grid_parameters : list of :class:`katsdpimager.parameters.GridParameters`
+        Gridding parameters, with one entry per entry in `image_parameters`
     buffer_size : int
         Number of visibilities to buffer, prior to compression
     """
     def __init__(self, image_parameters, grid_parameters, buffer_size):
         num_polarizations = len(image_parameters[0].polarizations)
+        if len(image_parameters) != len(grid_parameters):
+            raise ValueError('Inconsistent lengths of image_parameters and grid_parameters')
+        num_channels = len(image_parameters)
+        config = np.zeros(num_channels, _preprocess.CHANNEL_CONFIG_DTYPE)
+        for i, grid_p in enumerate(grid_parameters):
+            config[i]["max_w"] = grid_p.max_w.to(units.m).value
+            config[i]["w_slices"] = grid_p.w_slices
+            config[i]["w_planes"] = grid_p.w_planes
+            config[i]["oversample"] = grid_p.oversample
         super(VisibilityCollector, self).__init__(
-            num_polarizations,
-            grid_parameters.max_w.to(units.m).value,
-            grid_parameters.w_slices,
-            grid_parameters.w_planes,
-            grid_parameters.oversample,
-            self._emit, buffer_size)
+            num_polarizations, config, self._emit, buffer_size)
         self.image_parameters = image_parameters
         self.grid_parameters = grid_parameters
         self.store_dtype = _make_dtype(num_polarizations)
@@ -99,10 +103,6 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
     @property
     def num_channels(self):
         return len(self.image_parameters)
-
-    @property
-    def num_w_slices(self):
-        return self.grid_parameters.w_slices
 
     def _emit(self, elements):
         """Write an array of compressed elements with the same channel and w
@@ -222,7 +222,8 @@ class VisibilityCollectorHDF5(VisibilityCollector):
         # We will be jumping between channels and W slices, so to avoid
         # evicting a chunk and then reloading it, we ideally have a big
         # enough cache to hold one chunk for each channel+w-slice.
-        cache_chunks = self.num_channels * self.num_w_slices
+        cache_chunks = sum(grid_p.w_slices for grid_p in self.grid_parameters)
+        max_w_slices = max(grid_p.w_slices for grid_p in self.grid_parameters)
         cache_size = chunk_size * cache_chunks
         if max_cache_size is not None and cache_size > max_cache_size:
             cache_size = max_cache_size
@@ -235,10 +236,10 @@ class VisibilityCollectorHDF5(VisibilityCollector):
         logger.debug('Setting cache size to %d slots, %d bytes', slots, cache_size)
         self.filename = filename
         self._file = h5py.File(h5py.h5f.create(filename, fapl=_make_fapl(slots, cache_size, 1.0)))
-        self._length = np.zeros((self.num_channels, self.num_w_slices), np.int64)
+        self._length = np.zeros((self.num_channels, max_w_slices), np.int64)
         self._dataset = self._file.create_dataset(
-            "vis", (self.num_channels, self.num_w_slices, 0),
-            maxshape=(self.num_channels, self.num_w_slices, None),
+            "vis", (self.num_channels, max_w_slices, 0),
+            maxshape=(self.num_channels, max_w_slices, None),
             dtype=self.store_dtype,
             compression='gzip',
             chunks=(1, 1, chunk_elements))
@@ -287,7 +288,8 @@ class VisibilityCollectorMem(VisibilityCollector):
     def __init__(self, *args, **kwargs):
         super(VisibilityCollectorMem, self).__init__(*args, **kwargs)
         self.datasets = [
-            [[] for w_slice in range(self.num_w_slices)] for channel in range(self.num_channels)]
+            [[] for w_slice in range(self.grid_parameters[channel].w_slices)]
+            for channel in range(self.num_channels)]
 
     def _emit(self, elements):
         dataset = self.datasets[elements[0]['channel']][elements[0]['w_slice']]
@@ -374,8 +376,7 @@ class VisibilityReaderHDF5(VisibilityReader):
     def num_channels(self):
         return self._length.shape[0]
 
-    @property
-    def num_w_slices(self):
+    def num_w_slices(self, channel):
         return self._length.shape[1]
 
     def close(self):
@@ -420,9 +421,8 @@ class VisibilityReaderMem(VisibilityReader):
     def num_channels(self):
         return len(self.datasets)
 
-    @property
-    def num_w_slices(self):
-        return len(self.datasets[0])
+    def num_w_slices(self, channel):
+        return len(self.datasets[channel])
 
     def close(self):
         super(VisibilityReaderMem, self).close()

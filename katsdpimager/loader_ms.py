@@ -156,16 +156,15 @@ def _getcolslice(table, name, blc, trc, inc=[], start=0, count=-1,
     return _get(table, name, data, casacore_units, astropy_units, measinfo_type, measinfo_ref)
 
 
-def _getcolchannel(table, name, channel, start=0, count=-1,
+def _getcolchannels(table, name, start_channel, stop_channel, start=0, count=-1,
                    casacore_units=None, astropy_units=None,
                    measinfo_type=None, measinfo_ref=None):
     """Convenience wrapper around :func:`_getcolslice` for columns where the
-    shape is channels by polarizations, and one channel is desired. The
-    dimension corresponding to channel is removed.
+    shape is channels by polarizations, and a range of channels is desired.
     """
-    return _getcolslice(table, name, [channel, -1], [channel, -1], [],
+    return _getcolslice(table, name, [start_channel, -1], [stop_channel - 1, -1], [],
                         start, count, casacore_units, astropy_units,
-                        measinfo_type, measinfo_ref)[:, 0]
+                        measinfo_type, measinfo_ref)
 
 
 def _getcell(table, name, row,
@@ -258,6 +257,10 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             raise ValueError('Unsupported shape for PHASE_DIR: {}'.format(value.shape))
         return value[0, :]
 
+    def num_channels(self):
+        return len(_getcell(self._spectral_window, 'CHAN_FREQ', self._spectral_window_id,
+                            'Hz', units.Hz))
+
     def frequency(self, channel):
         return _getcell(self._spectral_window, 'CHAN_FREQ', self._spectral_window_id,
                         'Hz', units.Hz)[channel]
@@ -268,9 +271,12 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
     def has_feed_angles(self):
         return self._feed_angle_correction
 
-    def data_iter(self, channel, max_rows=None):
-        if max_rows is None:
-            max_rows = self._main.nrows()
+    def data_iter(self, start_channel, stop_channel, max_chunk_vis=None, max_load_vis=None):
+        if max_chunk_vis is None:
+            max_chunk_vis = self._main.nrows()
+        num_channels = stop_channel - start_channel
+        if max_load_vis is not None:
+            max_chunk_vis = max(1, min(max_chunk_vis, max_load_vis // num_channels))
         # PHASE_DIR is used as an approximation to the antenna pointing
         # direction, for the purposes of parallactic angle correction. This
         # probably doesn't generalise well beyond dishes with single-pixel
@@ -280,8 +286,8 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         pos = self.antenna_positions()
         pos = astropy.coordinates.EarthLocation.from_geocentric(pos[:, 0], pos[:, 1], pos[:, 2])
         pole = astropy.coordinates.SkyCoord(ra=0 * units.deg, dec=90 * units.deg, frame='fk5')
-        for start in xrange(0, self._main.nrows(), max_rows):
-            end = min(self._main.nrows(), start + max_rows)
+        for start in xrange(0, self._main.nrows(), max_chunk_vis):
+            end = min(self._main.nrows(), start + max_chunk_vis)
             nrows = end - start
             flag_row = _getcol(self._main, 'FLAG_ROW', start, nrows)
             field_id = _getcol(self._main, 'FIELD_ID', start, nrows)
@@ -294,7 +300,8 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             valid = np.logical_and(valid, antenna1 != antenna2)
             antenna1 = antenna1[valid]
             antenna2 = antenna2[valid]
-            data = _getcolchannel(self._main, self._data_col, channel, start, nrows, 'Jy', units.Jy)[valid, ...]
+            data = _getcolchannels(self._main, self._data_col, start_channel, stop_channel,
+                                   start, nrows, 'Jy', units.Jy)[valid, ...]
             feed_angle1 = None
             feed_angle2 = None
             if self._feed_angle_correction:
@@ -325,18 +332,29 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             # Note: UVW is negated due to differing sign conventions
             uvw = -_getcol(self._main, 'UVW', start, nrows, 'm', units.m, 'uvw', 'ITRF')[valid, ...]
             if self._has_weight_spectrum:
-                weight = _getcolchannel(self._main, 'WEIGHT_SPECTRUM', channel, start, nrows)[valid, ...]
+                weight = _getcolchannels(self._main, 'WEIGHT_SPECTRUM', start_channel, stop_channel,
+                                         start, nrows)[valid, ...]
             else:
                 weight = _getcol(self._main, 'WEIGHT', start, nrows)[valid, ...]
-            flag = _getcolchannel(self._main, 'FLAG', channel, start, nrows)[valid, ...]
+                # Fake a channel axis
+                weight = weight[:, np.newaxis, :]
+                weight = np.broadcast_to(weight, data.shape)
+            flag = _getcolchannels(self._main, 'FLAG', start_channel, stop_channel,
+                                   start, nrows)[valid, ...]
             weight = weight * np.logical_not(flag)
             baseline = (antenna1 * self._antenna.nrows() + antenna2)
-            ret = dict(uvw=uvw, weights=weight, baselines=baseline, vis=data,
-                       progress=end, total=self._main.nrows())
-            if self._feed_angle_correction:
-                ret['feed_angle1'] = feed_angle1
-                ret['feed_angle2'] = feed_angle2
-            yield ret
+            for i in range(start_channel, stop_channel):
+                ret = dict(channel=i,
+                           uvw=uvw,
+                           weights=weight[:, i, :],
+                           baselines=baseline,
+                           vis=data[:, i, :],
+                           progress=start * num_channels + (end - start) * (i - start_channel),
+                           total=self._main.nrows() * num_channels)
+                if self._feed_angle_correction:
+                    ret['feed_angle1'] = feed_angle1
+                    ret['feed_angle2'] = feed_angle2
+                yield ret
 
     def close(self):
         self._main.close()

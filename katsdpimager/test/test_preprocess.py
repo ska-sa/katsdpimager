@@ -20,6 +20,7 @@ def _empty_recarray(dtype):
 class BaseTestVisibilityCollector(object):
     def setup(self):
         self.image_parameters = []
+        self.grid_parameters = []
         for wavelength in np.array([0.25, 0.125]) * units.m:
             self.image_parameters.append(parameters.ImageParameters(
                 q_fov=1.0,
@@ -29,19 +30,18 @@ class BaseTestVisibilityCollector(object):
                 dtype=np.float32,
                 pixel_size=1.0/(4096.0*wavelength.value),
                 pixels=2048))
-        self.grid_parameters = parameters.GridParameters(
-            antialias_width=7.0,
-            oversample=8,
-            image_oversample=4.0,
-            w_slices=1,
-            w_planes=128,
-            max_w=400 * units.m,
-            kernel_width=64)
+            self.grid_parameters.append(parameters.GridParameters(
+                antialias_width=7.0,
+                oversample=8,
+                image_oversample=4.0,
+                w_slices=1,
+                w_planes=128,
+                max_w=400 * units.m,
+                kernel_width=64))
 
     def check(self, collector, expected):
         reader = collector.reader()
         assert_equal(reader.num_channels, collector.num_channels)
-        assert_equal(reader.num_w_slices, collector.num_w_slices)
         for channel, channel_data in enumerate(expected):
             for w_slice, slice_data in enumerate(channel_data):
                 assert_equal(len(slice_data), reader.len(channel, w_slice))

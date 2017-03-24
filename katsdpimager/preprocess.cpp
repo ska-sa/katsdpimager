@@ -18,10 +18,28 @@
 #include <cstring>
 #include <cmath>
 #include <complex>
+#include <memory>
+#include <utility>
 #include <Eigen/Core>
 #include "mulz.h"
 
 namespace py = boost::python;
+
+// Boost.Python doesn't document it, but it seems to be necessary to do this
+// for py::handle<PyArray_Descr> to work without lots of compiler errors.
+namespace boost
+{
+namespace python
+{
+
+template<>
+struct base_type_traits<PyArray_Descr>
+{
+    typedef PyObject type;
+};
+
+} // namespace python
+} // namespace boost
 
 namespace
 {
@@ -43,6 +61,141 @@ struct vis_t
     std::uint32_t index;     ///< Original position, for sort stability
 };
 
+struct channel_config
+{
+    float max_w;
+    std::int32_t w_slices;
+    std::int32_t w_planes;
+    std::int32_t oversample;
+};
+
+/* Enforce the array to have a specific type and shape. The returned object is
+ * guaranteed to
+ * - be an array type
+ * - be C contiguous and aligned
+ * - have first dimension R unless R == -1
+ * - be one-dimensional if C == -1, two-dimensional with C columns otherwise
+ */
+py::object get_array(const py::object &obj, py::handle<PyArray_Descr> descr, npy_intp R, npy_intp C)
+{
+    int ndims = (C == -1 ? 1 : 2);
+    // PyArray_FromAny steals our reference to descr
+    PyObject *out = py::expect_non_null(PyArray_FromAny(
+        obj.ptr(), descr.release(), ndims, ndims,
+        NPY_ARRAY_CARRAY_RO, NULL));
+    py::object out_obj{py::handle<>(out)};
+    if (R != -1 && PyArray_DIMS((PyArrayObject *) out)[0] != R)
+    {
+        throw std::invalid_argument("Array has incorrect number of rows");
+    }
+    return out_obj;
+}
+
+/* Variant of get_array above that takes a typenum.
+ */
+py::object get_array(const py::object &obj, int typenum, npy_intp R, npy_intp C)
+{
+    py::handle<PyArray_Descr> descr{py::expect_non_null(PyArray_DescrFromType(typenum))};
+    return get_array(obj, descr, R, C);
+}
+
+template<typename T>
+T *array_data(const py::object &array)
+{
+    return reinterpret_cast<T *>(PyArray_BYTES((PyArrayObject *) array.ptr()));
+}
+
+/**
+ * Utility class for generating a numpy descriptor for a structured data type.
+ * After creating the factory, make calls to DESCRIPTOR_ADD_FIELD to describe
+ * the fields of the structure, then call get.
+ */
+template<typename T>
+class descriptor_factory
+{
+private:
+    py::list names, formats, offsets;
+    py::dict dtype_dict;
+
+public:
+    typedef T type;
+
+    descriptor_factory();
+    void add_field(
+        const std::string &name, int typenum, const py::tuple &dims, std::ptrdiff_t offset);
+    py::handle<PyArray_Descr> get() const;
+};
+
+template<typename T>
+descriptor_factory<T>::descriptor_factory()
+{
+    dtype_dict["names"] = names;
+    dtype_dict["formats"] = formats;
+    dtype_dict["offsets"] = offsets;
+    dtype_dict["itemsize"] = sizeof(T);
+}
+
+template<typename T>
+void descriptor_factory<T>::add_field(
+    const std::string &name, int typenum, const py::tuple &dims, std::ptrdiff_t offset)
+{
+    PyArray_Descr *base_descr = py::expect_non_null(PyArray_DescrFromType(typenum));
+    py::object base{py::handle<>(base_descr)};
+    if (len(dims) == 0)
+    {
+        formats.append(base);
+    }
+    else
+    {
+        py::tuple subtype_args = py::make_tuple(base, dims);
+        PyArray_Descr *subtype_descr;
+        if (!PyArray_DescrAlignConverter(subtype_args.ptr(), &subtype_descr))
+            py::throw_error_already_set();
+        py::object subtype{py::handle<>((PyObject *) subtype_descr)};
+        formats.append(subtype);
+    }
+    names.append(name);
+    offsets.append(offset);
+}
+
+template<typename T>
+py::handle<PyArray_Descr> descriptor_factory<T>::get() const
+{
+    PyArray_Descr *descr;
+    if (!PyArray_DescrConverter(dtype_dict.ptr(), &descr))
+        py::throw_error_already_set();
+    return py::handle<PyArray_Descr>(descr);
+}
+
+#define DESCRIPTOR_ADD_FIELD(factory, field, typenum, dims)  \
+    (factory.add_field(#field, typenum, py::make_tuple dims, \
+     offsetof(typename decltype(factory)::type, field)))
+
+template<int P>
+py::handle<PyArray_Descr> make_vis_descr()
+{
+    descriptor_factory<vis_t<P>> factory;
+    DESCRIPTOR_ADD_FIELD(factory, uv, NPY_INT16, (2));
+    DESCRIPTOR_ADD_FIELD(factory, sub_uv, NPY_INT16, (2));
+    DESCRIPTOR_ADD_FIELD(factory, weights, NPY_FLOAT32, (P));
+    DESCRIPTOR_ADD_FIELD(factory, vis, NPY_COMPLEX64, (P));
+    DESCRIPTOR_ADD_FIELD(factory, w_plane, NPY_INT16, ());
+    DESCRIPTOR_ADD_FIELD(factory, w_slice, NPY_INT16, ());
+    DESCRIPTOR_ADD_FIELD(factory, channel, NPY_INT32, ());
+    DESCRIPTOR_ADD_FIELD(factory, baseline, NPY_INT32, ());
+    return factory.get();
+}
+
+py::handle<PyArray_Descr> make_channel_config_descr()
+{
+    descriptor_factory<channel_config> factory;
+    DESCRIPTOR_ADD_FIELD(factory, max_w, NPY_FLOAT, ());
+    DESCRIPTOR_ADD_FIELD(factory, w_slices, NPY_INT32, ());
+    DESCRIPTOR_ADD_FIELD(factory, w_planes, NPY_INT32, ());
+    DESCRIPTOR_ADD_FIELD(factory, oversample, NPY_INT32, ());
+    return factory.get();
+}
+
 /**
  * Abstract base class. This is the type exposed to Python, but a subclass
  * specialized for the number of polarizations is actually instantiated.
@@ -51,10 +204,8 @@ class visibility_collector_base
 {
 protected:
     // Gridding parameters
-    float max_w;
-    int w_slices;
-    int w_planes;
-    int oversample;
+    std::unique_ptr<channel_config[]> config;
+    std::size_t num_channels;
     /// Callback function called with compressed data as a numpy array
     py::object emit_callback;
 
@@ -62,10 +213,7 @@ public:
     std::int64_t num_input = 0, num_output = 0;
 
     visibility_collector_base(
-        float max_w,
-        int w_slices,
-        int w_planes,
-        int oversample,
+        const py::object &config,
         const py::object &emit_callback);
     virtual ~visibility_collector_base() {}
 
@@ -112,17 +260,17 @@ public:
 };
 
 visibility_collector_base::visibility_collector_base(
-    float max_w,
-    int w_slices,
-    int w_planes,
-    int oversample,
+    const py::object &config,
     const py::object &emit_callback)
-    : max_w(max_w),
-    w_slices(w_slices),
-    w_planes(w_planes),
-    oversample(oversample),
-    emit_callback(emit_callback)
+    : emit_callback(emit_callback)
 {
+    // Copy the config data
+    py::handle<PyArray_Descr> descr = make_channel_config_descr();
+    py::object config_array = get_array(config, descr, -1, -1);
+    const channel_config *config_data = array_data<const channel_config>(config_array);
+    num_channels = PyArray_DIMS((PyArrayObject *) config_array.ptr())[0];
+    this->config.reset(new channel_config[num_channels]);
+    std::copy(config_data, config_data + num_channels, this->config.get());
 }
 
 /**
@@ -202,7 +350,7 @@ private:
     /// Number of valid entries in @ref buffer
     std::size_t buffer_size;
     /// numpy dtype for passing data in @ref buffer to Python
-    py::object buffer_descr;
+    py::handle<PyArray_Descr> buffer_descr;
 
     /**
      * Wrapper around @ref visibility_collector_base::emit. It constructs the
@@ -234,10 +382,7 @@ private:
 
 public:
     visibility_collector(
-        float max_w,
-        int w_slices,
-        int w_planes,
-        int oversample,
+        const py::object &config,
         const py::object &emit_callback,
         std::size_t buffer_capacity);
 
@@ -251,39 +396,6 @@ public:
 
     virtual void close() override;
 };
-
-/* Enforce the array to have a specific type and shape. Only the built-in
- * types are supported. The returned object is guaranteed to
- * - be an array type
- * - be C contiguous and aligned
- * - have first dimension R unless R == -1
- * - be one-dimensional if C == -1, two-dimensional with C columns otherwise
- */
-py::object get_array(const py::object &obj, int typenum, npy_intp R, npy_intp C)
-{
-    PyArray_Descr *descr = py::expect_non_null(PyArray_DescrFromType(typenum));
-    PyObject *out = py::expect_non_null(PyArray_FromAny(
-        obj.ptr(), descr, 0, 0,
-        NPY_ARRAY_CARRAY_RO, NULL));
-    py::object out_obj{py::handle<>(out)};
-    int ndims = PyArray_NDIM((PyArrayObject *) out);
-    if (ndims != (C == -1 ? 1 : 2))
-    {
-        PyErr_SetString(PyExc_TypeError, "Array has wrong number of dimensions");
-        py::throw_error_already_set();
-    }
-    if (R != -1 && PyArray_DIMS((PyArrayObject *) out)[0] != R)
-    {
-        throw std::invalid_argument("Array has incorrect number of rows");
-    }
-    return out_obj;
-}
-
-template<typename T>
-T *array_data(const py::object &array)
-{
-    return reinterpret_cast<T *>(PyArray_BYTES((PyArrayObject *) array.ptr()));
-}
 
 /**
  * Compute pixel and subpixel coordinates in grid. See grid.py for details.
@@ -330,9 +442,9 @@ void visibility_collector<P>::emit(vis_t<P> data[], std::size_t N)
 {
     npy_intp dims[1] = {(npy_intp) N};
     // PyArray_NewFromDescr steals a reference
-    Py_INCREF(buffer_descr.ptr());
+    auto buffer_descr_ref = buffer_descr;
     PyObject *array = py::expect_non_null(PyArray_NewFromDescr(
-        &PyArray_Type, (PyArray_Descr *) buffer_descr.ptr(), 1, dims, NULL, data,
+        &PyArray_Type, buffer_descr_ref.release(), 1, dims, NULL, data,
         NPY_ARRAY_CARRAY, NULL));
     py::object obj{py::handle<>(array)};
     num_output += N;
@@ -412,9 +524,10 @@ void visibility_collector<P>::add_impl2(
         reinterpret_cast<MulZ<float> *>(
             const_cast<float *>(weights_raw)), Q, N);
 
+    const channel_config &conf = config[channel];
     float uv_scale = 1.0f / cell_size;
-    float w_scale = (w_slices - 0.5f) * w_planes / max_w;
-    int max_slice_plane = w_slices * w_planes - 1; // TODO: check for overflow? precompute?
+    float w_scale = (conf.w_slices - 0.5f) * conf.w_planes / conf.max_w;
+    int max_slice_plane = conf.w_slices * conf.w_planes - 1; // TODO: check for overflow? precompute?
     for (std::size_t i = 0; i < N; i++)
     {
         if (baselines[i] < 0)
@@ -461,14 +574,14 @@ void visibility_collector<P>::add_impl2(
         v = v * uv_scale;
         // The plane number is biased by half a slice, because the first slice
         // is half-width and centered at w=0.
-        w = trunc(w * w_scale + w_planes * 0.5f);
+        w = trunc(w * w_scale + conf.w_planes * 0.5f);
         int w_slice_plane = std::min(int(w), max_slice_plane);
         // TODO convert from here
-        subpixel_coord(u, oversample, out.uv[0], out.sub_uv[0]);
-        subpixel_coord(v, oversample, out.uv[1], out.sub_uv[1]);
+        subpixel_coord(u, conf.oversample, out.uv[0], out.sub_uv[0]);
+        subpixel_coord(v, conf.oversample, out.uv[1], out.sub_uv[1]);
         out.channel = channel;
-        out.w_plane = w_slice_plane % w_planes;
-        out.w_slice = w_slice_plane / w_planes;
+        out.w_plane = w_slice_plane % conf.w_planes;
+        out.w_slice = w_slice_plane / conf.w_planes;
         out.baseline = baselines[i];
         // This could wrap if the buffer has > 4 billion elements, but that
         // can only affect efficiency, not correctness.
@@ -546,6 +659,8 @@ void visibility_collector<P>::add(
     const py::object &mueller_stokes,
     const py::object &mueller_circular)
 {
+    if (channel < 0 || std::size_t(channel) >= num_channels)
+        throw std::length_error("channel is out of range");
     PyObject *ptr = vis.ptr();
     if (!PyArray_Check(ptr))
         throw std::invalid_argument("vis is not an array");
@@ -587,66 +702,12 @@ void visibility_collector<P>::close()
     compress();
 }
 
-void dtype_add_field(
-    py::list &names, py::list &formats, py::list &offsets,
-    const char *name, int typenum, const py::tuple &dims, std::ptrdiff_t offset)
-{
-    PyArray_Descr *base_descr = py::expect_non_null(PyArray_DescrFromType(typenum));
-    py::object base{py::handle<>((PyObject *) base_descr)};
-    if (len(dims) == 0)
-    {
-        formats.append(base);
-    }
-    else
-    {
-        py::tuple subtype_args = py::make_tuple(base, dims);
-        PyArray_Descr *subtype_descr;
-        if (!PyArray_DescrAlignConverter(subtype_args.ptr(), &subtype_descr))
-            py::throw_error_already_set();
-        py::object subtype{py::handle<>((PyObject *) subtype_descr)};
-        formats.append(subtype);
-    }
-    names.append(name);
-    offsets.append(offset);
-}
-
-template<int P>
-py::object make_vis_descr()
-{
-    py::list names, formats, offsets;
-    py::dict dtype_dict;
-    dtype_dict["names"] = names;
-    dtype_dict["formats"] = formats;
-    dtype_dict["offsets"] = offsets;
-    dtype_dict["itemsize"] = sizeof(vis_t<P>);
-#define ADD_FIELD(field, typenum, dims) \
-        (dtype_add_field(names, formats, offsets, #field, typenum, py::make_tuple dims, \
-                         offsetof(vis_t<P>, field)))
-    ADD_FIELD(uv, NPY_INT16, (2));
-    ADD_FIELD(sub_uv, NPY_INT16, (2));
-    ADD_FIELD(weights, NPY_FLOAT32, (P));
-    ADD_FIELD(vis, NPY_COMPLEX64, (P));
-    ADD_FIELD(w_plane, NPY_INT16, ());
-    ADD_FIELD(w_slice, NPY_INT16, ());
-    ADD_FIELD(channel, NPY_INT32, ());
-    ADD_FIELD(baseline, NPY_INT32, ());
-#undef ADD_FIELD
-
-    PyArray_Descr *descr;
-    if (!PyArray_DescrConverter(dtype_dict.ptr(), &descr))
-        py::throw_error_already_set();
-    return py::object{py::handle<>((PyObject *) descr)};
-}
-
 template<int P>
 visibility_collector<P>::visibility_collector(
-    float max_w,
-    int w_slices,
-    int w_planes,
-    int oversample,
+    const py::object &config,
     const py::object &emit_callback,
     std::size_t buffer_capacity)
-    : visibility_collector_base(max_w, w_slices, w_planes, oversample, emit_callback),
+    : visibility_collector_base(config, emit_callback),
     buffer(new vis_t<P>[buffer_capacity]),
     buffer_capacity(buffer_capacity),
     buffer_size(0),
@@ -659,10 +720,7 @@ template<int P>
 boost::shared_ptr<visibility_collector_base>
 make_visibility_collector(
     int polarizations,
-    float max_w,
-    int w_slices,
-    int w_planes,
-    int oversample,
+    const py::object &config,
     const py::object &emit_callback,
     std::size_t buffer_capacity)
 {
@@ -670,13 +728,12 @@ make_visibility_collector(
         throw std::invalid_argument("polarizations must be 1, 2, 3 or 4");
     else if (polarizations == P)
         return boost::make_shared<visibility_collector<P> >(
-            max_w, w_slices, w_planes, oversample,
-            emit_callback, buffer_capacity);
+            config, emit_callback, buffer_capacity);
     else
         // The special case for P=1 prevents an infinite template recursion.
         // When P=1, this code is unreachable.
         return make_visibility_collector<P == 1 ? 1 : P - 1>(
-            polarizations, max_w, w_slices, w_planes, oversample,
+            polarizations, config,
             emit_callback, buffer_capacity);
 }
 
@@ -715,4 +772,7 @@ BOOST_PYTHON_MODULE_INIT(_preprocess)
         .def_readonly("num_input", &visibility_collector_base::num_input)
         .def_readonly("num_output", &visibility_collector_base::num_output)
     ;
+    py::scope scope;
+    scope.attr("CHANNEL_CONFIG_DTYPE") =
+        py::object(py::handle<>(make_channel_config_descr()));
 }

@@ -16,6 +16,11 @@ from contextlib import closing, contextmanager
 
 
 logger = logging.getLogger()
+WEIGHT_TYPES = {
+    'natural': weight.NATURAL,
+    'uniform': weight.UNIFORM,
+    'robust': weight.ROBUST
+}
 
 
 def parse_quantity(str_value):
@@ -55,7 +60,8 @@ def get_parser():
     parser.add_argument('--log-level', type=str, default='INFO', metavar='LEVEL', help='Logging level [%(default)s]')
     group = parser.add_argument_group('Input selection')
     group.add_argument('--input-option', '-i', action='append', default=[], metavar='KEY=VALUE', help='Backend-specific input parsing option')
-    group.add_argument('--channel', '-c', type=int, default=0, help='Channel number [%(default)s]')
+    group.add_argument('--start-channel', '-c', type=int, default=0, help='Index of first channel to process [%(default)s]')
+    group.add_argument('--stop-channel', '-C', type=int, help='Index past last channel to process [#channels]')
     group = parser.add_argument_group('Image options')
     group.add_argument('--q-fov', type=float, default=1.0, help='Field of view to image, relative to main lobe of beam [%(default)s]')
     group.add_argument('--image-oversample', type=float, default=5, help='Pixels per beam [%(default)s]')
@@ -84,6 +90,7 @@ def get_parser():
     group.add_argument('--clean-mode', choices=['I', 'IQUV'], default='IQUV', help='Stokes parameters to consider for peak-finding [%(default)s]')
     group = parser.add_argument_group('Performance tuning options')
     group.add_argument('--vis-block', type=int, default=1048576, help='Number of visibilities to load and grid at a time [%(default)s]')
+    group.add_argument('--vis-load', type=int, default=32 * 1048576, help='Number of visibilities to load from file at a time [%(default)s]')
     group.add_argument('--no-tmp-file', dest='tmp_file', action='store_false', default=True, help='Keep preprocessed visibilities in memory')
     group.add_argument('--max-cache-size', type=int, default=None, help='Limit HDF5 cache size for preprocessing')
     group = parser.add_argument_group('Debugging options')
@@ -104,7 +111,8 @@ def data_iter(dataset, args):
     command line.
     """
     N = args.vis_limit
-    for chunk in dataset.data_iter(args.channel, args.vis_block):
+    for chunk in dataset.data_iter(args.start_channel, args.stop_channel,
+                                   args.vis_block, args.vis_load):
         if N is not None:
             if N < len(chunk['uvw']):
                 for key in ['uvw', 'weights', 'baselines', 'vis']:
@@ -132,16 +140,18 @@ def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, po
         os.close(handle)
         atexit.register(os.remove, filename)
         collector = preprocess.VisibilityCollectorHDF5(
-            filename, [image_parameters], grid_parameters, args.vis_block,
+            filename, image_parameters, grid_parameters, args.vis_block,
             max_cache_size=args.max_cache_size)
     else:
-        collector = preprocess.VisibilityCollectorMem([image_parameters], grid_parameters, args.vis_block)
+        collector = preprocess.VisibilityCollectorMem(
+            image_parameters, grid_parameters, args.vis_block)
     try:
         for chunk in data_iter(dataset, args):
             if bar is None:
                 bar = progress.make_progressbar("Preprocessing vis", max=chunk['total'])
             collector.add(
-                0, chunk['uvw'], chunk['weights'], chunk['baselines'], chunk['vis'],
+                chunk['channel'],
+                chunk['uvw'], chunk['weights'], chunk['baselines'], chunk['vis'],
                 chunk.get('feed_angle1'), chunk.get('feed_angle2'),
                 *polarization_matrices)
             bar.goto(chunk['progress'])
@@ -155,17 +165,17 @@ def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, po
     return collector
 
 
-def make_weights(queue, reader, imager, weight_type, vis_block):
+def make_weights(queue, reader, channel, imager, weight_type, vis_block):
     imager.clear_weights()
     total = 0
-    for w_slice in range(reader.num_w_slices):
-        total += reader.len(0, w_slice)
+    for w_slice in range(reader.num_w_slices(channel)):
+        total += reader.len(channel, w_slice)
     bar = progress.make_progressbar('Computing weights', max=total)
     queue.finish()
     with progress.finishing(bar):
         if weight_type != weight.NATURAL:
-            for w_slice in range(reader.num_w_slices):
-                for chunk in reader.iter_slice(0, w_slice, vis_block):
+            for w_slice in range(reader.num_w_slices(channel)):
+                for chunk in reader.iter_slice(channel, w_slice, vis_block):
                     imager.grid_weights(chunk.uv, chunk.weights)
                     # Need to serialise calls to grid, since otherwise the next
                     # call will overwrite the incoming data before the previous
@@ -178,15 +188,15 @@ def make_weights(queue, reader, imager, weight_type, vis_block):
         queue.finish()
 
 
-def make_dirty(queue, reader, name, field, imager, mid_w, vis_block, full_cycle=False):
+def make_dirty(queue, reader, channel, name, field, imager, mid_w, vis_block, full_cycle=False):
     imager.clear_dirty()
     queue.finish()
-    for w_slice in range(reader.num_w_slices):
-        N = reader.len(0, w_slice)
+    for w_slice in range(reader.num_w_slices(channel)):
+        N = reader.len(channel, w_slice)
         if N == 0:
             logger.info("Skipping slice %d which has no visibilities", w_slice + 1)
             continue
-        label = '{} {}/{}'.format(name, w_slice + 1, reader.num_w_slices)
+        label = '{} {}/{}'.format(name, w_slice + 1, reader.num_w_slices(channel))
         if full_cycle:
             with progress.step('FFT {}'.format(label)):
                 imager.model_to_grid(mid_w[w_slice])
@@ -194,7 +204,7 @@ def make_dirty(queue, reader, name, field, imager, mid_w, vis_block, full_cycle=
         imager.clear_grid()
         queue.finish()
         with progress.finishing(bar):
-            for chunk in reader.iter_slice(0, w_slice, vis_block):
+            for chunk in reader.iter_slice(channel, w_slice, vis_block):
                 imager.num_vis = len(chunk.uv)
                 imager.set_coordinates(chunk.uv, chunk.sub_uv, chunk.w_plane)
                 imager.set_vis(chunk[field])
@@ -277,6 +287,181 @@ def dummy_context():
     yield
 
 
+class ChannelParameters(object):
+    """Collects imaging parameters for a single channel.
+
+    Parameters
+    ----------
+    args : :class:`argparse.Namespace`
+        Command-line arguments
+    dataset : :class:`loader_core.LoaderBase`
+        Input dataset
+    channel : int
+        Index of this channel in the dataset
+    array_p : :class:`katsdpimager.parameters.ArrayParameters`
+        Array parameters from the input file
+
+    Attributes
+    ----------
+    channel : int
+        Index of this channel in the dataset
+    image_p : :class:`katsdpimager.parameters.ImageParameters`
+        Image parameters
+    grid_p : :class:`katsdpimager.parameters.GridParameters`
+        Gridding parameters
+    clean_p : :class:`katsdpimage.parameters.CleanParameters`
+        CLEAN parameters
+    """
+
+    def __init__(self, args, dataset, channel, array_p):
+        self.channel = channel
+        self.image_p = parameters.ImageParameters(
+            args.q_fov, args.image_oversample,
+            dataset.frequency(channel), array_p, args.stokes,
+            (np.float32 if args.precision == 'single' else np.float64),
+            args.pixel_size, args.pixels)
+        weight_p = parameters.WeightParameters(WEIGHT_TYPES[args.weight_type], args.robustness)
+        if args.max_w is None:
+            max_w = array_p.longest_baseline
+        elif args.max_w.unit.physical_type == 'dimensionless':
+            max_w = args.max_w * self.image_p.wavelength
+        else:
+            max_w = args.max_w
+        if args.w_slices is None:
+            w_slices = parameters.w_slices(self.image_p, max_w, args.eps_w, args.kernel_width, args.aa_width)
+        else:
+            w_slices = args.w_slices
+        if args.w_step.unit.physical_type == 'length':
+            w_planes = float(max_w / args.w_step)
+        elif args.w_step.unit.physical_type == 'dimensionless':
+            w_step = args.w_step * self.image_p.cell_size / args.grid_oversample
+            w_planes = float(max_w / w_step)
+        else:
+            raise ValueError('--w-step must be dimensionless or a length')
+        w_planes = int(np.ceil(w_planes / w_slices))
+        self.grid_p = parameters.GridParameters(
+            args.aa_width, args.grid_oversample, args.kernel_image_oversample,
+            w_slices, w_planes, max_w, args.kernel_width)
+        if args.clean_mode == 'I':
+            clean_mode = clean.CLEAN_I
+        elif args.clean_mode == 'IQUV':
+            clean_mode = clean.CLEAN_SUMSQ
+        else:
+            raise ValueError('Unhandled --clean-mode {}'.format(args.clean_mode))
+        psf_patch = min(args.psf_patch, self.image_p.pixels)
+        self.clean_p = parameters.CleanParameters(
+            args.minor, args.loop_gain, clean_mode, psf_patch)
+
+    def log_parameters(self, suffix=''):
+        log_parameters("Image parameters" + suffix, self.image_p)
+        log_parameters("Grid parameters" + suffix, self.grid_p)
+        log_parameters("CLEAN parameters" + suffix, self.clean_p)
+
+
+def process_channel(args, dataset, context, queue, reader, channel_p, array_p, weight_p):
+    channel = channel_p.channel
+    image_p = channel_p.image_p
+    grid_p = channel_p.grid_p
+    clean_p = channel_p.clean_p
+    logger.info('Processing channel {}'.format(channel))
+    #### Create data and operation instances ####
+    if args.host:
+        imager = imaging.ImagingHost(image_p, weight_p, grid_p, clean_p)
+    else:
+        allocator = accel.SVMAllocator(context)
+        imager_template = imaging.ImagingTemplate(
+            queue, array_p, image_p, weight_p, grid_p, clean_p)
+        imager = imager_template.instantiate(args.vis_block, allocator)
+        imager.ensure_all_bound()
+    psf = imager.buffer('psf')
+    dirty = imager.buffer('dirty')
+    model = imager.buffer('model')
+    grid_data = imager.buffer('grid')
+
+    #### Compute imaging weights ####
+    make_weights(queue, reader, channel,
+                 imager, weight_p.weight_type, args.vis_block)
+    if args.write_weights is not None:
+        with progress.step('Write image weights'):
+            io.write_fits_image(dataset, imager.buffer('weights_grid'), image_p,
+                                args.write_weights, channel, bunit=None)
+
+    #### Create PSF ####
+    slice_w_step = float(grid_p.max_w / image_p.wavelength / (grid_p.w_slices - 0.5))
+    mid_w = np.arange(grid_p.w_slices) * slice_w_step
+    make_dirty(queue, reader, channel,
+               'PSF', 'weights', imager, mid_w, args.vis_block)
+    # Normalization
+    scale = np.reciprocal(dirty[..., dirty.shape[1] // 2, dirty.shape[2] // 2])
+    imager.scale_dirty(scale)
+    queue.finish()
+    extract_psf(dirty, psf)
+    restoring_beam = beam.fit_beam(psf[0])
+    if args.write_psf is not None:
+        with progress.step('Write PSF'):
+            io.write_fits_image(dataset, dirty, image_p,
+                                args.write_psf, channel, restoring_beam)
+
+    #### Imaging ####
+    imager.clear_model()
+    for i in range(args.major):
+        logger.info("Starting major cycle %d/%d", i + 1, args.major)
+        make_dirty(queue, reader, channel,
+                   'image', 'vis', imager, mid_w, args.vis_block, i != 0)
+        imager.scale_dirty(scale)
+        queue.finish()
+        if i == 0 and args.write_grid is not None:
+            with progress.step('Write grid'):
+                if args.host:
+                    io.write_fits_grid(grid_data, image_p, args.write_grid, channel)
+                else:
+                    io.write_fits_grid(np.fft.fftshift(grid_data, axes=(1, 2)),
+                                       image_p, args.write_grid, channel)
+        if i == 0 and args.write_dirty is not None:
+            with progress.step('Write dirty image'):
+                io.write_fits_image(dataset, dirty, image_p,
+                                    args.write_dirty, channel, restoring_beam)
+
+        #### Deconvolution ####
+        bar = progress.make_progressbar('CLEAN', max=clean_p.minor)
+        imager.clean_reset()
+        with progress.finishing(bar):
+            for j in bar.iter(range(clean_p.minor)):
+                imager.clean_cycle()
+        queue.finish()
+
+    if args.write_model is not None:
+        with progress.step('Write model'):
+            io.write_fits_image(dataset, model, image_p, args.write_model, channel)
+    if args.write_residuals is not None:
+        with progress.step('Write residuals'):
+            io.write_fits_image(dataset, dirty, image_p, args.write_residuals, channel, restoring_beam)
+
+    # Try to free up memory for the beam convolution
+    del grid_data
+    del psf
+    del imager
+
+    # Convolve with restoring beam, and add residuals back in
+    if args.host:
+        beam.convolve_beam(model, restoring_beam, model)
+    else:
+        restore = beam.ConvolveBeamTemplate(queue, model.shape[1:], model.dtype).instantiate()
+        restore.beam = restoring_beam
+        restore.ensure_all_bound()
+        restore_image = restore.buffer('image')
+        for pol in range(model.shape[0]):
+            # TODO: eliminate these copies, and work directly on model
+            model.copy_region(queue, restore_image, np.s_[pol], ())
+            restore()
+            restore_image.copy_region(queue, model, (), np.s_[pol])
+        queue.finish()
+
+    model += dirty
+    with progress.step('Write clean image'):
+        io.write_fits_image(dataset, model, image_p, args.output_file, channel, restoring_beam)
+
+
 def main():
     parser = get_parser()
     args = parser.parse_args()
@@ -300,150 +485,36 @@ def main():
     with context, closing(loader.load(args.input_file, args.input_option)) as dataset:
         #### Determine parameters ####
         input_polarizations = dataset.polarizations()
-        output_polarizations = args.stokes
         if dataset.has_feed_angles():
-            polarization_matrices = polarization.polarization_matrices(output_polarizations, input_polarizations)
+            polarization_matrices = polarization.polarization_matrices(args.stokes, input_polarizations)
         else:
-            polarization_matrices = (polarization.polarization_matrix(output_polarizations, input_polarizations), None)
+            polarization_matrices = (polarization.polarization_matrix(args.stokes, input_polarizations), None)
         array_p = dataset.array_parameters()
-        image_p = parameters.ImageParameters(
-            args.q_fov, args.image_oversample,
-            dataset.frequency(args.channel), array_p, output_polarizations,
-            (np.float32 if args.precision == 'single' else np.float64),
-            args.pixel_size, args.pixels)
-        weight_types = {
-            'natural': weight.NATURAL,
-            'uniform': weight.UNIFORM,
-            'robust': weight.ROBUST
-        }
-        weight_p = parameters.WeightParameters(weight_types[args.weight_type], args.robustness)
-        if args.max_w is None:
-            args.max_w = array_p.longest_baseline
-        elif args.max_w.unit.physical_type == 'dimensionless':
-            args.max_w = args.max_w * image_p.wavelength
-        if args.w_slices is None:
-            args.w_slices = parameters.w_slices(image_p, args.max_w, args.eps_w, args.kernel_width, args.aa_width)
-        if args.w_step.unit.physical_type == 'length':
-            w_planes = float(args.max_w / args.w_step)
-        elif args.w_step.unit.physical_type == 'dimensionless':
-            w_step = args.w_step * image_p.cell_size / args.grid_oversample
-            w_planes = float(args.max_w / w_step)
-        else:
-            raise ValueError('--w-step must be dimensionless or a length')
-        w_planes = int(np.ceil(w_planes / args.w_slices))
-        grid_p = parameters.GridParameters(
-            args.aa_width, args.grid_oversample, args.kernel_image_oversample,
-            args.w_slices, w_planes, args.max_w, args.kernel_width)
-        if args.clean_mode == 'I':
-            clean_mode = clean.CLEAN_I
-        elif args.clean_mode == 'IQUV':
-            clean_mode = clean.CLEAN_SUMSQ
-        else:
-            raise ValueError('Unhandled --clean-mode {}'.format(args.clean_mode))
-        args.psf_patch = min(args.psf_patch, image_p.pixels)
-        clean_p = parameters.CleanParameters(
-            args.minor, args.loop_gain, clean_mode,
-            args.psf_patch)
+        if args.stop_channel is None:
+            args.stop_channel = dataset.num_channels()
+        if not (0 <= args.start_channel < args.stop_channel <= dataset.num_channels()):
+            raise ValueError('Channels are out of range')
+        channels = range(args.start_channel, args.stop_channel)
+        params = [ChannelParameters(args, dataset, channel, array_p) for channel in channels]
+        weight_p = parameters.WeightParameters(WEIGHT_TYPES[args.weight_type], args.robustness)
 
-        log_parameters("Image parameters", image_p)
+        if len(params) > 1:
+            params[0].log_parameters(' [first channel]')
+            params[-1].log_parameters(' [last channel]')
+        else:
+            params[0].log_parameters()
         log_parameters("Weight parameters", weight_p)
-        log_parameters("Grid parameters", grid_p)
-        log_parameters("CLEAN parameters", clean_p)
-
-        #### Create data and operation instances ####
-        if args.host:
-            imager = imaging.ImagingHost(image_p, weight_p, grid_p, clean_p)
-        else:
-            allocator = accel.SVMAllocator(context)
-            imager_template = imaging.ImagingTemplate(
-                queue, array_p, image_p, weight_p, grid_p, clean_p)
-            imager = imager_template.instantiate(args.vis_block, allocator)
-            imager.ensure_all_bound()
-        psf = imager.buffer('psf')
-        dirty = imager.buffer('dirty')
-        model = imager.buffer('model')
-        grid_data = imager.buffer('grid')
 
         #### Preprocess visibilities ####
-        collector = preprocess_visibilities(dataset, args, image_p, grid_p, polarization_matrices)
+        image_ps = [channel_p.image_p for channel_p in params]
+        grid_ps = [channel_p.grid_p for channel_p in params]
+        collector = preprocess_visibilities(dataset, args, image_ps, grid_ps, polarization_matrices)
         reader = collector.reader()
 
-        #### Compute imaging weights ####
-        make_weights(queue, reader, imager, weight_p.weight_type, args.vis_block)
-        if args.write_weights is not None:
-            with progress.step('Write image weights'):
-                io.write_fits_image(dataset, imager.buffer('weights_grid'), image_p, args.write_weights, bunit=None)
+        #### Do the work ####
+        for channel_p in params:
+            process_channel(args, dataset, context, queue, reader, channel_p, array_p, weight_p)
 
-        #### Create PSF ####
-        slice_w_step = float(grid_p.max_w / image_p.wavelength / (grid_p.w_slices - 0.5))
-        mid_w = np.arange(grid_p.w_slices) * slice_w_step
-        make_dirty(queue, reader, 'PSF', 'weights', imager, mid_w, args.vis_block)
-        # Normalization
-        scale = np.reciprocal(dirty[..., dirty.shape[1] // 2, dirty.shape[2] // 2])
-        imager.scale_dirty(scale)
-        queue.finish()
-        extract_psf(dirty, psf)
-        restoring_beam = beam.fit_beam(psf[0])
-        if args.write_psf is not None:
-            with progress.step('Write PSF'):
-                io.write_fits_image(dataset, dirty, image_p, args.write_psf, restoring_beam)
-
-        #### Imaging ####
-        imager.clear_model()
-        for i in range(args.major):
-            logger.info("Starting major cycle %d/%d", i + 1, args.major)
-            make_dirty(queue, reader, 'image', 'vis', imager, mid_w, args.vis_block, i != 0)
-            imager.scale_dirty(scale)
-            queue.finish()
-            if i == 0 and args.write_grid is not None:
-                with progress.step('Write grid'):
-                    if args.host:
-                        io.write_fits_grid(grid_data, image_p, args.write_grid)
-                    else:
-                        io.write_fits_grid(np.fft.fftshift(grid_data, axes=(1, 2)),
-                                           image_p, args.write_grid)
-            if i == 0 and args.write_dirty is not None:
-                with progress.step('Write dirty image'):
-                    io.write_fits_image(dataset, dirty, image_p, args.write_dirty, restoring_beam)
-
-            #### Deconvolution ####
-            bar = progress.make_progressbar('CLEAN', max=clean_p.minor)
-            imager.clean_reset()
-            with progress.finishing(bar):
-                for j in bar.iter(range(clean_p.minor)):
-                    imager.clean_cycle()
-            queue.finish()
-
-        if args.write_model is not None:
-            with progress.step('Write model'):
-                io.write_fits_image(dataset, model, image_p, args.write_model)
-        if args.write_residuals is not None:
-            with progress.step('Write residuals'):
-                io.write_fits_image(dataset, dirty, image_p, args.write_residuals, restoring_beam)
-
-        # Try to free up memory for the beam convolution
-        del grid_data
-        del psf
-        del imager
-
-        # Convolve with restoring beam, and add residuals back in
-        if args.host:
-            beam.convolve_beam(model, restoring_beam, model)
-        else:
-            restore = beam.ConvolveBeamTemplate(queue, model.shape[1:], model.dtype).instantiate()
-            restore.beam = restoring_beam
-            restore.ensure_all_bound()
-            restore_image = restore.buffer('image')
-            for pol in range(model.shape[0]):
-                # TODO: eliminate these copies, and work directly on model
-                model.copy_region(queue, restore_image, np.s_[pol], ())
-                restore()
-                restore_image.copy_region(queue, model, (), np.s_[pol])
-            queue.finish()
-
-        model += dirty
-        with progress.step('Write clean image'):
-            io.write_fits_image(dataset, model, image_p, args.output_file, restoring_beam)
 
 if __name__ == '__main__':
     main()

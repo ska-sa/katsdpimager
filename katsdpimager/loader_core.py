@@ -58,6 +58,10 @@ class LoaderBase(object):
         return parameters.ArrayParameters(
             self.antenna_diameter(), self.longest_baseline())
 
+    def num_channels(self):
+        """Return total number of channels, which are assumed to be contiguous."""
+        raise NotImplementedError('Abstract base class')
+
     def frequency(self, channel):
         """Return frequency for a given channel.
 
@@ -98,10 +102,11 @@ class LoaderBase(object):
         """
         raise NotImplementedError('Abstract base class')
 
-    def data_iter(self, channel, max_rows=None):
+    def data_iter(self, start_channel, stop_channel, max_chunk_vis=None, max_load_vis=None):
         """Return an iterator that yields the data in chunks. Each chunk is a
         dictionary containing numpy arrays with the following keys:
 
+         - 'channel': channel index for all visibilities in this chunk
          - 'uvw': UVW coordinates (position1 - position2), as a Quantity
          - 'vis': visibilities
          - 'weights': imaging weights
@@ -124,11 +129,21 @@ class LoaderBase(object):
         Flags are not explicitly returned: they are either omitted entirely
         (if all pols are flagged) or indicated with a zero weight.
 
-        If `max_rows` is given, it limits the number of rows to return in each
-        chunk.
-
         If :meth:`has_feed_angles` returns ``False``, then `feed_angle1` and
         `feed_angle2` will be absent.
+
+        Parameters
+        ----------
+        start_channel,stop_channel : int
+            Half-open range of channels for which to return data
+        max_chunk_vis : int, optional
+            Maximum number of full-pol visibilities to return in each chunk. If
+            not specified, there is no bound.
+        max_load_vis : int, optional
+            Maximum number of full-pol visibilities to read into memory at a
+            time. This must be at least as large as the number of channels.
+            This setting may cause chunks to be smaller, particularly if the
+            file format requires transposition.
         """
         raise NotImplementedError('Abstract base class')
 
