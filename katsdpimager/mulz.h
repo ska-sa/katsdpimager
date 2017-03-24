@@ -4,7 +4,6 @@
  * MulZ template class.
  */
 
-#include <utility>
 #include <limits>
 
 /**
@@ -21,7 +20,8 @@ private:
 public:
     typedef T value_type;
 
-    constexpr MulZ(T value = T()) : value(std::move(value)) {}
+    // In C++11, std::move is not constexpr, so we use static_cast instead
+    constexpr MulZ(T value = T()) : value(static_cast<T &&>(value)) {}
     constexpr operator T() const { return value; }
     explicit constexpr operator bool() const { return value; }
 

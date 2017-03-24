@@ -151,7 +151,7 @@ void descriptor_factory<T>::add_field(
         PyArray_Descr *subtype_descr;
         if (!PyArray_DescrAlignConverter(subtype_args.ptr(), &subtype_descr))
             py::throw_error_already_set();
-        py::object subtype{py::handle<>((PyObject *) subtype_descr)};
+        py::object subtype{py::handle<>(subtype_descr)};
         formats.append(subtype);
     }
     names.append(name);
