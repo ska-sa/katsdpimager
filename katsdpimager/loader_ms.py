@@ -186,8 +186,8 @@ def _getcell(table, name, row,
 
 def _fix_cache_size(table, column):
     """Workaround for https://github.com/casacore/casacore/issues/581.
-    We set the FLAG column cache size to be large enough for two tiles
-    worth of rows.
+    We set the column cache size to be large enough for two tiles worth of
+    rows.
     """
     cache_size = 0
     try:
