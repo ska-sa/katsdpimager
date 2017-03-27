@@ -8,6 +8,10 @@ import argparse
 import astropy.units as units
 import astropy.time
 import astropy.coordinates
+import logging
+
+
+_logger = logging.getLogger(__name__)
 
 
 def _get(table, name, data, casacore_units=None, astropy_units=None,
@@ -180,6 +184,28 @@ def _getcell(table, name, row,
     return out[0]
 
 
+def _fix_cache_size(table, column):
+    """Workaround for https://github.com/casacore/casacore/issues/581.
+    We set the FLAG column cache size to be large enough for two tiles
+    worth of rows.
+    """
+    cache_size = 0
+    try:
+        for item in table.getdminfo(column)['SPEC']['HYPERCUBES'].values():
+            cube_shape = tuple(item['CubeShape'])
+            tile_shape = tuple(item['TileShape'])
+            cache_shape = cube_shape[:2] + tile_shape[2:]
+            cache_size = max(cache_size, 2 * int(np.product(cache_shape)))
+    except (TypeError, KeyError, IndexError, ValueError):
+        pass
+    if cache_size == 0:
+        # No tile size info found - pick some default
+        _logger.warn('Could not get tile info for column %s', column)
+        cache_size = 1024 * 1024
+    _logger.debug('Using cache size %d for column %s', cache_size, column)
+    table.setmaxcachesize(column, cache_size)
+
+
 class LoaderMS(katsdpimager.loader_core.LoaderBase):
     def __init__(self, filename, options):
         super(LoaderMS, self).__init__(filename, options)
@@ -192,6 +218,7 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         parser.add_argument('--pol-frame', choices=['sky', 'feed'], help='Reference frame for polarization [%(default)s]')
         args = parser.parse_args(options)
         self._main = casacore.tables.table(filename, ack=False)
+        _fix_cache_size(self._main, 'FLAG')
         self._filename = filename
         self._antenna = casacore.tables.table(self._main.getkeyword('ANTENNA'), ack=False)
         self._data_description = casacore.tables.table(self._main.getkeyword('DATA_DESCRIPTION'), ack=False)
