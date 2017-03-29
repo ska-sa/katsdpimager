@@ -594,7 +594,7 @@ void visibility_collector<P>::add_impl2(
         if (channel + 1 < num_channels)
         {
             // Not needed for correctness, but avoids putting the next channel
-            // in the same buffer where it cannot possibly combine.
+            // in the same buffer where it is unlikely to combine well.
             compress();
         }
     }
