@@ -71,14 +71,20 @@ class BaseTestVisibilityCollector(object):
             [12.1, 2.3, 4.7],
             [-3.4, 7.6, 2.5],
             [-5.2, -10.6, 7.2],
-            [12.102, 2.299, 4.6],   # Should merge with the first visibility
+            [12.102, 2.299, 4.6],   # Should merge with the first visibility in first channel
             ], dtype=np.float32) * units.m
         weights = np.array([
-            [1.3, 0.6, 1.2, 0.0],
-            [1.0, 1.0, 1.0, 1.0],
-            [0.5, 0.6, 0.7, 0.8],
-            [1.1, 1.2, 1.3, 1.4],
-            ], dtype=np.float32)
+            [
+                [1.3, 0.6, 1.2, 0.0],
+                [1.0, 1.0, 1.0, 1.0],
+                [0.5, 0.6, 0.7, 0.8],
+                [1.1, 1.2, 1.3, 1.4],
+            ], [
+                [0.0, 2.4, 1.2, 2.6],   # Second channel is double and reverse of first
+                [2.0, 2.0, 2.0, 2.0],
+                [1.6, 1.4, 1.2, 1.0],
+                [2.8, 2.6, 2.4, 2.2]
+            ]], dtype=np.float32)
         baselines = np.array([
             0,
             -1,    # Auto-correlation: should be removed
@@ -86,11 +92,17 @@ class BaseTestVisibilityCollector(object):
             0,
             ], dtype=np.int16)
         vis = np.array([
-            [0.5 - 2.3j, 0.1 + 4.2j, 0.0 - 3j, 1.5 + 0j],
-            [0.5 - 2.3j, 0.1 + 4.2j, 0.0 - 3j, 1.5 + 0j],
-            [1.5 + 1.3j, 1.1 + 2.7j, 1.0 - 2j, 2.5 + 1j],
-            [1.2 + 3.4j, 5.6 + 7.8j, 9.0 + 1.2j, 3.4 + 5.6j],
-            ], dtype=np.complex64)
+            [
+                [0.5 - 2.3j, 0.1 + 4.2j, 0.0 - 3j, 1.5 + 0j],
+                [0.5 - 2.3j, 0.1 + 4.2j, 0.0 - 3j, 1.5 + 0j],
+                [1.5 + 1.3j, 1.1 + 2.7j, 1.0 - 2j, 2.5 + 1j],
+                [1.2 + 3.4j, 5.6 + 7.8j, 9.0 + 1.2j, 3.4 + 5.6j]
+            ], [
+                [3.0 + 0j, 0.0 - 6j, 0.2 + 8.4j, 1.0 - 4.6j],
+                [3.0 + 0j, 0.0 - 6j, 0.2 + 8.4j, 1.0 - 4.6j],
+                [3.0 + 2j, 2.0 - 4j, 2.2 + 5.4j, 3.0 + 2.6j],
+                [6.8 + 11.2j, 18.0 + 2.4j, 11.2 + 15.6j, 2.4 + 6.8j]
+            ]], dtype=np.complex64)
         if use_feed_angles:
             # TODO: use non-trivial feed angles and matrices
             feed_angle1 = feed_angle2 = np.zeros(4, np.float32)
@@ -99,17 +111,26 @@ class BaseTestVisibilityCollector(object):
             feed_angle1 = feed_angle2 = mueller_circular = None
             mueller_stokes = np.matrix(np.identity(4, np.complex64))
         with closing(self.factory(self.image_parameters, self.grid_parameters, 64)) as collector:
-            collector.add(0, uvw, weights, baselines, vis,
+            collector.add(uvw, weights, baselines, vis,
                           feed_angle1, feed_angle2,
                           mueller_stokes, mueller_circular)
-        self.check(collector, [[np.rec.fromarrays([
-            [[96, 18], [-42, -85]],
-            [[6, 3], [3, 1]],
-            [[2.4, 1.8, 2.5, 1.4], [0.5, 0.6, 0.7, 0.8]],
-            [[1.97 + 0.75j, 6.78 + 11.88j, 11.7 - 2.04j, 4.76 + 7.84j],
-             [0.75 + 0.65j, 0.66 + 1.62j, 0.7 - 1.4j, 2.0 + 0.8j]],
-            [64, 65]
-            ], dtype=collector.store_dtype)]])
+        self.check(collector, [
+            [np.rec.fromarrays([
+                [[96, 18], [-42, -85]],
+                [[6, 3], [3, 1]],
+                [[2.4, 1.8, 2.5, 1.4], [0.5, 0.6, 0.7, 0.8]],
+                [[1.97 + 0.75j, 6.78 + 11.88j, 11.7 - 2.04j, 4.76 + 7.84j],
+                 [0.75 + 0.65j, 0.66 + 1.62j, 0.7 - 1.4j, 2.0 + 0.8j]],
+                [64, 65]], dtype=collector.store_dtype)],
+            [np.rec.fromarrays([
+                [[387, 73], [387, 73], [-167, -340]],
+                [[1, 4], [2, 4], [4, 6]],
+                [[0.0, 2.4, 1.2, 2.6], [2.8, 2.6, 2.4, 2.2], [1.6, 1.4, 1.2, 1.0]],
+                [[0.0 + 0.0j, 0.0 - 14.4j, 0.24 + 10.08j, 2.6 - 11.96j],
+                 [19.04 + 31.36j, 46.8 + 6.24j, 26.88 + 37.44j, 5.28 + 14.96j],
+                 [4.8 + 3.2j, 2.8 - 5.6j, 2.64 + 6.48j, 3.0 + 2.6j]],
+                [64, 64, 65]], dtype=collector.store_dtype)]
+            ])
 
     def test_simple(self):
         self._test_impl(False)

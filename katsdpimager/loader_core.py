@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 """Base classes used by loader modules"""
 import numpy as np
 import astropy.units as units
@@ -106,14 +108,14 @@ class LoaderBase(object):
         """Return an iterator that yields the data in chunks. Each chunk is a
         dictionary containing numpy arrays with the following keys:
 
-         - 'channel': channel index for all visibilities in this chunk
-         - 'uvw': UVW coordinates (position1 - position2), as a Quantity
-         - 'vis': visibilities
-         - 'weights': imaging weights
+         - 'uvw': UVW coordinates (position1 - position2), as a Quantity (N×3)
+         - 'vis': visibilities (C×N×P for C channels and P polarizations)
+         - 'weights': imaging weights (C×N×P for C channels and P polarizations)
          - 'baselines': arbitrary integer baseline IDs; negative IDs indicate autocorrelations
          - 'feed_angle1': angle between feed and sky (parallactic angle plus a fixed
-           offset for the feed), for the first antenna in the baseline.
-         - 'feed_angle2': angle between feed and sky for the second antenna in the baseline
+           offset for the feed), for the first antenna in the baseline (N).
+         - 'feed_angle2': angle between feed and sky for the second antenna in
+           the baseline (N).
          - 'progress': progress made through the file, in some arbitrary units
          - 'total': size of the file, in same units as 'progress'
 
@@ -137,8 +139,8 @@ class LoaderBase(object):
         start_channel,stop_channel : int
             Half-open range of channels for which to return data
         max_chunk_vis : int, optional
-            Maximum number of full-pol visibilities to return in each chunk. If
-            not specified, there is no bound.
+            Maximum number of full-pol visibilities to return in each chunk, per
+            channel. If not specified, there is no bound.
         max_load_vis : int, optional
             Maximum number of full-pol visibilities to read into memory at a
             time. This must be at least as large as the number of channels.

@@ -94,6 +94,7 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
             config[i]["w_slices"] = grid_p.w_slices
             config[i]["w_planes"] = grid_p.w_planes
             config[i]["oversample"] = grid_p.oversample
+            config[i]["cell_size"] = image_parameters[i].cell_size.to(units.m).value
         super(VisibilityCollector, self).__init__(
             num_polarizations, config, self._emit, buffer_size)
         self.image_parameters = image_parameters
@@ -115,21 +116,19 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
         """
         raise NotImplementedError()
 
-    def add(self, channel, uvw, weights, baselines, vis,
+    def add(self, uvw, weights, baselines, vis,
             feed_angle1, feed_angle2, mueller_stokes, mueller_circular):
         """Add a set of visibilities to the collector. Each of the provided
-        arrays must have the same size on the first axis.
+        arrays must have the same size on the N axis.
 
         Parameters
         ----------
-        channel : int
-            A channel ID, which indexes the `image_parameters` array passed to
-            the constructor.
-        uvw : Quantity array, Quantity
+        uvw : Quantity array, float32
             N×3 array of UVW coordinates.
         weights : array, float32
-            N×Q array of weights, where Q is the number of input polarizations.
-            Flags must be folded into the weights.
+            C×N×Q array of weights, where C is the number of channels and
+            Q is the number of input polarizations. Flags must be folded into
+            the weights.
         baselines : array, int
             1D array of integer, indicating baseline IDs. The IDs are
             arbitrary and need not be contiguous, and are used only to
@@ -137,7 +136,7 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
             Negative baseline IDs indicate autocorrelations, which will
             be discarded.
         vis : array, complex64
-            N×Q array of visibilities.
+            C×N×Q array of visibilities.
         feed_angle1, feed_angle2 : array, float32
             Feed angles in radians for the two antennas in the baseline,
             for rotating from feed-relative to celestial frame.
@@ -150,18 +149,16 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
 
         # Force to single precision, since that's what the C++ code demands.
         # Note: this is true even when gridding at double precision, as
-        # individual visibilities are very noisy.
-        weights = weights.astype(np.float32)
-        vis = vis.astype(np.complex64)
-        uvw = uvw.astype(np.float32)
+        # individual visibilities are very noisy. Also ensure C-contiguous
+        # layout, since otherwise they get converted again.
+        weights = np.require(weights, np.float32, 'C')
+        vis = np.require(vis, np.complex64, 'C')
+        uvw = np.require(uvw, np.float32, 'C')
         if feed_angle1 is not None:
-            feed_angle1 = feed_angle1.astype(np.float32)
+            feed_angle1 = np.require(feed_angle1, np.float32, 'C')
         if feed_angle2 is not None:
-            feed_angle2 = feed_angle2.astype(np.float32)
-        ip = self.image_parameters[channel]
+            feed_angle2 = np.require(feed_angle2, np.float32, 'C')
         super(VisibilityCollector, self).add(
-            channel,
-            ip.cell_size.to(units.m).value,
             uvw, weights, baselines, vis, feed_angle1, feed_angle2,
             mueller_stokes, mueller_circular)
 

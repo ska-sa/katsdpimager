@@ -15,6 +15,7 @@
 #include <string>
 #include <stdexcept>
 #include <algorithm>
+#include <initializer_list>
 #include <cstring>
 #include <cmath>
 #include <complex>
@@ -67,36 +68,39 @@ struct channel_config
     std::int32_t w_slices;
     std::int32_t w_planes;
     std::int32_t oversample;
+    float cell_size;
 };
 
 /* Enforce the array to have a specific type and shape. The returned object is
  * guaranteed to
  * - be an array type
  * - be C contiguous and aligned
- * - have first dimension R unless R == -1
- * - be one-dimensional if C == -1, two-dimensional with C columns otherwise
+ * - have the dimensions specified in @a dims, where -1 indicates that any size is valid
  */
-py::object get_array(const py::object &obj, py::handle<PyArray_Descr> descr, npy_intp R, npy_intp C)
+py::object get_array(const py::object &obj, py::handle<PyArray_Descr> descr, std::initializer_list<npy_intp> dims)
 {
-    int ndims = (C == -1 ? 1 : 2);
     // PyArray_FromAny steals our reference to descr
     PyObject *out = py::expect_non_null(PyArray_FromAny(
-        obj.ptr(), descr.release(), ndims, ndims,
+        obj.ptr(), descr.release(), dims.size(), dims.size(),
         NPY_ARRAY_CARRAY_RO, NULL));
     py::object out_obj{py::handle<>(out)};
-    if (R != -1 && PyArray_DIMS((PyArrayObject *) out)[0] != R)
+    npy_intp *actual_dims = PyArray_DIMS((PyArrayObject *) out);
+    auto cur_dim = dims.begin();
+    for (std::size_t i = 0; i < dims.size(); i++, ++cur_dim)
     {
-        throw std::invalid_argument("Array has incorrect number of rows");
+        npy_intp expected = *cur_dim;
+        if (expected != -1 && expected != actual_dims[i])
+            throw std::invalid_argument("Array has incorrect size");
     }
     return out_obj;
 }
 
 /* Variant of get_array above that takes a typenum.
  */
-py::object get_array(const py::object &obj, int typenum, npy_intp R, npy_intp C)
+py::object get_array(const py::object &obj, int typenum, std::initializer_list<npy_intp> dims)
 {
     py::handle<PyArray_Descr> descr{py::expect_non_null(PyArray_DescrFromType(typenum))};
-    return get_array(obj, descr, R, C);
+    return get_array(obj, descr, std::move(dims));
 }
 
 template<typename T>
@@ -193,6 +197,7 @@ py::handle<PyArray_Descr> make_channel_config_descr()
     DESCRIPTOR_ADD_FIELD(factory, w_slices, NPY_INT32, ());
     DESCRIPTOR_ADD_FIELD(factory, w_planes, NPY_INT32, ());
     DESCRIPTOR_ADD_FIELD(factory, oversample, NPY_INT32, ());
+    DESCRIPTOR_ADD_FIELD(factory, cell_size, NPY_FLOAT, ());
     return factory.get();
 }
 
@@ -224,22 +229,20 @@ public:
      * Performance will be best if they are already in the appropriate type and
      * layout.
      *
-     * Let P be the number of output polarizations, and Q be the number of
-     * input polarizations.  When Q &lt; 4, it is possible that the input
-     * polarizations are insufficient to compute the requested Stokes
-     * parameters. It is the caller's responsibility to ensure this does not
-     * happen.
+     * Let P be the number of output polarizations, Q the number of input
+     * polarizations, and C the number of channels. When Q &lt; 4, it is
+     * possible that the input polarizations are insufficient to compute the
+     * requested Stokes parameters. It is the caller's responsibility to ensure
+     * this does not happen.
      *
      * If no feed angle correction is needed, pass @c None for @a feed_angle1,
      * @a feed_angle2 and @a mueller_circular. In this case, @a mueller_stokes
      * converts directly from @a vis to the output Stokes parameters.
      *
-     * @param channel      Channel number
-     * @param cell_size    Size of UV cells, in same units as @a uvw
-     * @param uvw          UVW coordinates, Nx3, complex64
-     * @param weights      Imaging weights, NxQ, float32
+     * @param uvw          UVW coordinates, Nx3, float32
+     * @param weights      Imaging weights, CxNxQ, float32
      * @param baselines    Baseline indices, N, int32 (negative for autocorrelations)
-     * @param vis          Visibilities (in arbitrary frame), NxQ, complex64
+     * @param vis          Visibilities (in arbitrary frame), CxNxQ, complex64
      * @param feed_angle1, feed_angle2  Feed angles in radians for the two
      *                     antennas in the baseline, for rotating from
      *                     feed-relative to celestial frame, N, float32
@@ -250,7 +253,6 @@ public:
      *                     frame, 4xQ.
      */
     virtual void add(
-        int channel, float cell_size,
         const py::object &uvw, const py::object &weights,
         const py::object &baselines, const py::object &vis,
         const py::object &feed_angle1, const py::object &feed_angle2,
@@ -266,7 +268,7 @@ visibility_collector_base::visibility_collector_base(
 {
     // Copy the config data
     py::handle<PyArray_Descr> descr = make_channel_config_descr();
-    py::object config_array = get_array(config, descr, -1, -1);
+    py::object config_array = get_array(config, descr, {-1});
     const channel_config *config_data = array_data<const channel_config>(config_array);
     num_channels = PyArray_DIMS((PyArrayObject *) config_array.ptr())[0];
     this->config.reset(new channel_config[num_channels]);
@@ -366,14 +368,13 @@ private:
 
     template<int Q, typename Generator>
     void add_impl2(
-        int channel, float cell_size, std::size_t N,
+        std::size_t N,
         const float uvw[][3], const float weights[],
         const std::int32_t baselines[], const std::complex<float> vis[],
         const Generator &gen);
 
     template<int Q>
     void add_impl(
-        int channel, float cell_size,
         const py::object &uvw, const py::object &weights,
         const py::object &baselines, const py::object &vis,
         const py::object &feed_angle1, const py::object &feed_angle2,
@@ -387,7 +388,6 @@ public:
         std::size_t buffer_capacity);
 
     virtual void add(
-        int channel, float cell_size,
         const py::object &uvw, const py::object &weights,
         const py::object &baselines, const py::object &vis,
         const py::object &feed_angle1, const py::object &feed_angle2,
@@ -501,7 +501,7 @@ void visibility_collector<P>::compress()
 template<int P>
 template<int Q, typename Generator>
 void visibility_collector<P>::add_impl2(
-    int channel, float cell_size, std::size_t N,
+    std::size_t N,
     const float uvw[][3], const float weights_raw[],
     const std::int32_t baselines[], const std::complex<float> vis_raw[],
     const Generator &gen)
@@ -517,84 +517,93 @@ void visibility_collector<P>::add_impl2(
      */
     constexpr auto data_major = (Q == 1) ? Eigen::RowMajor : Eigen::ColMajor;
 
-    const Eigen::Map<Eigen::Matrix<MulZ<std::complex<float>>, Q, Eigen::Dynamic, data_major>> vis(
-        reinterpret_cast<MulZ<std::complex<float>> *>(
-            const_cast<std::complex<float> *>(vis_raw)), Q, N);
-    const Eigen::Map<Eigen::Matrix<MulZ<float>, Q, Eigen::Dynamic, data_major>> weights(
-        reinterpret_cast<MulZ<float> *>(
-            const_cast<float *>(weights_raw)), Q, N);
-
-    const channel_config &conf = config[channel];
-    float uv_scale = 1.0f / cell_size;
-    float w_scale = (conf.w_slices - 0.5f) * conf.w_planes / conf.max_w;
-    int max_slice_plane = conf.w_slices * conf.w_planes - 1; // TODO: check for overflow? precompute?
-    for (std::size_t i = 0; i < N; i++)
+    for (std::size_t channel = 0; channel < num_channels; channel++)
     {
-        if (baselines[i] < 0)
-            continue; // autocorrelation
-        if (buffer_size == buffer_capacity)
+        const Eigen::Map<Eigen::Matrix<MulZ<std::complex<float>>, Q, Eigen::Dynamic, data_major>> vis(
+            reinterpret_cast<MulZ<std::complex<float>> *>(
+                const_cast<std::complex<float> *>(vis_raw + channel * N * Q)), Q, N);
+        const Eigen::Map<Eigen::Matrix<MulZ<float>, Q, Eigen::Dynamic, data_major>> weights(
+            reinterpret_cast<MulZ<float> *>(
+                const_cast<float *>(weights_raw + channel * N * Q)), Q, N);
+
+        const channel_config &conf = config[channel];
+        float uv_scale = 1.0f / conf.cell_size;
+        float w_scale = (conf.w_slices - 0.5f) * conf.w_planes / conf.max_w;
+        int max_slice_plane = conf.w_slices * conf.w_planes - 1; // TODO: check for overflow? precompute?
+        for (std::size_t i = 0; i < N; i++)
+        {
+            if (baselines[i] < 0)
+                continue; // autocorrelation
+            if (buffer_size == buffer_capacity)
+                compress();
+
+            // TODO: amortise this computation across channels
+            const MatrixPQcf &convert = gen(i);
+            VectorPcf xvis = (convert.template cast<MulZ<std::complex<float>>>() * vis.col(i))
+                             .template cast<std::complex<float>>();
+
+            /* Transform weights. Weights are proportional to inverse variance, so we
+             * first convert to variance, then invert again once output variances are
+             * known. Covariance is not modelled.
+             *
+             * The absolute values are taken first. Weights can't be negative, but
+             * they can be -0.0, whose inverse is -Inf. If a mix of -Inf and +Inf
+             * variances is allowed, then the combined variance could be NaN
+             * rather than +Inf.
+             */
+            VectorPf xweights =
+                (convert.cwiseAbs2().template cast<MulZ<float>>()
+                 * weights.col(i).cwiseAbs().cwiseInverse())
+                .template cast<float>().cwiseInverse();
+
+            vis_t<P> &out = buffer[buffer_size];
+            float u = uvw[i][0];
+            float v = uvw[i][1];
+            float w = uvw[i][2];
+            if (w < 0.0f)
+            {
+                u = -u;
+                v = -v;
+                w = -w;
+                xvis = xvis.conjugate();
+            }
+            for (int p = 0; p < P; p++)
+            {
+                float weight = xweights(p);
+                out.vis[p] = xvis(p) * weight;
+                out.weights[p] = weight;
+            }
+            u = u * uv_scale;
+            v = v * uv_scale;
+            // The plane number is biased by half a slice, because the first slice
+            // is half-width and centered at w=0.
+            w = trunc(w * w_scale + conf.w_planes * 0.5f);
+            int w_slice_plane = std::min(int(w), max_slice_plane);
+            // TODO convert from here
+            subpixel_coord(u, conf.oversample, out.uv[0], out.sub_uv[0]);
+            subpixel_coord(v, conf.oversample, out.uv[1], out.sub_uv[1]);
+            out.channel = channel;
+            out.w_plane = w_slice_plane % conf.w_planes;
+            out.w_slice = w_slice_plane / conf.w_planes;
+            out.baseline = baselines[i];
+            // This could wrap if the buffer has > 4 billion elements, but that
+            // can only affect efficiency, not correctness.
+            out.index = (std::uint32_t) buffer_size;
+            buffer_size++;
+        }
+        if (channel + 1 < num_channels)
+        {
+            // Not needed for correctness, but avoids putting the next channel
+            // in the same buffer where it cannot possibly combine.
             compress();
-
-        const MatrixPQcf &convert = gen(i);
-        VectorPcf xvis = (convert.template cast<MulZ<std::complex<float>>>() * vis.col(i))
-                         .template cast<std::complex<float>>();
-
-        /* Transform weights. Weights are proportional to inverse variance, so we
-         * first convert to variance, then invert again once output variances are
-         * known. Covariance is not modelled.
-         *
-         * The absolute values are taken first. Weights can't be negative, but
-         * they can be -0.0, whose inverse is -Inf. If a mix of -Inf and +Inf
-         * variances is allowed, then the combined variance could be NaN
-         * rather than +Inf.
-         */
-        VectorPf xweights =
-            (convert.cwiseAbs2().template cast<MulZ<float>>()
-             * weights.col(i).cwiseAbs().cwiseInverse())
-            .template cast<float>().cwiseInverse();
-
-        vis_t<P> &out = buffer[buffer_size];
-        float u = uvw[i][0];
-        float v = uvw[i][1];
-        float w = uvw[i][2];
-        if (w < 0.0f)
-        {
-            u = -u;
-            v = -v;
-            w = -w;
-            xvis = xvis.conjugate();
         }
-        for (int p = 0; p < P; p++)
-        {
-            float weight = xweights(p);
-            out.vis[p] = xvis(p) * weight;
-            out.weights[p] = weight;
-        }
-        u = u * uv_scale;
-        v = v * uv_scale;
-        // The plane number is biased by half a slice, because the first slice
-        // is half-width and centered at w=0.
-        w = trunc(w * w_scale + conf.w_planes * 0.5f);
-        int w_slice_plane = std::min(int(w), max_slice_plane);
-        // TODO convert from here
-        subpixel_coord(u, conf.oversample, out.uv[0], out.sub_uv[0]);
-        subpixel_coord(v, conf.oversample, out.uv[1], out.sub_uv[1]);
-        out.channel = channel;
-        out.w_plane = w_slice_plane % conf.w_planes;
-        out.w_slice = w_slice_plane / conf.w_planes;
-        out.baseline = baselines[i];
-        // This could wrap if the buffer has > 4 billion elements, but that
-        // can only affect efficiency, not correctness.
-        out.index = (std::uint32_t) buffer_size;
-        buffer_size++;
     }
-    num_input += N;
+    num_input += num_channels * N;
 }
 
 template<int P>
 template<int Q>
 void visibility_collector<P>::add_impl(
-    int channel, float cell_size,
     const py::object &uvw_obj, const py::object &weights_obj,
     const py::object &baselines_obj, const py::object &vis_obj,
     const py::object &feed_angle1_obj, const py::object &feed_angle2_obj,
@@ -602,11 +611,13 @@ void visibility_collector<P>::add_impl(
     const py::object &mueller_circular_obj)
 {
     // Coerce objects to proper arrays and validate types and dimensions
-    py::object uvw_array = get_array(uvw_obj, NPY_FLOAT32, -1, 3);
+    py::object uvw_array = get_array(uvw_obj, NPY_FLOAT32, {-1, 3});
     const std::size_t N = PyArray_DIMS((PyArrayObject *) uvw_array.ptr())[0];
-    py::object weights_array = get_array(weights_obj, NPY_FLOAT32, N, Q);
-    py::object baselines_array = get_array(baselines_obj, NPY_INT32, N, -1);
-    py::object vis_array = get_array(vis_obj, NPY_COMPLEX64, N, Q);
+    npy_intp N_dim = N; // used to avoid warnings about narrowing conversions
+    npy_intp C_dim = num_channels;
+    py::object weights_array = get_array(weights_obj, NPY_FLOAT32, {C_dim, N_dim, Q});
+    py::object baselines_array = get_array(baselines_obj, NPY_INT32, {N_dim});
+    py::object vis_array = get_array(vis_obj, NPY_COMPLEX64, {C_dim, N_dim, Q});
 
     auto uvw = array_data<const float[3]>(uvw_array);
     auto baselines = array_data<const std::int32_t>(baselines_array);
@@ -622,22 +633,22 @@ void visibility_collector<P>::add_impl(
             PyErr_SetString(PyExc_ValueError, "feed_angle1 is None but feed_angle2 or mueller_circular is not");
             py::throw_error_already_set();
         }
-        py::object mueller_stokes_array = get_array(mueller_stokes_obj, NPY_COMPLEX64, P, Q);
+        py::object mueller_stokes_array = get_array(mueller_stokes_obj, NPY_COMPLEX64, {P, Q});
         const Eigen::Map<Eigen::Matrix<std::complex<float>, P, Q, matrix_major>> mueller_stokes(
             array_data<std::complex<float>>(mueller_stokes_array));
         mueller_generator_simple<P, Q> gen(mueller_stokes);
         add_impl2<Q, mueller_generator_simple<P, Q>>(
-            channel, cell_size, N, uvw, weights, baselines, vis, gen);
+            N, uvw, weights, baselines, vis, gen);
     }
     else
     {
-        py::object feed_angle1_array = get_array(feed_angle1_obj, NPY_FLOAT32, N, -1);
-        py::object feed_angle2_array = get_array(feed_angle2_obj, NPY_FLOAT32, N, -1);
+        py::object feed_angle1_array = get_array(feed_angle1_obj, NPY_FLOAT32, {N_dim});
+        py::object feed_angle2_array = get_array(feed_angle2_obj, NPY_FLOAT32, {N_dim});
         auto feed_angle1 = array_data<const float>(feed_angle1_array);
         auto feed_angle2 = array_data<const float>(feed_angle2_array);
 
-        py::object mueller_stokes_array = get_array(mueller_stokes_obj, NPY_COMPLEX64, P, 4);
-        py::object mueller_circular_array = get_array(mueller_circular_obj, NPY_COMPLEX64, 4, Q);
+        py::object mueller_stokes_array = get_array(mueller_stokes_obj, NPY_COMPLEX64, {P, 4});
+        py::object mueller_circular_array = get_array(mueller_circular_obj, NPY_COMPLEX64, {4, Q});
         const Eigen::Map<Eigen::Matrix<std::complex<float>, P, 4, Eigen::RowMajor>> mueller_stokes(
             array_data<std::complex<float>>(mueller_stokes_array));
         const Eigen::Map<Eigen::Matrix<std::complex<float>, 4, Q, matrix_major>> mueller_circular(
@@ -646,47 +657,44 @@ void visibility_collector<P>::add_impl(
         mueller_generator_parallactic<P, Q> gen(feed_angle1, feed_angle2,
                                                 mueller_stokes, mueller_circular);
         add_impl2<Q, mueller_generator_parallactic<P, Q>>(
-            channel, cell_size, N, uvw, weights, baselines, vis, gen);
+            N, uvw, weights, baselines, vis, gen);
     }
 }
 
 template<int P>
 void visibility_collector<P>::add(
-    int channel, float cell_size,
     const py::object &uvw, const py::object &weights,
     const py::object &baselines, const py::object &vis,
     const py::object &feed_angle1, const py::object &feed_angle2,
     const py::object &mueller_stokes,
     const py::object &mueller_circular)
 {
-    if (channel < 0 || std::size_t(channel) >= num_channels)
-        throw std::length_error("channel is out of range");
     PyObject *ptr = vis.ptr();
     if (!PyArray_Check(ptr))
         throw std::invalid_argument("vis is not an array");
     PyArrayObject *array = (PyArrayObject *) ptr;
-    if (PyArray_NDIM(array) != 2)
-        throw std::invalid_argument("vis is not 2D");
-    int Q = PyArray_DIMS(array)[1];
+    if (PyArray_NDIM(array) != 3)
+        throw std::invalid_argument("vis is not 3D");
+    int Q = PyArray_DIMS(array)[2];
     switch (Q)
     {
     case 1:
-        add_impl<1>(channel, cell_size, uvw, weights, baselines, vis,
+        add_impl<1>(uvw, weights, baselines, vis,
                     feed_angle1, feed_angle2,
                     mueller_stokes, mueller_circular);
         break;
     case 2:
-        add_impl<2>(channel, cell_size, uvw, weights, baselines, vis,
+        add_impl<2>(uvw, weights, baselines, vis,
                     feed_angle1, feed_angle2,
                     mueller_stokes, mueller_circular);
         break;
     case 3:
-        add_impl<3>(channel, cell_size, uvw, weights, baselines, vis,
+        add_impl<3>(uvw, weights, baselines, vis,
                     feed_angle1, feed_angle2,
                     mueller_stokes, mueller_circular);
         break;
     case 4:
-        add_impl<4>(channel, cell_size, uvw, weights, baselines, vis,
+        add_impl<4>(uvw, weights, baselines, vis,
                     feed_angle1, feed_angle2,
                     mueller_stokes, mueller_circular);
         break;
