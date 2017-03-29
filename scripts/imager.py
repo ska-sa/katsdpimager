@@ -91,6 +91,7 @@ def get_parser():
     group = parser.add_argument_group('Performance tuning options')
     group.add_argument('--vis-block', type=int, default=1048576, help='Number of visibilities to load and grid at a time [%(default)s]')
     group.add_argument('--vis-load', type=int, default=32 * 1048576, help='Number of visibilities to load from file at a time [%(default)s]')
+    group.add_argument('--channel-batch', type=int, default=16, help='Number of channels to fully process before starting next batch [%(default)s]')
     group.add_argument('--no-tmp-file', dest='tmp_file', action='store_false', default=True, help='Keep preprocessed visibilities in memory')
     group.add_argument('--max-cache-size', type=int, default=None, help='Limit HDF5 cache size for preprocessing')
     group = parser.add_argument_group('Debugging options')
@@ -105,13 +106,13 @@ def get_parser():
     return parser
 
 
-def data_iter(dataset, args):
+def data_iter(dataset, args, start_channel, stop_channel):
     """Wrapper around :py:meth:`katsdpimager.loader_core.LoaderBase.data_iter`
     that handles truncation to a number of visibilities specified on the
     command line.
     """
     N = args.vis_limit
-    for chunk in dataset.data_iter(args.start_channel, args.stop_channel,
+    for chunk in dataset.data_iter(start_channel, stop_channel,
                                    args.vis_block, args.vis_load):
         if N is not None:
             if N < len(chunk['uvw']):
@@ -133,7 +134,8 @@ class DummyCommandQueue(object):
         pass
 
 
-def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, polarization_matrices):
+def preprocess_visibilities(dataset, args, start_channel, stop_channel,
+                            image_parameters, grid_parameters, polarization_matrices):
     bar = None
     if args.tmp_file:
         handle, filename = tempfile.mkstemp('.h5')
@@ -146,11 +148,11 @@ def preprocess_visibilities(dataset, args, image_parameters, grid_parameters, po
         collector = preprocess.VisibilityCollectorMem(
             image_parameters, grid_parameters, args.vis_block)
     try:
-        for chunk in data_iter(dataset, args):
+        for chunk in data_iter(dataset, args, start_channel, stop_channel):
             if bar is None:
                 bar = progress.make_progressbar("Preprocessing vis", max=chunk['total'])
             collector.add(
-                chunk['channel'] - args.start_channel,
+                chunk['channel'] - start_channel,
                 chunk['uvw'], chunk['weights'], chunk['baselines'], chunk['vis'],
                 chunk.get('feed_angle1'), chunk.get('feed_angle2'),
                 *polarization_matrices)
@@ -358,9 +360,10 @@ class ChannelParameters(object):
         log_parameters("CLEAN parameters" + suffix, self.clean_p)
 
 
-def process_channel(args, dataset, context, queue, reader, channel_p, array_p, weight_p):
+def process_channel(dataset, args, start_channel,
+                    context, queue, reader, channel_p, array_p, weight_p):
     channel = channel_p.channel
-    rel_channel = channel - args.start_channel
+    rel_channel = channel - start_channel
     image_p = channel_p.image_p
     grid_p = channel_p.grid_p
     clean_p = channel_p.clean_p
@@ -495,26 +498,32 @@ def main():
             args.stop_channel = dataset.num_channels()
         if not (0 <= args.start_channel < args.stop_channel <= dataset.num_channels()):
             raise ValueError('Channels are out of range')
-        channels = range(args.start_channel, args.stop_channel)
-        params = [ChannelParameters(args, dataset, channel, array_p) for channel in channels]
         weight_p = parameters.WeightParameters(WEIGHT_TYPES[args.weight_type], args.robustness)
 
-        if len(params) > 1:
-            params[0].log_parameters(' [first channel]')
-            params[-1].log_parameters(' [last channel]')
+        if args.stop_channel - args.start_channel > 1:
+            ChannelParameters(args, dataset, args.start_channel, array_p).log_parameters(
+                ' [first channel]')
+            ChannelParameters(args, dataset, args.stop_channel - 1, array_p).log_parameters(
+                ' [last channel]')
         else:
-            params[0].log_parameters()
+            ChannelParameters(args, dataset, args.start_channel, array_p).log_parameters()
         log_parameters("Weight parameters", weight_p)
 
-        #### Preprocess visibilities ####
-        image_ps = [channel_p.image_p for channel_p in params]
-        grid_ps = [channel_p.grid_p for channel_p in params]
-        collector = preprocess_visibilities(dataset, args, image_ps, grid_ps, polarization_matrices)
-        reader = collector.reader()
+        for start_channel in range(args.start_channel, args.stop_channel, args.channel_batch):
+            stop_channel = min(args.stop_channel, start_channel + args.channel_batch)
+            channels = range(start_channel, stop_channel)
+            params = [ChannelParameters(args, dataset, channel, array_p) for channel in channels]
+            #### Preprocess visibilities ####
+            image_ps = [channel_p.image_p for channel_p in params]
+            grid_ps = [channel_p.grid_p for channel_p in params]
+            collector = preprocess_visibilities(dataset, args, start_channel, stop_channel,
+                                                image_ps, grid_ps, polarization_matrices)
+            reader = collector.reader()
 
-        #### Do the work ####
-        for channel_p in params:
-            process_channel(args, dataset, context, queue, reader, channel_p, array_p, weight_p)
+            #### Do the work ####
+            for channel_p in params:
+                process_channel(dataset, args, start_channel, context, queue,
+                                reader, channel_p, array_p, weight_p)
 
 
 if __name__ == '__main__':
