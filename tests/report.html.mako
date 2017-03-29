@@ -1,3 +1,4 @@
+## -*- coding: utf-8 -*-
 <%page expression_filter="h"/><!DOCTYPE html>
 <html lang="en">
 <head>
@@ -10,8 +11,9 @@
 <h1>Imaging report</h1>
 <p>Revision ${revision}</p>
 % for mode in modes:
+% for channel in channels:
 <div class="panel panel-default">
-    <div class="panel-heading">${mode}</div>
+    <div class="panel-heading">${mode} — channel ${channel}</div>
     <div class="panel-body">
         <table class="table table-bordered">
             <head>
@@ -33,8 +35,8 @@
                     % for s in stokes:
                     <td>
                         % if build_info[image].returncode == 0:
-                        <a href="${image.svg_filename_full(mode, s) | u}">
-                            <img alt="Stokes ${s} for ${image.name | n} (${mode})" src="${image.svg_filename_thumb(mode, s) | u}"/>
+                        <a href="${image.svg_filename_full(mode, s, channel) | u}">
+                            <img alt="Stokes ${s} for ${image.name | n} channel ${channel} (${mode})" src="${image.svg_filename_thumb(mode, s, channel) | u}"/>
                         </a>
                         % else:
                         &nbsp;
@@ -47,6 +49,7 @@
         </table>
     </div>
 </div>
+% endfor
 % endfor
 </body>
 </div>

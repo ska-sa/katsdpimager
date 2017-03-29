@@ -35,9 +35,10 @@ Elapsed time: ${"%.1f" % build_info.elapsed} seconds
     filenames = []
     for mode in modes:
         for s in stokes:
-            filename = image.fits_filename(mode, s)
-            if filename not in filenames:
-                filenames.append(filename)
+            for channel in channels:
+                filename = image.fits_filename(mode, s, channel)
+                if filename not in filenames:
+                    filenames.append(filename)
     %>
     % for filename in filenames:
     <li><a href="${filename | u}">${filename}</a></li>

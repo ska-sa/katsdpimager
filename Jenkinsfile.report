@@ -36,7 +36,7 @@ catchError {
             }
             katsdp.virtualenv('venv') {
                 dir(testdir) {
-                    sh './images_report.py simple.ms report'
+                    sh './images_report.py --start-channel=2 --stop-channel=4 simple.ms report'
                     sh 'cp simple.lsm.txt simple.lsm.html makems.cfg batch.tdlconf report/'
                 }
             }
