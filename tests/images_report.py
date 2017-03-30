@@ -67,7 +67,7 @@ class Image(object):
     def fits_filename(self, mode, stokes, channel, rel_channel):
         return self.fits_patterns[mode].format(stokes=stokes, channel=channel, rel_channel=rel_channel)
 
-    def svg_filename_thumb(self, mode, stokes, channel_channel):
+    def svg_filename_thumb(self, mode, stokes, channel):
         return '{}-{}-{}-{}-thumb.svg'.format(self.filebase, mode, stokes, channel)
 
     def svg_filename_full(self, mode, stokes, channel):
