@@ -10,7 +10,7 @@ katsdp.stagePrepare(subdir: 'katsdpimager')
 
 catchError {
     stage('Generate report') {
-        katsdp.simpleNode(label: 'cuda', timeout: [time: 8, unit: 'HOURS']) {
+        katsdp.simpleNode(label: 'cuda', timeout: [time: 16, unit: 'HOURS']) {
             deleteDir()
             katsdp.unpackGit()
             katsdp.unpackVenv()
