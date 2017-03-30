@@ -112,22 +112,27 @@ class _UpdateTiles(accel.Operation):
         Command queue for the operation
     image_shape : tuple of ints
         Shape for the dirty image
+    border : int
+        Distance from each edge of dirty image where tiles start
     allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
         Allocator used to allocate unbound slots
     """
 
-    def __init__(self, template, command_queue, image_shape, allocator=None):
+    def __init__(self, template, command_queue, image_shape, border, allocator=None):
         if image_shape[0] != template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
+        if border * 2 >= min(image_shape[1], image_shape[2]):
+            raise ValueError('Border must be less than half the image size')
         super(_UpdateTiles, self).__init__(command_queue, allocator)
-        num_tiles_x = accel.divup(image_shape[2], template.tilex)
-        num_tiles_y = accel.divup(image_shape[1], template.tiley)
+        num_tiles_x = accel.divup(image_shape[2] - 2 * border, template.tilex)
+        num_tiles_y = accel.divup(image_shape[1] - 2 * border, template.tiley)
         image_width = accel.Dimension(image_shape[2])
         image_height = accel.Dimension(image_shape[1])
         image_pols = accel.Dimension(template.num_polarizations, exact=True)
         tiles_width = accel.Dimension(num_tiles_x)
         tiles_height = accel.Dimension(num_tiles_y)
         self.template = template
+        self.border = border
         self.slots['dirty'] = accel.IOSlot([image_pols, image_height, image_width], template.dtype)
         self.slots['tile_max'] = accel.IOSlot([tiles_height, tiles_width], template.dtype)
         self.slots['tile_pos'] = accel.IOSlot(
@@ -141,10 +146,10 @@ class _UpdateTiles(accel.Operation):
         tile_max = self.buffer('tile_max')
         tile_pos = self.buffer('tile_pos')
         # Map pixel range to a tile range
-        x0 = max(x0 // self.template.tilex, 0)
-        y0 = max(y0 // self.template.tiley, 0)
-        x1 = min(accel.divup(x1, self.template.tilex), tile_max.shape[1])
-        y1 = min(accel.divup(y1, self.template.tiley), tile_max.shape[0])
+        x0 = max((x0 - self.border) // self.template.tilex, 0)
+        y0 = max((y0 - self.border) // self.template.tiley, 0)
+        x1 = min(accel.divup(x1 - self.border, self.template.tilex), tile_max.shape[1])
+        y1 = min(accel.divup(y1 - self.border, self.template.tiley), tile_max.shape[0])
         if x0 < x1 and y0 < y1:
             dirty = self.buffer('dirty')
             self.command_queue.enqueue_kernel(
@@ -153,8 +158,9 @@ class _UpdateTiles(accel.Operation):
                     dirty.buffer,
                     np.int32(dirty.padded_shape[2]),
                     np.int32(dirty.padded_shape[1] * dirty.padded_shape[2]),
-                    np.int32(dirty.shape[1]),
-                    np.int32(dirty.shape[2]),
+                    np.int32(dirty.shape[2] - self.border),
+                    np.int32(dirty.shape[1] - self.border),
+                    np.int32(self.border),
                     tile_max.buffer,
                     tile_pos.buffer,
                     np.int32(tile_max.padded_shape[1]),
@@ -455,6 +461,8 @@ class Clean(accel.OperationSequence):
         Command queue for the operation
     image_parameters : :class:`katsdpimager.parameters.ImageParameters`
         Command-line parameters with image properties
+    border : int
+        Size of border in which no components may be placed
     allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
         Allocator used to allocate unbound slots
 
@@ -471,7 +479,7 @@ class Clean(accel.OperationSequence):
         psf_patch = min(image_parameters.pixels, template.clean_parameters.psf_patch)
         psf_shape = (template.num_polarizations, psf_patch, psf_patch)
         self._update_tiles = template._update_tiles.instantiate(
-            command_queue, image_shape, allocator)
+            command_queue, image_shape, template.clean_parameters.border, allocator)
         tile_shape = self._update_tiles.slots['tile_max'].shape
         self._find_peak = template._find_peak.instantiate(
             command_queue, image_shape, tile_shape, allocator)
@@ -600,16 +608,18 @@ class CleanHost(object):
         self.model = model
         self.psf = psf
         self.tile_size = 32
-        tiles_x = accel.divup(image.shape[2], self.tile_size)
-        tiles_y = accel.divup(image.shape[1], self.tile_size)
+        border = self.clean_parameters.border
+        tiles_x = accel.divup(image.shape[2] - 2 * border, self.tile_size)
+        tiles_y = accel.divup(image.shape[1] - 2 * border, self.tile_size)
         self._tile_max = np.zeros((tiles_y, tiles_x), self.image_parameters.real_dtype)
         self._tile_pos = np.empty((tiles_y, tiles_x, 2), np.int32)
 
     def _update_tile(self, y, x):
-        x0 = x * self.tile_size
-        y0 = y * self.tile_size
-        x1 = min(x0 + self.tile_size, self.image.shape[2])
-        y1 = min(y0 + self.tile_size, self.image.shape[1])
+        border = self.clean_parameters.border
+        x0 = x * self.tile_size + border
+        y0 = y * self.tile_size + border
+        x1 = min(x0 + self.tile_size, self.image.shape[2] - border)
+        y1 = min(y0 + self.tile_size, self.image.shape[1] - border)
         best_pos, best_value = _tile_peak(
             y0, x0, y1, x1, self.image, self.clean_parameters.mode,
             self.image.dtype.type(0))
@@ -668,10 +678,10 @@ class CleanHost(object):
         if peak_value < threshold:
             return None
         (y0, x0, y1, x1) = self._subtract_psf(peak_pos[0], peak_pos[1])
-        tile_y0 = y0 // self.tile_size
-        tile_x0 = x0 // self.tile_size
-        tile_y1 = accel.divup(y1, self.tile_size)
-        tile_x1 = accel.divup(x1, self.tile_size)
+        tile_y0 = max((y0 - border) // self.tile_size, 0)
+        tile_x0 = max((x0 - border) // self.tile_size, 0)
+        tile_y1 = min(accel.divup(y1 - border, self.tile_size), self._tile_max.shape[0])
+        tile_x1 = min(accel.divup(x1 - border, self.tile_size), self._tile_max.shape[1])
         for y in range(tile_y0, tile_y1):
             for x in range(tile_x0, tile_x1):
                 self._update_tile(y, x)

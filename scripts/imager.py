@@ -88,6 +88,7 @@ def get_parser():
     group.add_argument('--major-gain', type=float, default=0.85, help='Fraction of peak to clean in each major cycle [%(default)s]')
     group.add_argument('--major', type=int, default=1, help='Major cycles [%(default)s]')
     group.add_argument('--minor', type=int, default=10000, help='Max minor cycles per major cycle [%(default)s]')
+    group.add_argument('--border', type=float, default=0.02, help='CLEAN border as a fraction of image size [%(default)s]')
     group.add_argument('--clean-mode', choices=['I', 'IQUV'], default='IQUV', help='Stokes parameters to consider for peak-finding [%(default)s]')
     group = parser.add_argument_group('Performance tuning options')
     group.add_argument('--vis-block', type=int, default=1048576, help='Number of visibilities to load and grid at a time [%(default)s]')
@@ -352,8 +353,9 @@ class ChannelParameters(object):
         else:
             raise ValueError('Unhandled --clean-mode {}'.format(args.clean_mode))
         psf_patch = min(args.psf_patch, self.image_p.pixels)
+        border = int(round(self.image_p.pixels * args.border))
         self.clean_p = parameters.CleanParameters(
-            args.minor, args.loop_gain, args.major_gain, clean_mode, psf_patch)
+            args.minor, args.loop_gain, args.major_gain, clean_mode, psf_patch, border)
 
     def log_parameters(self, suffix=''):
         log_parameters("Image parameters" + suffix, self.image_p)
