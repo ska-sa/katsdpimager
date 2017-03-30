@@ -240,16 +240,18 @@ Kernel support: {self.kernel_width} cells""".format(self=self)
 
 
 class CleanParameters(object):
-    def __init__(self, minor, loop_gain, mode, psf_patch):
+    def __init__(self, minor, loop_gain, major_gain, mode, psf_patch):
         self.minor = minor
         self.loop_gain = loop_gain
+        self.major_gain = major_gain
         self.mode = mode
         self.psf_patch = psf_patch
 
     def __str__(self):
         return """\
 Loop gain: {self.loop_gain}
-Minor cycles: {self.minor}
+Major cycle gain: {self.major_gain}
+Max minor cycles: {self.minor}
 PSF patch size: {self.psf_patch}
 Peak function: {mode}""".format(
             self=self, mode='I' if self.mode == clean.CLEAN_I else 'I^2+Q^2+U^2+V^2')

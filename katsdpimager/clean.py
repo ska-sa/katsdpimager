@@ -14,6 +14,7 @@ minor cycles if the launch overheads become an issue.
 """
 
 from __future__ import division, print_function
+import math
 import numpy as np
 from katsdpimager import numba
 import katsdpsigproc.accel as accel
@@ -24,6 +25,28 @@ import pkg_resources
 CLEAN_I = 0
 #: Use the sum of squares of available Stokes components to find peaks
 CLEAN_SUMSQ = 1
+
+
+def metric_to_power(mode, metric):
+    """Convert a peak-finding metric to a value that scales linearly with
+    power (e.g. Jy/beam).
+    """
+    if mode == CLEAN_I:
+        return metric
+    elif mode == CLEAN_SUMSQ:
+        return math.sqrt(metric)
+    else:
+        raise ValueError('Invalid mode {}'.format(mode))
+
+
+def power_to_metric(mode, power):
+    """Inverse of :func:`metric_to_power`."""
+    if mode == CLEAN_I:
+        return power
+    elif mode == CLEAN_SUMSQ:
+        return power * power
+    else:
+        raise ValueError('Invalid mode {}'.format(mode))
 
 
 class _UpdateTilesTemplate(object):
@@ -486,8 +509,22 @@ class Clean(accel.OperationSequence):
         dirty = self.buffer('dirty')
         self._update_tiles(0, 0, dirty.shape[2], dirty.shape[1])
 
-    def __call__(self):
-        """Run a single minor CLEAN cycle"""
+    def __call__(self, threshold=None):
+        """Run a single minor CLEAN cycle.
+
+        Parameters
+        ----------
+        threshold : float, optional
+            If specified, skip the cycle if the peak value metric is less
+            than this threshold. Note that this value must be chosen relative
+            to the mode, since the units are different.
+
+        Returns
+        -------
+        peak_value : float
+            The clean mode metric for the peak, or ``None`` if it was
+            below the threshold and so no subtraction was done.
+        """
         self.ensure_all_bound()
         self._find_peak()
         # Copy the peak position and value back to the host
@@ -499,6 +536,8 @@ class Clean(accel.OperationSequence):
         peak_value = peak_value_device.get_async(self.command_queue, self._peak_value_host)
         peak_pos = peak_pos_device.get_async(self.command_queue, self._peak_pos_host)
         self.command_queue.finish()
+        if peak_value[0] < threshold:
+            return None
 
         self._subtract_psf(peak_pos)
         # Update the tiles
@@ -621,10 +660,13 @@ class CleanHost(object):
             for x in range(self._tile_max.shape[1]):
                 self._update_tile(y, x)
 
-    def __call__(self):
+    def __call__(self, threshold=None):
         """Execute a single CLEAN minor cycle."""
         peak_tile = np.unravel_index(np.argmax(self._tile_max), self._tile_max.shape)
         peak_pos = self._tile_pos[peak_tile]
+        peak_value = self._tile_max[peak_tile]
+        if peak_value < threshold:
+            return None
         (y0, x0, y1, x1) = self._subtract_psf(peak_pos[0], peak_pos[1])
         tile_y0 = y0 // self.tile_size
         tile_x0 = x0 // self.tile_size
@@ -633,3 +675,4 @@ class CleanHost(object):
         for y in range(tile_y0, tile_y1):
             for x in range(tile_x0, tile_x1):
                 self._update_tile(y, x)
+        return peak_value

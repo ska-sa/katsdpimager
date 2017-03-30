@@ -85,8 +85,9 @@ def get_parser():
     # TODO: compute from some heuristic if not specified, instead of a hard-coded default
     group.add_argument('--psf-patch', type=int, default=100, help='Pixels in beam patch for cleaning [%(default)s]')
     group.add_argument('--loop-gain', type=float, default=0.1, help='Loop gain for cleaning [%(default)s]')
+    group.add_argument('--major-gain', type=float, default=0.85, help='Fraction of peak to clean in each major cycle [%(default)s]')
     group.add_argument('--major', type=int, default=1, help='Major cycles [%(default)s]')
-    group.add_argument('--minor', type=int, default=1000, help='Minor cycles per major cycle [%(default)s]')
+    group.add_argument('--minor', type=int, default=10000, help='Max minor cycles per major cycle [%(default)s]')
     group.add_argument('--clean-mode', choices=['I', 'IQUV'], default='IQUV', help='Stokes parameters to consider for peak-finding [%(default)s]')
     group = parser.add_argument_group('Performance tuning options')
     group.add_argument('--vis-block', type=int, default=1048576, help='Number of visibilities to load and grid at a time [%(default)s]')
@@ -352,7 +353,7 @@ class ChannelParameters(object):
             raise ValueError('Unhandled --clean-mode {}'.format(args.clean_mode))
         psf_patch = min(args.psf_patch, self.image_p.pixels)
         self.clean_p = parameters.CleanParameters(
-            args.minor, args.loop_gain, clean_mode, psf_patch)
+            args.minor, args.loop_gain, args.major_gain, clean_mode, psf_patch)
 
     def log_parameters(self, suffix=''):
         log_parameters("Image parameters" + suffix, self.image_p)
@@ -427,11 +428,18 @@ def process_channel(dataset, args, start_channel,
                                     args.write_dirty, channel, restoring_beam)
 
         #### Deconvolution ####
-        bar = progress.make_progressbar('CLEAN', max=clean_p.minor)
         imager.clean_reset()
+        peak_value = imager.clean_cycle()
+        peak_power = clean.metric_to_power(clean_p.mode, peak_value)
+        threshold_power = (1.0 - clean_p.major_gain) * peak_power
+        threshold_metric = clean.power_to_metric(clean_p.mode, threshold_power)
+        logger.info('CLEANing to threshold %g', threshold_power)
+        bar = progress.make_progressbar('CLEAN', max=clean_p.minor - 1)
         with progress.finishing(bar):
-            for j in bar.iter(range(clean_p.minor)):
-                imager.clean_cycle()
+            for j in bar.iter(range(clean_p.minor - 1)):
+                value = imager.clean_cycle(threshold_metric)
+                if value is None:
+                    break
         queue.finish()
 
     if args.write_model is not None:
