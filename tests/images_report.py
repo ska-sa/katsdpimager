@@ -64,10 +64,10 @@ class Image(object):
         self.cmd_patterns = cmd_patterns
         self.clean_globs = list(clean_globs)
 
-    def fits_filename(self, mode, stokes, channel):
-        return self.fits_patterns[mode].format(stokes=stokes, channel=channel)
+    def fits_filename(self, mode, stokes, channel, rel_channel):
+        return self.fits_patterns[mode].format(stokes=stokes, channel=channel, rel_channel=rel_channel)
 
-    def svg_filename_thumb(self, mode, stokes, channel):
+    def svg_filename_thumb(self, mode, stokes, channel_channel):
         return '{}-{}-{}-{}-thumb.svg'.format(self.filebase, mode, stokes, channel)
 
     def svg_filename_full(self, mode, stokes, channel):
@@ -86,13 +86,14 @@ class Image(object):
         build_info = BuildInfo(cmds)
         # Clean up unwanted files, making sure not to delete any files we
         # actually wanted.
-        keep = set(os.path.join(output_dir, self.fits_filename(mode, s, channel))
+        keep = set(os.path.join(output_dir, self.fits_filename(mode, s, channel, channel - channels[0]))
                    for mode in modes
                    for s in stokes
                    for channel in channels)
         for clean_glob in self.clean_globs:
             for filename in glob.iglob(os.path.join(output_dir, clean_glob)):
                 if filename not in keep:
+                    logging.info('Removing intermediate file %s', filename)
                     if os.path.isdir(filename):
                         shutil.rmtree(filename)
                     else:
@@ -120,10 +121,10 @@ class Image(object):
         figure.save(os.path.join(output_dir, self.svg_filename_full(mode, stokes, channel)))
         figure.close()
 
-    def render(self, output_dir, mode, stokes, channel):
+    def render(self, output_dir, mode, stokes, channel, rel_channel):
         # Check whether the Stokes parameters and/or channel are all bundled
         # into one image, and if so, slice it.
-        filename = os.path.join(output_dir, self.fits_filename(mode, stokes, channel))
+        filename = os.path.join(output_dir, self.fits_filename(mode, stokes, channel, rel_channel))
         with closing(fits.open(filename)) as hdulist:
             naxis = int(hdulist[0].header['NAXIS'])
             slices = [0] * (naxis - 2)
@@ -183,7 +184,7 @@ def run(args, images, modes):
             for mode in modes:
                 for stokes in args.stokes:
                     for channel in channels:
-                        image.render(args.output_dir, mode, stokes, channel)
+                        image.render(args.output_dir, mode, stokes, channel, channel - channels[0])
 
     for info in build_info.values():
         if info.returncode != 0:
@@ -217,7 +218,7 @@ def main():
         'cellsize={}arcsec'.format(pixel_size), 'wprojplanes=128', 'threshold=0.01Jy',
         'weight=natural', 'stokes=${stokes}', 'data=CORRECTED_DATA']
     images = [
-            Image('WSClean', 'wsclean', 'wsclean-{channel:04}-{stokes}-image.fits', 'wsclean-{channel:04}-{stokes}-dirty.fits',
+            Image('WSClean', 'wsclean', 'wsclean-{rel_channel:04}-{stokes}-image.fits', 'wsclean-{rel_channel:04}-{stokes}-dirty.fits',
               [['wsclean', '-mgain', '0.85', '-niter', '1000', '-threshold', '0.01',
                 '-weight', 'natural',
                 '-size', '{}'.format(pixels), '{}'.format(pixels),
