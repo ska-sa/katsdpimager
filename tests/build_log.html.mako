@@ -36,7 +36,7 @@ Elapsed time: ${"%.1f" % build_info.elapsed} seconds
     for mode in modes:
         for s in stokes:
             for channel in channels:
-                filename = image.fits_filename(mode, s, channel)
+                filename = image.fits_filename(mode, s, channel, channel - channels[0])
                 if filename not in filenames:
                     filenames.append(filename)
     %>
