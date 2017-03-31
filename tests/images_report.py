@@ -224,7 +224,7 @@ def main():
         'cellsize={}arcsec'.format(pixel_size), 'wprojplanes=128', 'threshold=0.01Jy',
         'weight=natural', 'stokes=${stokes}', 'data=CORRECTED_DATA']
     images = [
-            Image('WSClean', 'wsclean', 'wsclean-{rel_channel:04}-{stokes}-image.fits', 'wsclean-{rel_channel:04}-{stokes}-dirty.fits',
+        Image('WSClean', 'wsclean', 'wsclean-{rel_channel:04}-{stokes}-image.fits', 'wsclean-{rel_channel:04}-{stokes}-dirty.fits',
               [['wsclean', '-mgain', '0.85', '-niter', '1000', '-threshold', '0.01',
                 '-weight', 'natural',
                 '-size', '{}'.format(pixels), '{}'.format(pixels),
