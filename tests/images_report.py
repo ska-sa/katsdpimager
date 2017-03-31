@@ -35,6 +35,7 @@ class BuildInfo(object):
         self.cmds = cmds
         start = timeit.default_timer()
         output = io.BytesIO()
+        self.returncode = 0
         for cmd in cmds:
             child = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             # The child.stdout seems to do full reads, even though it is supposedly unbuffered
@@ -174,7 +175,11 @@ def run(args, images, modes):
     build_info = {}
     channels = range(args.start_channel, args.stop_channel)
     for image in images:
-        build_info[image] = image.build(args.ms, args.output_dir, modes, args.stokes, channels)
+        if not args.skip_build:
+            build_info[image] = image.build(args.ms, args.output_dir, modes, args.stokes, channels)
+        else:
+            build_info[image] = BuildInfo([])
+
     write_index(args, images, build_info, modes)
     for image in images:
         write_build_log(args, image, build_info[image], modes)
@@ -196,6 +201,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('ms', help='Measurement set to image')
     parser.add_argument('output_dir', help='Output directory')
+    parser.add_argument('--skip-build', action='store_true', help='Use existing image files')
     parser.add_argument('--stokes', default='IQUV', help='Stokes parameters to show')
     parser.add_argument('--start-channel', type=int, default=0, help='First channel to image')
     parser.add_argument('--stop-channel', type=int, default=1, help='One past last channel to image')
