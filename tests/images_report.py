@@ -134,7 +134,7 @@ class Image(object):
                     # TODO: should use the WCS transformation
                     slices[i - 3] = 'IQUV'.find(stokes)
                 elif axis_type == 'VOPT':
-                    slices[i - 3] = channel
+                    slices[i - 3] = rel_channel
         self._render_thumb(output_dir, filename, slices, mode, stokes, channel)
         self._render_full(output_dir, filename, slices, mode, stokes, channel)
 
