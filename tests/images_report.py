@@ -207,8 +207,8 @@ def main():
     parser.add_argument('--stop-channel', type=int, default=1, help='One past last channel to image')
     args = parser.parse_args()
 
-    pixel_size = 3.49328831150462    # in arcsec: to match the value computed by katsdpimager
-    pixels = 4608
+    pixel_size = 1.7    # in arcsec
+    pixels = 5760
     katsdpimager_common = [
         'imager.py',
         '--stokes=${stokes}',
@@ -216,6 +216,8 @@ def main():
         '--eps-w=0.001', '--major=5',
         '--start-channel=${channels[0]}',
         '--stop-channel=${channels[-1] + 1}',
+        '--pixel-size={}arcsec'.format(pixel_size),
+        '--pixels={}'.format(pixels),
         '${ms}']
     lwimager_common = [
         'lwimager', 'ms=${ms}', 'npix={}'.format(pixels), 'mode=channel',
