@@ -1,14 +1,14 @@
 """Data loading backend for CASA Measurement Sets."""
 
+import argparse
+import logging
 import katsdpimager.loader_core
 import casacore.tables
 import casacore.quanta
 import numpy as np
-import argparse
 import astropy.units as units
 import astropy.time
 import astropy.coordinates
-import logging
 
 
 _logger = logging.getLogger(__name__)
@@ -211,7 +211,7 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         super(LoaderMS, self).__init__(filename, options)
         parser = argparse.ArgumentParser(
             prog='Measurement set options',
-            usage='Measurement set options: [-i data=COLUMN] [-i field=FIELD]')
+            usage='Measurement set options: [-i data=COLUMN] [-i field=FIELD] ...')
         parser.add_argument('--data', type=str, metavar='COLUMN', default='DATA', help='Column containing visibilities to image [%(default)s]')
         parser.add_argument('--data-desc', type=int, default=0, help='Data description ID to image [%(default)s]')
         parser.add_argument('--field', type=int, default=0, help='Field to image [%(default)s]')
@@ -219,7 +219,6 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         args = parser.parse_args(options)
         self._main = casacore.tables.table(filename, ack=False)
         _fix_cache_size(self._main, 'FLAG')
-        self._filename = filename
         self._antenna = casacore.tables.table(self._main.getkeyword('ANTENNA'), ack=False)
         self._data_description = casacore.tables.table(self._main.getkeyword('DATA_DESCRIPTION'), ack=False)
         self._field = casacore.tables.table(self._main.getkeyword('FIELD'), ack=False)
@@ -341,7 +340,7 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
                 # specify the units and we want to assume seconds if not specified.
                 time = astropy.time.Time(time / 86400.0, format='mjd', scale='utc')
                 # Convert to CIRS, which is closer to AltAz in astropy's
-                # conversion graph. This avoids duplicating precision-nutation
+                # conversion graph. This avoids duplicating precession-nutation
                 # calculations for every antenna.
                 cirs_frame = astropy.coordinates.CIRS(obstime=time)
                 pole_cirs = pole.transform_to(cirs_frame)
