@@ -1,0 +1,9 @@
+katsdpimager.egg-info
+katsdpimager/_preprocess.so
+**/*.fits
+**/*.ms
+**/*.pyc
+**/*.lsm.html
+build
+doc/_build
+tests/report
