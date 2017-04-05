@@ -53,7 +53,7 @@ setup(
     ext_modules=extensions,
     setup_requires=['numpy', 'pkgconfig'],
     install_requires=[
-        'numpy>=1.10.0', 'katsdpsigproc', 'python-casacore', 'astropy>=1.3', 'progress',
+        'numpy>=1.10.0', 'katsdpsigproc', 'astropy>=1.3', 'progress',
         'pycuda', 'scikit-cuda', 'h5py', 'ansicolors'
     ],
     tests_require=tests_require,
@@ -62,6 +62,8 @@ setup(
         'doc': ['sphinx>=1.3.0', 'sphinxcontrib-tikz'] + tests_require,
         'cpu': ['numba'],
         'report': ['aplpy', 'matplotlib', 'mako'],
+        'ms': ['python-casacore'],
+        'katdal': ['katdal', 'katpoint'],
         'benchmark': ['katpoint']
     }
 )
