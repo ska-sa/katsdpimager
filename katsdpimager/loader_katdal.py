@@ -1,0 +1,251 @@
+"""Data loading backend for katdal.
+
+To avoid confusion, the term "baseline" is used for a pair of antennas, while
+"correlation product" is used for a pair of single-pol inputs. katdal works
+on correlation products while katsdpimager works on baselines, so some
+conversion is needed.
+"""
+
+from __future__ import print_function, division, absolute_import
+import argparse
+import logging
+import itertools
+import katsdpimager.loader_core
+import katdal
+import katpoint
+import numpy as np
+import astropy.units as units
+import astropy.time
+import astropy.coordinates
+from . import polarization
+
+
+_logger = logging.getLogger(__name__)
+
+
+def _unique(seq):
+    """Like np.unique, but operates in pure Python.
+
+    This ensures that tuples and other objects preserve their identity instead
+    of being coerced into numpy arrays.
+
+    Parameters
+    ----------
+    seq : iterable
+        Sequence of comparable objects
+
+    Returns
+    -------
+    unique : list
+        Sorted list of the unique objects from seq
+    """
+    data = sorted(seq)
+    return [key for key, group in itertools.groupby(data)]
+
+
+class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
+    def _find_target(self, target):
+        """Find and return the target index based on the argument.
+
+        Parameters
+        ----------
+        target : str or int or NoneType
+            If None, autoselect the target. If an integer, treat it as a
+            catalogue index. If a string, match it to a name in the
+            catalogue.
+
+        Raises
+        ------
+        ValueError
+            If the selected target did not match the catalogue
+        """
+        if not self._file.catalogue:
+            raise ValueError('The file does not contain any targets')
+        if target is None:
+            # Find first target with 'target' tag. If that fails, first without
+            # bpcal or gaincal tag. If that fails too, first target.
+            for i, trg in enumerate(self._file.catalogue):
+                if 'target' in trg.tags:
+                    return i
+            for i, trg in enumerate(self._file.catalogue):
+                if 'bpcal' not in trg.tags and 'gaincal' not in trg.tags:
+                    return i
+            return 0
+        else:
+            try:
+                idx = int(target)
+            except ValueError:
+                for i, trg in enumerate(self._file.catalogue):
+                    if trg.name == target:
+                        return i
+                raise ValueError('Target {} not found in catalogue'.format(target))
+            else:
+                if idx < 0 or idx >= len(self._file.catalogue):
+                    raise ValueError('Target index {} is out of range'.format(idx))
+                return idx
+
+    def __init__(self, filename, options):
+        super(LoaderKatdal, self).__init__(filename, options)
+        parser = argparse.ArgumentParser(
+            prog='katdal options',
+            usage='katdal options: [-i subarray=N] [-i spw=M] ...')
+        parser.add_argument('--subarray', type=int, default=0, help='Subarray index within file [%(default)s]')
+        parser.add_argument('--spw', type=int, default=0, help='Spectral window index within file [%(default)s]')
+        parser.add_argument('--target', type=str, help='Target to image (index or name) [auto]')
+        args = parser.parse_args(options)
+        self._file = katdal.open(filename)
+        if args.subarray < 0 or args.subarray >= len(self._file.subarrays):
+            raise ValueError('Subarray {} is out of range', args.subarray)
+        if args.spw < 0 or args.spw >= len(self._file.spectral_windows):
+            raise ValueError('Spectral window {} is out of range', args.spw)
+        target_idx = self._find_target(args.target)
+        self._file.select(subarray=args.subarray, spw=args.spw,
+                          targets=[target_idx], scans=['track'])
+        self._target = self._file.catalogue.targets[target_idx]
+        _logger.info('Selected target %s', self._target)
+        if self._target.body_type != 'radec':
+            raise ValueError('Target does not have fixed RA/DEC')
+
+        # Identify polarizations present in the file. Note that _unique
+        # returns a sorted list.
+        pols = _unique(a[-1] + b[-1] for a, b in self._file.corr_products)
+        self._polarizations = pols
+
+        # Compute permutation of correlation products to place all
+        # polarizations for one baseline together, and identify missing
+        # correlation product (so that they can be flagged). Note that if a
+        # baseline is totally absent it is completely ignored, rather than
+        # marked as missing.
+        corr_product_inverse = {
+            tuple(corr_product): i for i, corr_product in enumerate(self._file.corr_products)
+        }
+        # Find baselines represented by corr_products, filtering out autocorrelations
+        baselines = _unique((a[:-1], b[:-1]) for a, b in self._file.corr_products
+                                            if a[:-1] != b[:-1])
+        corr_product_permutation = []
+        missing_corr_products = []
+        for a, b in baselines:
+            for pol in pols:
+                corr_product = (a + pol[0], b + pol[1])
+                corr_product_permutation.append(corr_product_inverse.get(corr_product, None))
+        for i in range(len(corr_product_permutation)):
+            if corr_product_permutation[i] is None:
+                # Has to have some valid index for advanced indexing
+                corr_product_permutation[i] = 0
+                missing_corr_products.append(i)
+        self._corr_product_permutation = corr_product_permutation
+        self._missing_corr_products = missing_corr_products
+
+        # Turn baselines from pairs of names into pairs of antenna indices
+        ant_inverse = {antenna.name: i for i, antenna in enumerate(self._file.ants)}
+        try:
+            self._baselines = [(ant_inverse[a], ant_inverse[b]) for a, b in baselines]
+        except KeyError:
+            raise ValueError('File does not contain antenna specifications for all antennas')
+
+        # Set up a reference antenna for the array centre. katdal's reference
+        # antenna is the first antenna in the file, which is not as useful.
+        # This determines the reference frame for UVW coordinates.
+        self._ref_ant = katpoint.Antenna('', *self._file.ants[0].ref_position_wgs84)
+
+    @classmethod
+    def match(cls, filename):
+        return filename.lower().endswith('.h5')
+
+    def antenna_diameters(self):
+        diameters = [ant.diameter for ant in self._file.ants]
+        return units.Quantity(diameters, unit=units.m, dtype=np.float32)
+
+    def antenna_positions(self):
+        positions = [ant.position_ecef for ant in self._file.ants]
+        return units.Quantity(positions, unit=units.m)
+
+    def num_channels(self):
+        return self._file.shape[1]
+
+    def frequency(self, channel):
+        return self._file.freqs[channel] * units.Hz
+
+    def phase_centre(self):
+        ra, dec = self._target.astrometric_radec()
+        return units.Quantity([ra, dec], unit=units.rad)
+
+    def polarizations(self):
+        out_map = {
+            'hh': polarization.STOKES_XX,
+            'hv': polarization.STOKES_XY,
+            'vh': polarization.STOKES_YX,
+            'vv': polarization.STOKES_YY
+        }
+        return sorted(out_map[pol] for pol in self._polarizations)
+
+    def has_feed_angles(self):
+        return True
+
+    def data_iter(self, start_channel, stop_channel, max_chunk_vis=None, max_load_vis=None):
+        n_file_times, n_file_chans, n_file_cp = self._file.shape
+        assert 0 <= start_channel < stop_channel <= n_file_chans
+        n_chans = stop_channel - start_channel
+        n_pols = len(self._polarizations)
+        n_ants = len(self._file.ants)
+        if max_load_vis is None:
+            load_times = n_file_times
+        else:
+            load_times = max(1, max_load_vis // (n_chans * n_file_cp))
+        # timestamps is a property, so ensure it's only evaluated once
+        timestamps = self._file.timestamps
+        antenna_uvw = [None] * n_ants
+        antenna_pa = [None] * n_ants
+        baseline_idx = np.arange(len(self._baselines)).astype(np.int32)
+        for start in range(0, n_file_times, load_times):
+            end = min(n_file_times, start + load_times)
+            # Load a chunk from the lazy indexer, then reindexed to order
+            # the baselines as desired.
+            select = np.s_[start:end, start_channel:stop_channel, :]
+            fix = np.s_[:, :, self._corr_product_permutation]
+            vis = self._file.vis[select][fix]
+            weights = self._file.weights[select][fix]
+            flags = self._file.flags[select][fix]
+            # Flag missing correlation products
+            if self._missing_corr_products:
+                flags[:, :, self._missing_corr_products] = True
+            # Apply flags to weights
+            weights *= np.logical_not(flags)
+
+            # Compute per-antenna UVW coordinates and parallactic angles. The
+            # tensor product yields arrays of shape 3xN, which we transpose to
+            # Nx3.
+            basis = self._target.uvw_basis(timestamp=timestamps[start:end], antenna=self._ref_ant)
+            for i, antenna in enumerate(self._file.ants):
+                enu = np.array(self._ref_ant.baseline_toward(antenna))
+                ant_uvw = np.tensordot(basis, enu, ([1], [0]))
+                antenna_uvw[i] = units.Quantity(
+                    ant_uvw.transpose(), unit=units.m, dtype=np.float32)
+                antenna_pa[i] = units.Quantity(
+                    self._target.parallactic_angle(
+                        timestamp=timestamps[start:end],
+                        antenna=antenna), unit=units.rad, dtype=np.float32)
+            # Combine these into per-baseline UVW coordinates and feed angles
+            uvw = np.empty((end - start, len(self._baselines), 3), np.float32)
+            feed_angle1 = np.empty((end - start, len(self._baselines)), np.float32)
+            feed_angle2 = np.empty_like(feed_angle1)
+            for i, (a, b) in enumerate(self._baselines):
+                uvw[:, i, :] = antenna_uvw[a] - antenna_uvw[b]
+                feed_angle1[:, i] = antenna_pa[a]
+                feed_angle2[:, i] = antenna_pa[b]
+
+            # reshape everything into the target formats
+            yield dict(
+                uvw=uvw.reshape(-1, 3),
+                weights=weights.swapaxes(0, 1).reshape(n_chans, -1, n_pols),
+                baselines=np.tile(baseline_idx, end - start),
+                vis=vis.swapaxes(0, 1).reshape(n_chans, -1, n_pols),
+                feed_angle1=feed_angle1.reshape(-1),
+                feed_angle2=feed_angle2.reshape(-1),
+                progress=end,
+                total=n_file_times)
+
+    def close(self):
+        # katdal does not provide a way to close an input file. The best we can
+        # do is leave it to the garbage collector to sort out.
+        self._file = None
