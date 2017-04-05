@@ -1,12 +1,8 @@
 FROM sdp-docker-registry.kat.ac.za:5000/docker-base-gpu
 
+# Set up for nvidia-docker (should eventually be subsumed by docker-base-gpu)
 LABEL com.nvidia.volumes.needed="nvidia_driver" com.nvidia.cuda.version="8.0"
-
-# Install system packages
-USER root
-RUN apt-get -y update && apt-get -y --no-install-recommends install \
-        casacore-dev
-USER kat
+ENV PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:${PATH} LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:${LD_LIBRARY_PATH}
 
 # Install dependencies
 RUN mkdir -p /tmp/install/katsdpimager
