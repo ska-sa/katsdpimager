@@ -147,7 +147,14 @@ def write_fits_image(dataset, image, image_parameters, filename, channel, beam=N
     _fits_polarizations(header, 3, image_parameters.polarizations)
 
     # l axis is reversed, because RA increases right-to-left.
-    hdu = fits.PrimaryHDU(image[:, :, ::-1], header)
+    # Explicitly converting to big-endian has two advantages:
+    # 1. It returns a contiguous array, which allows for a much faster path
+    #    through writeto.
+    # 2. If the image is little-endian, then astropy.io.fits will convert to
+    #    big endian, write, and convert back again.
+    # The disadvantage is an increase in memory usage.
+    image = np.require(image[:, :, ::-1], image.dtype.newbyteorder('>'), 'C')
+    hdu = fits.PrimaryHDU(image, header)
     if '%' in filename:
         filename = filename % (channel,)
     hdu.writeto(filename, overwrite=True)

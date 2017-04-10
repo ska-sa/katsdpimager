@@ -35,6 +35,7 @@ class BuildInfo(object):
         self.cmds = cmds
         start = timeit.default_timer()
         output = io.BytesIO()
+        self.returncode = 0
         for cmd in cmds:
             child = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             # The child.stdout seems to do full reads, even though it is supposedly unbuffered
@@ -64,31 +65,36 @@ class Image(object):
         self.cmd_patterns = cmd_patterns
         self.clean_globs = list(clean_globs)
 
-    def fits_filename(self, mode, stokes):
-        return self.fits_patterns[mode].format(stokes=stokes)
+    def fits_filename(self, mode, stokes, channel, rel_channel):
+        return self.fits_patterns[mode].format(stokes=stokes, channel=channel, rel_channel=rel_channel)
 
-    def svg_filename_thumb(self, mode, stokes):
-        return '{}-{}-{}-thumb.svg'.format(self.filebase, mode, stokes)
+    def svg_filename_thumb(self, mode, stokes, channel):
+        return '{}-{}-{}-{}-thumb.svg'.format(self.filebase, mode, stokes, channel)
 
-    def svg_filename_full(self, mode, stokes):
-        return '{}-{}-{}.svg'.format(self.filebase, mode, stokes)
+    def svg_filename_full(self, mode, stokes, channel):
+        return '{}-{}-{}-{}.svg'.format(self.filebase, mode, stokes, channel)
 
     def build_info_filename(self):
         return '{}-log.html'.format(self.filebase)
 
-    def build(self, ms, output_dir, modes, stokes):
+    def build(self, ms, output_dir, modes, stokes, channels):
         cmds = [[
-                Template(x).render_unicode(ms=ms, output_dir=output_dir, stokes=stokes)
+                Template(x).render_unicode(
+                    ms=ms, output_dir=output_dir, stokes=stokes, channels=channels)
                 for x in pattern
                 ] for pattern in self.cmd_patterns]
         logging.info("Running %s...", cmds)
         build_info = BuildInfo(cmds)
         # Clean up unwanted files, making sure not to delete any files we
         # actually wanted.
-        keep = set(os.path.join(output_dir, self.fits_filename(mode, s)) for mode in modes for s in stokes)
+        keep = set(os.path.join(output_dir, self.fits_filename(mode, s, channel, channel - channels[0]))
+                   for mode in modes
+                   for s in stokes
+                   for channel in channels)
         for clean_glob in self.clean_globs:
             for filename in glob.iglob(os.path.join(output_dir, clean_glob)):
                 if filename not in keep:
+                    logging.info('Removing intermediate file %s', filename)
                     if os.path.isdir(filename):
                         shutil.rmtree(filename)
                     else:
@@ -100,35 +106,38 @@ class Image(object):
         figure.add_colorbar()
         figure.add_grid()
 
-    def _render_thumb(self, output_dir, input_filename, slices, mode, stokes):
+    def _render_thumb(self, output_dir, input_filename, slices, mode, stokes, channel):
         figure = aplpy.FITSFigure(input_filename, slices=slices, figsize=(4, 4))
         self._render_common(figure)
         figure.colorbar.set_font(size='x-small')
         figure.tick_labels.set_font(size='xx-small')
-        figure.save(os.path.join(output_dir, self.svg_filename_thumb(mode, stokes)))
+        figure.save(os.path.join(output_dir, self.svg_filename_thumb(mode, stokes, channel)))
         figure.close()
 
-    def _render_full(self, output_dir, input_filename, slices, mode, stokes):
+    def _render_full(self, output_dir, input_filename, slices, mode, stokes, channel):
         figure = aplpy.FITSFigure(input_filename, slices=slices, figsize=(19, 18))
         self._render_common(figure, colorscale_args=dict(interpolation=None))
         figure.colorbar.set_font(size='small')
         figure.tick_labels.set_font(size='small')
-        figure.save(os.path.join(output_dir, self.svg_filename_full(mode, stokes)))
+        figure.save(os.path.join(output_dir, self.svg_filename_full(mode, stokes, channel)))
         figure.close()
 
-    def render(self, output_dir, mode, stokes):
-        # Check whether the Stoke parameters are all bundled into one
-        # image, and if so, slice it.
-        filename = os.path.join(output_dir, self.fits_filename(mode, stokes))
+    def render(self, output_dir, mode, stokes, channel, rel_channel):
+        # Check whether the Stokes parameters and/or channel are all bundled
+        # into one image, and if so, slice it.
+        filename = os.path.join(output_dir, self.fits_filename(mode, stokes, channel, rel_channel))
         with closing(fits.open(filename)) as hdulist:
             naxis = int(hdulist[0].header['NAXIS'])
             slices = [0] * (naxis - 2)
             for i in range(3, naxis + 1):
-                if hdulist[0].header['CTYPE{}'.format(i)] == 'STOKES':
+                axis_type = hdulist[0].header['CTYPE{}'.format(i)]
+                if axis_type == 'STOKES':
                     # TODO: should use the WCS transformation
                     slices[i - 3] = 'IQUV'.find(stokes)
-        self._render_thumb(output_dir, filename, slices, mode, stokes)
-        self._render_full(output_dir, filename, slices, mode, stokes)
+                elif axis_type == 'VOPT':
+                    slices[i - 3] = rel_channel
+        self._render_thumb(output_dir, filename, slices, mode, stokes, channel)
+        self._render_full(output_dir, filename, slices, mode, stokes, channel)
 
 
 def write_index(args, images, build_info, modes):
@@ -143,6 +152,7 @@ def write_index(args, images, build_info, modes):
             revision=commit,
             modes=modes,
             stokes=args.stokes,
+            channels=range(args.start_channel, args.stop_channel),
             images=images,
             build_info=build_info))
 
@@ -152,7 +162,8 @@ def write_build_log(args, image, build_info, modes):
     template = Template(filename=template_filename)
     with io.open(os.path.join(args.output_dir, image.build_info_filename()), 'w', encoding='utf-8') as f:
         f.write(template.render_unicode(
-            image=image, build_info=build_info, modes=modes, stokes=args.stokes))
+            image=image, build_info=build_info, modes=modes, stokes=args.stokes,
+            channels=range(args.start_channel, args.stop_channel)))
 
 
 def run(args, images, modes):
@@ -162,8 +173,13 @@ def run(args, images, modes):
         if not os.path.isdir(args.output_dir):
             raise
     build_info = {}
+    channels = range(args.start_channel, args.stop_channel)
     for image in images:
-        build_info[image] = image.build(args.ms, args.output_dir, modes, args.stokes)
+        if not args.skip_build:
+            build_info[image] = image.build(args.ms, args.output_dir, modes, args.stokes, channels)
+        else:
+            build_info[image] = BuildInfo([])
+
     write_index(args, images, build_info, modes)
     for image in images:
         write_build_log(args, image, build_info[image], modes)
@@ -172,7 +188,8 @@ def run(args, images, modes):
         if build_info[image].returncode == 0:
             for mode in modes:
                 for stokes in args.stokes:
-                    image.render(args.output_dir, mode, stokes)
+                    for channel in channels:
+                        image.render(args.output_dir, mode, stokes, channel, channel - channels[0])
 
     for info in build_info.values():
         if info.returncode != 0:
@@ -184,24 +201,38 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('ms', help='Measurement set to image')
     parser.add_argument('output_dir', help='Output directory')
+    parser.add_argument('--skip-build', action='store_true', help='Use existing image files')
     parser.add_argument('--stokes', default='IQUV', help='Stokes parameters to show')
+    parser.add_argument('--start-channel', type=int, default=0, help='First channel to image')
+    parser.add_argument('--stop-channel', type=int, default=1, help='One past last channel to image')
     args = parser.parse_args()
 
-    pixel_size = 3.49328831150462    # in arcsec: to match the value computed by katsdpimager
+    pixel_size = 1.7    # in arcsec
+    pixels = 5760
     katsdpimager_common = [
         'imager.py',
         '--stokes=${stokes}',
         '--input-option', 'data=CORRECTED_DATA',
         '--eps-w=0.001', '--major=5',
+        '--start-channel=${channels[0]}',
+        '--stop-channel=${channels[-1] + 1}',
+        '--pixel-size={}arcsec'.format(pixel_size),
+        '--pixels={}'.format(pixels),
         '${ms}']
     lwimager_common = [
-        'lwimager', 'ms=${ms}', 'npix=4608', 'cellsize={}arcsec'.format(pixel_size), 'wprojplanes=128', 'threshold=0.01Jy',
+        'lwimager', 'ms=${ms}', 'npix={}'.format(pixels), 'mode=channel',
+        'chanstart=${channels[0]}', 'nchan=${len(channels)}',
+        'img_chanstart=${channels[0]}', 'img_nchan=${len(channels)}',
+        'cellsize={}arcsec'.format(pixel_size), 'wprojplanes=128', 'threshold=0.01Jy',
         'weight=natural', 'stokes=${stokes}', 'data=CORRECTED_DATA']
     images = [
-        Image('WSClean', 'wsclean', 'wsclean-{stokes}-image.fits', 'wsclean-{stokes}-dirty.fits',
+        Image('WSClean', 'wsclean', 'wsclean-{rel_channel:04}-{stokes}-image.fits', 'wsclean-{rel_channel:04}-{stokes}-dirty.fits',
               [['wsclean', '-mgain', '0.85', '-niter', '1000', '-threshold', '0.01',
                 '-weight', 'natural',
-                '-size', '4608', '4608', '-scale', '{}asec'.format(pixel_size), '-pol', '${",".join(stokes.lower())}',
+                '-size', '{}'.format(pixels), '{}'.format(pixels),
+                '-scale', '{}asec'.format(pixel_size), '-pol', '${",".join(stokes.lower())}',
+                '-channelsout', '${len(channels)}',
+                '-channelrange', '${channels[0]}', '${channels[-1] + 1}',
                 '-name', '${output_dir}/wsclean', '${ms}']],
               clean_globs=['wsclean-*.fits']),
         Image('lwimager', 'lwimager', 'lwimager.fits', 'lwimager-dirty.fits',
@@ -209,11 +240,11 @@ def main():
                   lwimager_common + ['operation=image', 'fits=${output_dir}/lwimager-dirty.fits'],
                   lwimager_common + ['operation=csclean', 'fits=${output_dir}/lwimager.fits']
               ],
-              clean_globs=['*-mfs1.img*']),
-        Image('katsdpimager (GPU)', 'katsdpimager-gpu', 'image-gpu.fits', 'dirty-gpu.fits',
-              [katsdpimager_common + ['--write-dirty=${output_dir}/dirty-gpu.fits', '${output_dir}/image-gpu.fits']]),
-        Image('katsdpimager (CPU)', 'katsdpimager-cpu', 'image-cpu.fits', 'dirty-cpu.fits',
-              [katsdpimager_common + ['--host', '--write-dirty=${output_dir}/dirty-cpu.fits', '${output_dir}/image-cpu.fits']])
+              clean_globs=['*-channel*.img*']),
+        Image('katsdpimager (GPU)', 'katsdpimager-gpu', 'image-gpu-{channel}.fits', 'dirty-gpu-{channel}.fits',
+              [katsdpimager_common + ['--write-dirty=${output_dir}/dirty-gpu-%d.fits', '${output_dir}/image-gpu-%d.fits']]),
+        Image('katsdpimager (CPU)', 'katsdpimager-cpu', 'image-cpu-{channel}.fits', 'dirty-cpu-{channel}.fits',
+              [katsdpimager_common + ['--host', '--write-dirty=${output_dir}/dirty-cpu-%d.fits', '${output_dir}/image-cpu-%d.fits']])
     ]
     return run(args, images, MODES)
 
