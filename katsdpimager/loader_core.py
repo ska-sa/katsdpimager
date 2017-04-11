@@ -108,7 +108,7 @@ class LoaderBase(object):
         """Return an iterator that yields the data in chunks. Each chunk is a
         dictionary containing numpy arrays with the following keys:
 
-         - ``uvw``: UVW coordinates (position1 - position2), as a Quantity (N×3)
+         - ``uvw``: UVW coordinates (position2 - position1), as a Quantity (N×3)
          - ``vis``: visibilities (C×N×P for C channels and P polarizations)
          - ``weights``: imaging weights (C×N×P for C channels and P polarizations)
          - ``baselines``: arbitrary integer baseline IDs; negative IDs indicate autocorrelations
@@ -122,19 +122,20 @@ class LoaderBase(object):
         .. note::
 
            The visibilities are assumed to use a convention in which the phase
-           of the electric field *decreases* with time (which matches the
-           combination of makems and meqtrees).
+           of the electric field *increases* with time, which is consistent with
+           [HB1996]_.
 
-           The sign convention for UVW matches the white book and AIPS, but is
-           opposite to that defined for Measurement Sets (but also matches
-           CASA due to a CASA bug_).
+           The sign convention for UVW matches the definition for measurement
+           sets, but is opposite to that actually used by CASA_ (and thus by
+           other imagers that give consistent results with CASA).
 
-           Alternatively, a loader may conjugate the visibilities and negate
-           the UVW coordinates, which cancel each other out, and which may be
-           cheaper if the visibilities are already conjugated in the file
-           format.
+           .. [HB1996]
 
-        .. _bug: http://casa.nrao.edu/Memos/CoordConvention.pdf
+              Understanding radio polarimetry. III. Interpreting the IAU/IEEE definitions
+              of the Stokes parameters. J. P. Hamaker and J. D. Bregman. Astron.
+              Astrophys. Suppl. Ser., 117 1 (1996) 161-165.
+
+           .. _CASA: http://casa.nrao.edu/Memos/CoordConvention.pdf
 
         The arrays are indexed first by a 1D time/baseline coordinate. The second
         index is x/y/z for 'uvw' and polarization product for 'vis' and 'weights'.

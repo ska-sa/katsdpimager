@@ -114,6 +114,11 @@ Input selection options
      assumes that X is towards the north celestial pole (IAU/IEEE
      definition). When using this option, the input must have a full four
      polarizations.
+   uvw=casa | strict
+     Sign convention for UVW coordinates. Use ``strict`` if the UVW
+     coordinates follow the Measurement Set definition. The default
+     (``casa``) uses the opposite convention, which is implemented by CASA
+     and other imagers.
 
    The katdal backend supports the following:
 
