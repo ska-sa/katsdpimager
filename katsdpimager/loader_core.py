@@ -108,23 +108,33 @@ class LoaderBase(object):
         """Return an iterator that yields the data in chunks. Each chunk is a
         dictionary containing numpy arrays with the following keys:
 
-         - 'uvw': UVW coordinates (position1 - position2), as a Quantity (N×3)
-         - 'vis': visibilities (C×N×P for C channels and P polarizations)
-         - 'weights': imaging weights (C×N×P for C channels and P polarizations)
-         - 'baselines': arbitrary integer baseline IDs; negative IDs indicate autocorrelations
-         - 'feed_angle1': angle between feed and sky (parallactic angle plus a fixed
+         - ``uvw``: UVW coordinates (position1 - position2), as a Quantity (N×3)
+         - ``vis``: visibilities (C×N×P for C channels and P polarizations)
+         - ``weights``: imaging weights (C×N×P for C channels and P polarizations)
+         - ``baselines``: arbitrary integer baseline IDs; negative IDs indicate autocorrelations
+         - ``feed_angle1``: angle between feed and sky (parallactic angle plus a fixed
            offset for the feed), for the first antenna in the baseline (N).
-         - 'feed_angle2': angle between feed and sky for the second antenna in
+         - ``feed_angle2``: angle between feed and sky for the second antenna in
            the baseline (N).
-         - 'progress': progress made through the file, in some arbitrary units
-         - 'total': size of the file, in same units as 'progress'
+         - ``progress``: progress made through the file, in some arbitrary units
+         - ``total``: size of the file, in same units as ``progress``
 
         .. note::
 
-           The sign convention for UVW matches the white book and AIPS, but is
-           opposite_ to that used in Measurement Sets.
+           The visibilities are assumed to use a convention in which the phase
+           of the electric field *decreases* with time (which matches the
+           combination of makems and meqtrees).
 
-        .. _opposite: http://casa.nrao.edu/Memos/CoordConvention.pdf
+           The sign convention for UVW matches the white book and AIPS, but is
+           opposite to that defined for Measurement Sets (but also matches
+           CASA due to a CASA bug_).
+
+           Alternatively, a loader may conjugate the visibilities and negate
+           the UVW coordinates, which cancel each other out, and which may be
+           cheaper if the visibilities are already conjugated in the file
+           format.
+
+        .. _bug: http://casa.nrao.edu/Memos/CoordConvention.pdf
 
         The arrays are indexed first by a 1D time/baseline coordinate. The second
         index is x/y/z for 'uvw' and polarization product for 'vis' and 'weights'.

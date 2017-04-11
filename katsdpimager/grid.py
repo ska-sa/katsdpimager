@@ -501,7 +501,7 @@ def _autotune_arrays(command_queue, oversample, real_dtype, num_polarizations, b
 
     Returns
     -------
-    grid, weights_grid, uv, w_plane, vis, convolve_kernel : :class:`katsdpsigproc.accel.DeviceArray`
+    grid,weights_grid,uv,w_plane,vis,convolve_kernel : :class:`katsdpsigproc.accel.DeviceArray`
         Device arrays to be passed to the kernels
     """
     context = command_queue.context
@@ -760,13 +760,13 @@ class Gridder(GridDegrid):
             Command queue for the operation
         kernel : :class:`katsdpsigproc.cuda.Kernel` or :class:`katsdpsigproc.opencl.Kernel`
             Compiled kernel to run
-        wgs_x, wgs_y, tile_x, tile_y, bin_size : int
+        wgs_x,wgs_y,tile_x,tile_y,bin_size : int
             Tuning parameters (see :class:`GridTemplate`)
         num_vis : int
             Number of visibilities to grid
         uv_bias : int
             Bias for UV coordinates to center the kernel
-        grid, weights_grid, uv, w_plane, vis, convolve_kernel : :class:`~katsdpsigproc.accel.DeviceArray`-like
+        grid,weights_grid,uv,w_plane,vis,convolve_kernel : :class:`~katsdpsigproc.accel.DeviceArray`-like
             Data passed to the kernel
         """
         if num_vis == 0:
