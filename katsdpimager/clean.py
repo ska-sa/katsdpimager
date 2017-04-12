@@ -509,7 +509,7 @@ class Clean(accel.OperationSequence):
         dirty = self.buffer('dirty')
         self._update_tiles(0, 0, dirty.shape[2], dirty.shape[1])
 
-    def __call__(self, threshold=None):
+    def __call__(self, threshold=0):
         """Run a single minor CLEAN cycle.
 
         Parameters
@@ -517,7 +517,7 @@ class Clean(accel.OperationSequence):
         threshold : float, optional
             If specified, skip the cycle if the peak value metric is less
             than this threshold. Note that this value must be chosen relative
-            to the mode, since the units are different.
+            to the clean mode, since the units are different.
 
         Returns
         -------
@@ -660,7 +660,7 @@ class CleanHost(object):
             for x in range(self._tile_max.shape[1]):
                 self._update_tile(y, x)
 
-    def __call__(self, threshold=None):
+    def __call__(self, threshold=0):
         """Execute a single CLEAN minor cycle."""
         peak_tile = np.unravel_index(np.argmax(self._tile_max), self._tile_max.shape)
         peak_pos = self._tile_pos[peak_tile]
