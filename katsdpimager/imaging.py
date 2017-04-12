@@ -186,9 +186,9 @@ class Imaging(accel.OperationSequence):
         self.ensure_all_bound()
         self._clean.reset()
 
-    def clean_cycle(self):
+    def clean_cycle(self, threshold=None):
         self.ensure_all_bound()
-        self._clean()
+        return self._clean(threshold)
 
 
 class ImagingHost(object):
@@ -288,5 +288,5 @@ class ImagingHost(object):
     def clean_reset(self):
         self._clean.reset()
 
-    def clean_cycle(self):
-        self._clean()
+    def clean_cycle(self, threshold=None):
+        return self._clean(threshold)
