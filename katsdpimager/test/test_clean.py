@@ -25,22 +25,23 @@ class TestClean(object):
     @device_test
     def test_update_tiles(self, context, command_queue):
         image_shape = (4, 567, 456)
+        border = 65
         rs = np.random.RandomState(seed=1)
         template = clean._UpdateTilesTemplate(context, np.float32, 4, clean.CLEAN_I)
-        fn = template.instantiate(command_queue, image_shape)
+        fn = template.instantiate(command_queue, image_shape, border)
         fn.ensure_all_bound()
         # TODO: this could lead to ties, which will fail the test
         dirty = rs.standard_normal(image_shape).astype(np.float32)
         fn.buffer('dirty').set(command_queue, dirty)
         self._zero_buffer(command_queue, fn.buffer('tile_max'))
         self._zero_buffer(command_queue, fn.buffer('tile_pos'))
-        fn(70, 96, 320, 385)
+        fn(135, 161, 385, 450)
         tile_max = fn.buffer('tile_max').get(command_queue)
         tile_pos = fn.buffer('tile_pos').get(command_queue)
 
         num_tiles_y, num_tiles_x = tile_max.shape
-        assert_equal(18, num_tiles_y)
-        assert_equal(15, num_tiles_x)
+        assert_equal(14, num_tiles_y)
+        assert_equal(11, num_tiles_x)
         for y in range(num_tiles_y):
             for x in range(num_tiles_x):
                 # Make sure updates don't happen where they are not meant to
@@ -49,10 +50,10 @@ class TestClean(object):
                     assert_equal(0, tile_pos[y, x, 0])
                     assert_equal(0, tile_pos[y, x, 1])
                 else:
-                    y0 = y * template.tiley
-                    x0 = x * template.tilex
-                    y1 = min(y0 + template.tiley, dirty.shape[1])
-                    x1 = min(x0 + template.tilex, dirty.shape[2])
+                    y0 = y * template.tiley + border
+                    x0 = x * template.tilex + border
+                    y1 = min(y0 + template.tiley, dirty.shape[1] - border)
+                    x1 = min(x0 + template.tilex, dirty.shape[2] - border)
                     tile = np.abs(dirty[0, y0:y1, x0:x1])
                     pos = np.unravel_index(np.argmax(tile), tile.shape)
                     assert_equal(tile[pos], tile_max[y, x])

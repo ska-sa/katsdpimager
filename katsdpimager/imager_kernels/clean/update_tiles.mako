@@ -15,6 +15,9 @@ ${sample.define_sample(real_type, wgsx * wgsy)}
  * workgroup may be smaller than the tile (but exactly divide into it), in
  * which case each workitem reduces multiple elements before the
  * workgroup-wide reduction.
+ *
+ * The image_width and image_height are the indices of the last valid
+ * (non-border) pixels i.e. the true width and height less the border width.
  */
 KERNEL REQD_WORK_GROUP_SIZE(WGSX, WGSY, 1)
 void update_tiles(
@@ -23,6 +26,7 @@ void update_tiles(
     int image_pol_stride,
     int image_width,
     int image_height,
+    int image_border,
     GLOBAL T * RESTRICT tile_max,
     GLOBAL int2 * RESTRICT tile_pos,
     int tile_stride,
@@ -34,8 +38,8 @@ void update_tiles(
     sample priv;
     int tile_x = get_group_id(0) + tile_offset_x;
     int tile_y = get_group_id(1) + tile_offset_y;
-    int x0 = tile_x * TILEX + get_local_id(0);
-    int y0 = tile_y * TILEY + get_local_id(1);
+    int x0 = tile_x * TILEX + get_local_id(0) + image_border;
+    int y0 = tile_y * TILEY + get_local_id(1) + image_border;
     for (int y = 0; y < TILEY; y += WGSY)
         for (int x = 0; x < TILEX; x += WGSX)
         {
