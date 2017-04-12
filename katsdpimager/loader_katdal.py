@@ -76,7 +76,7 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
                 idx = int(target)
             except ValueError:
                 for i, trg in enumerate(self._file.catalogue):
-                    if trg.name == target:
+                    if target in [trg.name] + trg.aliases:
                         return i
                 raise ValueError('Target {} not found in catalogue'.format(target))
             else:
@@ -92,17 +92,19 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
         parser.add_argument('--subarray', type=int, default=0, help='Subarray index within file [%(default)s]')
         parser.add_argument('--spw', type=int, default=0, help='Spectral window index within file [%(default)s]')
         parser.add_argument('--target', type=str, help='Target to image (index or name) [auto]')
+        parser.add_argument('--ref-ant', type=str, default='', help='Reference antenna for identifying scans [first in file]')
         args = parser.parse_args(options)
-        self._file = katdal.open(filename)
+        self._file = katdal.open(filename, ref_ant=args.ref_ant)
         if args.subarray < 0 or args.subarray >= len(self._file.subarrays):
             raise ValueError('Subarray {} is out of range', args.subarray)
         if args.spw < 0 or args.spw >= len(self._file.spectral_windows):
             raise ValueError('Spectral window {} is out of range', args.spw)
         target_idx = self._find_target(args.target)
         self._file.select(subarray=args.subarray, spw=args.spw,
-                          targets=[target_idx], scans=['track'])
+                          targets=[target_idx], scans=['track'],
+                          corrprods='cross')
         self._target = self._file.catalogue.targets[target_idx]
-        _logger.info('Selected target %s', self._target)
+        _logger.info('Selected target %r', self._target.description)
         if self._target.body_type != 'radec':
             raise ValueError('Target does not have fixed RA/DEC')
 
@@ -119,9 +121,8 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
         corr_product_inverse = {
             tuple(corr_product): i for i, corr_product in enumerate(self._file.corr_products)
         }
-        # Find baselines represented by corr_products, filtering out autocorrelations
-        baselines = _unique((a[:-1], b[:-1]) for a, b in self._file.corr_products
-                                            if a[:-1] != b[:-1])
+        # Find baselines represented by corr_products.
+        baselines = _unique((a[:-1], b[:-1]) for a, b in self._file.corr_products)
         corr_product_permutation = []
         missing_corr_products = []
         for a, b in baselines:
