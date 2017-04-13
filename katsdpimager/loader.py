@@ -24,3 +24,10 @@ try:
 except ImportError:
     warnings.warn("Failed to load loader_ms. Possibly python-casacore is missing or broken.",
                   ImportWarning)
+
+try:
+    import katsdpimager.loader_katdal
+    _register_loader(katsdpimager.loader_katdal.LoaderKatdal)
+except ImportError:
+    warnings.warn("Failed to load loader_katdal. Possibly katdal is missing or broken.",
+                  ImportWarning)
