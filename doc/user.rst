@@ -133,6 +133,9 @@ Input selection options
      the file (starting from 0) or a name. If not specified, it defaults to the
      first target with the ``target`` tag. If there isn't one, it defaults to
      the first without a ``bpcal`` or ``gaincal`` tag.
+   ref-ant=<NAME>
+     Name of antenna to use as the reference for identifying scans. Refer to
+     the katdal documentation for details.
 
    To provide multiple key-value pairs, specify :option:`-i` multiple times.
 
