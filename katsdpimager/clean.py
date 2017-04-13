@@ -678,6 +678,7 @@ class CleanHost(object):
         if peak_value < threshold:
             return None
         (y0, x0, y1, x1) = self._subtract_psf(peak_pos[0], peak_pos[1])
+        border = self.clean_parameters.border
         tile_y0 = max((y0 - border) // self.tile_size, 0)
         tile_x0 = max((x0 - border) // self.tile_size, 0)
         tile_y1 = min(accel.divup(y1 - border, self.tile_size), self._tile_max.shape[0])
