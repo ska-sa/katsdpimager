@@ -108,23 +108,34 @@ class LoaderBase(object):
         """Return an iterator that yields the data in chunks. Each chunk is a
         dictionary containing numpy arrays with the following keys:
 
-         - 'uvw': UVW coordinates (position1 - position2), as a Quantity (N×3)
-         - 'vis': visibilities (C×N×P for C channels and P polarizations)
-         - 'weights': imaging weights (C×N×P for C channels and P polarizations)
-         - 'baselines': arbitrary integer baseline IDs; negative IDs indicate autocorrelations
-         - 'feed_angle1': angle between feed and sky (parallactic angle plus a fixed
+         - ``uvw``: UVW coordinates (position2 - position1), as a Quantity (N×3)
+         - ``vis``: visibilities (C×N×P for C channels and P polarizations)
+         - ``weights``: imaging weights (C×N×P for C channels and P polarizations)
+         - ``baselines``: arbitrary integer baseline IDs; negative IDs indicate autocorrelations
+         - ``feed_angle1``: angle between feed and sky (parallactic angle plus a fixed
            offset for the feed), for the first antenna in the baseline (N).
-         - 'feed_angle2': angle between feed and sky for the second antenna in
+         - ``feed_angle2``: angle between feed and sky for the second antenna in
            the baseline (N).
-         - 'progress': progress made through the file, in some arbitrary units
-         - 'total': size of the file, in same units as 'progress'
+         - ``progress``: progress made through the file, in some arbitrary units
+         - ``total``: size of the file, in same units as ``progress``
 
         .. note::
 
-           The sign convention for UVW matches the white book and AIPS, but is
-           opposite_ to that used in Measurement Sets.
+           The visibilities are assumed to use a convention in which the phase
+           of the electric field *increases* with time, which is consistent with
+           [HB1996]_.
 
-        .. _opposite: http://casa.nrao.edu/Memos/CoordConvention.pdf
+           The sign convention for UVW matches the definition for measurement
+           sets, but is opposite to that actually used by CASA_ (and thus by
+           other imagers that give consistent results with CASA).
+
+           .. [HB1996]
+
+              Understanding radio polarimetry. III. Interpreting the IAU/IEEE definitions
+              of the Stokes parameters. J. P. Hamaker and J. D. Bregman. Astron.
+              Astrophys. Suppl. Ser., 117 1 (1996) 161-165.
+
+           .. _CASA: http://casa.nrao.edu/Memos/CoordConvention.pdf
 
         The arrays are indexed first by a 1D time/baseline coordinate. The second
         index is x/y/z for 'uvw' and polarization product for 'vis' and 'weights'.

@@ -10,14 +10,15 @@ packaging tools. The pure-Python dependencies are automatically handled by
 these packaging tools, but there are some additional requirements:
 
  - An SSH key that is authorised for Github access to the SKA South Africa
-   private repositories.
+   private repositories;
  - An NVIDIA GPU with the CUDA toolkit. At least version 6.0 is required, but
-   testing is only done with 7.5 and later (but see :ref:`cpu`).
- - `Casacore`_ 2.x, compiled with Python support
+   testing is only done with 7.5 and later (but see :ref:`cpu`);
+ - `Casacore`_ 2.x, compiled with Python support (optional, only needed for
+   reading Measurement Sets);
  - libhdf5, including development headers (``libhdf5-dev`` in Debian/Ubuntu)
- - `Eigen3`_ (`libeigen3-dev` in Debian/Ubuntu)
- - Boost.Python
- - A C++ compiler such as GCC
+ - `Eigen3`_ (`libeigen3-dev` in Debian/Ubuntu);
+ - Boost.Python;
+ - A C++ compiler such as GCC.
 
 .. _Casacore: https://github.com/casacore/casacore
 
@@ -44,20 +45,25 @@ contains code that has been reviewed.
    cd katsdppipelines/katsdpimager
    pip install .
 
-After these steps, you should be able to run ``imager.py``.
+After these steps, you should be able to run ``imager.py``, but see the next
+section for information on file format-specific dependencies.
 
 File formats
 ============
-The input is taken from a `Measurement Set`_ containing visibilities and the
-output image is a `FITS`_ file. The input can contain multiple channels, but
-only one channel can be imaged.
+Two input formats are supported: `Measurement Sets`_ and KAT-style HDF5 files
+read by `katdal`_. Output is to `FITS`_ files. The input can contain multiple
+channels, but a separate FITS file is written for each channel.
 
-.. _Measurement set: http://casa.nrao.edu/Memos/229.html
+.. _Measurement sets: http://casa.nrao.edu/Memos/229.html
+.. _katdal: https://github.com/ska-sa/katdal/
 .. _FITS: http://fits.gsfc.nasa.gov/fits_documentation.html
 
-The input file *must* have the suffix ``.ms``. This is to support future
-expansion where multiple file formats will be supported and detected by their
-extension.
+The input file format is detected by extension, so a Measurement Set *must*
+have the suffix ``.ms`` and a katdal file must have the suffix ``.h5``.
+
+Each file format has additional Python package dependencies. Use ``pip install
+.[ms]`` to ensure support for Measurement Sets and ``pip install .[katdal]`` to
+ensure support for katdal.
 
 Command-line options
 ====================
@@ -85,14 +91,15 @@ implementation details and won't be needed for common usage.
 Input selection options
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-.. option:: --channel <CHANNEL>
+.. option:: --start-channel <CHANNEL>, --stop-channel <CHANNEL>
 
-   Selects the channel to image from a multi-channel input, counting from 0.
+   Selects a range of channels to image. The channels are numbered from 0, and
+   the stop channel is *excluded*.
 
 .. option:: -i <KEY>=<VALUE>, --input-option <KEY>=<VALUE>
 
-   Passes an option to an input backend. At the moment the only backend is for
-   measurement sets, which supports the following key-value pairs:
+   Passes an option to an input backend. The MS backend supports the following
+   key-value pairs:
 
    data=<COLUMN>
      Specifies the column in the measurement set containing the data to image
@@ -107,6 +114,28 @@ Input selection options
      assumes that X is towards the north celestial pole (IAU/IEEE
      definition). When using this option, the input must have a full four
      polarizations.
+   uvw=casa | strict
+     Sign convention for UVW coordinates. Use ``strict`` if the UVW
+     coordinates follow the Measurement Set definition. The default
+     (``casa``) uses the opposite convention, which is implemented by CASA
+     and other imagers.
+
+   The katdal backend supports the following:
+
+   subarray=<INDEX>
+     Subarray index within the file, starting from 0 (defaults to first in
+     file).
+   spw=<INDEX>
+     Spectral window index within the file, starting from 0 (defaults to first
+     in file).
+   target=<TARGET>
+     Target to image. This can be either an index into the catalogue stored in
+     the file (starting from 0) or a name. If not specified, it defaults to the
+     first target with the ``target`` tag. If there isn't one, it defaults to
+     the first without a ``bpcal`` or ``gaincal`` tag.
+   ref-ant=<NAME>
+     Name of antenna to use as the reference for identifying scans. Refer to
+     the katdal documentation for details.
 
    To provide multiple key-value pairs, specify :option:`-i` multiple times.
 
@@ -192,6 +221,10 @@ various intermediate products:
 
    Write a FITS file with the corresponding intermediate results.
 
+When imaging multiple channels, both these intermediate filenames and the
+output filename should be a printf-style format string which will be populated
+with the channel index.
+
 .. _cpu:
 
 Running on the CPU
@@ -204,7 +237,10 @@ command
 
    pip install '.[cpu]'
 
-to install the necessary support packages. Then pass :option:`--host` when
-running.  Note that this will still install GPU packages like
+to install the necessary support packages. Note that this will still install GPU packages like
 pycuda; if you're unable to install them, you'll need to modify katsdpimager
 yourself to remove the dependencies.
+
+.. option:: --host
+
+   Perform all computations on the CPU.

@@ -231,7 +231,7 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
             feed_angle1 = np.empty((end - start, len(self._baselines)), np.float32)
             feed_angle2 = np.empty_like(feed_angle1)
             for i, (a, b) in enumerate(self._baselines):
-                uvw[:, i, :] = antenna_uvw[a] - antenna_uvw[b]
+                uvw[:, i, :] = antenna_uvw[b] - antenna_uvw[a]
                 feed_angle1[:, i] = antenna_pa[a]
                 feed_angle2[:, i] = antenna_pa[b]
 

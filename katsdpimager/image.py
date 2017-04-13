@@ -49,6 +49,16 @@ class _LayerImageTemplate(object):
     Further dimensions are supported e.g. for Stokes parameters, which occur
     before the l/m dimensions.
 
+    A note on sign conventions: the measurement equation is taken to be
+
+    .. math::
+
+       V(u, v, w) = \int \frac{I(l, m)}{n} e^{-2\pi i(ul + vm + w(n-1))}\ dl\ dm.
+
+    This is consistent with the sign conventions for the phase of :math:`V` and
+    for :math:`(u, v, w)` that are documented in
+    :ref:`katsdpimager.loader_core.LoaderBase.data_iter`.
+
     Parameters
     ----------
     context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
@@ -400,7 +410,7 @@ class GridToImage(accel.OperationSequence):
         Operation template
     shape_grid : tuple of int
         Shape of the grid, as (polarizations, height, width)
-    lm_scale, lm_bias : float
+    lm_scale,lm_bias : float
         See :class:`LayerToImage`
     allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
         Allocator used to allocate unbound slots
@@ -463,7 +473,7 @@ class ImageToGrid(accel.OperationSequence):
         Operation template
     shape_grid : tuple of int
         Shape of the grid, as (polarizations, height, width)
-    lm_scale, lm_bias : float
+    lm_scale,lm_bias : float
         See :class:`ImageToLayer`
     allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
         Allocator used to allocate unbound slots
@@ -534,7 +544,7 @@ class GridToImageHost(object):
         Output image
     kernel1d : ndarray, real
         Tapering function
-    lm_scale, lm_bias : real
+    lm_scale,lm_bias : real
         Linear transformation from pixel coordinates to l/m values
     """
 
@@ -593,7 +603,7 @@ class ImageToGridHost(object):
         Input image
     kernel1d : ndarray, real
         Tapering function
-    lm_scale, lm_bias : real
+    lm_scale,lm_bias : real
         Linear transformation from pixel coordinates to l/m values
     """
     def __init__(self, grid, layer, image, kernel1d, lm_scale, lm_bias):

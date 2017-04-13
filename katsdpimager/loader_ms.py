@@ -216,7 +216,9 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         parser.add_argument('--data-desc', type=int, default=0, help='Data description ID to image [%(default)s]')
         parser.add_argument('--field', type=int, default=0, help='Field to image [%(default)s]')
         parser.add_argument('--pol-frame', choices=['sky', 'feed'], help='Reference frame for polarization [%(default)s]')
+        parser.add_argument('--uvw', choices=['casa', 'strict'], default='casa', help='UVW sign convention [%(default)s]')
         args = parser.parse_args(options)
+        self._strict_uvw = (args.uvw == 'strict')
         self._main = casacore.tables.table(filename, ack=False)
         _fix_cache_size(self._main, 'FLAG')
         self._antenna = casacore.tables.table(self._main.getkeyword('ANTENNA'), ack=False)
@@ -355,8 +357,9 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
                     feed_angle[:, i] = pa + self._antenna_angle[i]
                 feed_angle1 = feed_angle[inverse, antenna1]
                 feed_angle2 = feed_angle[inverse, antenna2]
-            # Note: UVW is negated due to differing sign conventions
-            uvw = -_getcol(self._main, 'UVW', start, nrows, 'm', units.m, 'uvw', 'ITRF')[valid, ...]
+            uvw = _getcol(self._main, 'UVW', start, nrows, 'm', units.m, 'uvw', 'ITRF')[valid, ...]
+            if not self._strict_uvw:
+                uvw = -uvw
             if self._has_weight_spectrum:
                 weight = _getcolchannels(self._main, 'WEIGHT_SPECTRUM', start_channel, stop_channel,
                                          start, nrows)[valid, ...]
