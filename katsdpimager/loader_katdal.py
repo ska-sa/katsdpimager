@@ -196,7 +196,6 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
         # timestamps is a property, so ensure it's only evaluated once
         timestamps = self._file.timestamps
         antenna_uvw = [None] * n_ants
-        antenna_pa = [None] * n_ants
         baseline_idx = np.arange(len(self._baselines)).astype(np.int32)
         for start in range(0, n_file_times, load_times):
             end = min(n_file_times, start + load_times)
@@ -222,10 +221,11 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
                 ant_uvw = np.tensordot(basis, enu, ([1], [0]))
                 antenna_uvw[i] = units.Quantity(
                     ant_uvw.transpose(), unit=units.m, dtype=np.float32)
-                antenna_pa[i] = units.Quantity(
-                    self._target.parallactic_angle(
-                        timestamp=timestamps[start:end],
-                        antenna=antenna), unit=units.rad, dtype=np.float32)
+            # parangle converts to degree before returning, so we have to
+            # convert back to radians.
+            antenna_pa = units.Quantity(
+                self._file.parangle[start:end, :].transpose(),
+                unit=units.deg, dtype=np.float32, copy=False).to(units.rad)
             # Combine these into per-baseline UVW coordinates and feed angles
             uvw = np.empty((end - start, len(self._baselines), 3), np.float32)
             feed_angle1 = np.empty((end - start, len(self._baselines)), np.float32)
