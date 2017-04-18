@@ -3,11 +3,7 @@ from setuptools import setup, find_packages, Extension
 import ctypes.util
 import sys
 import glob
-try:
-    import numpy
-    numpy_include = numpy.get_include()
-except ImportError:
-    numpy_include = None
+import importlib
 try:
     import pkgconfig
     eigen3 = pkgconfig.parse('eigen3')
@@ -16,28 +12,31 @@ except ImportError:
 
 tests_require = ['nose', 'mock', 'scipy']
 
-# Different OSes install the Boost.Python library under different names
-bp_library_names = [
-    'boost_python-py{0}{1}'.format(sys.version_info.major, sys.version_info.minor),
-    'boost_python{0}'.format(sys.version_info.major),
-    'boost_python',
-    'boost_python-mt']
-for name in bp_library_names:
-    if ctypes.util.find_library(name):
-        bp_library = name
-        break
-else:
-    raise RuntimeError('Cannot find Boost.Python library')
+class get_include(object):
+    """Helper class to defer importing a module until build time for fetching
+    the include directory.
+    """
+    def __init__(self, module, *args, **kwargs):
+        self.module = module
+        self.args = args
+        self.kwargs = kwargs
+
+    def __str__(self):
+        module = importlib.import_module(self.module)
+        return getattr(module, 'get_include')(*self.args, **self.kwargs)
 
 extensions = [
     Extension(
         '_preprocess',
         sources=['katsdpimager/preprocess.cpp'],
         language='c++',
-        include_dirs=[numpy_include] + list(eigen3.get('include_dirs', [])),
+        include_dirs=[
+            get_include('numpy'),
+            get_include('pybind11'),
+            get_include('pybind11', user=True)] + list(eigen3.get('include_dirs', [])),
         depends=glob.glob('katsdpimager/*.h'),
-        extra_compile_args=['-std=c++0x', '-g0'],
-        libraries=[bp_library, 'boost_system'] + list(eigen3.get('libraries', []))
+        extra_compile_args=['-std=c++14', '-g0'],
+        libraries=list(eigen3.get('libraries', []))
     )
 ]
 
@@ -54,7 +53,7 @@ setup(
     setup_requires=['numpy', 'pkgconfig'],
     install_requires=[
         'numpy>=1.10.0', 'katsdpsigproc', 'astropy>=1.3', 'progress',
-        'pycuda', 'scikit-cuda', 'h5py', 'ansicolors'
+        'pycuda', 'scikit-cuda', 'h5py', 'ansicolors', 'pybind11>=2.0.0'
     ],
     tests_require=tests_require,
     extras_require={
