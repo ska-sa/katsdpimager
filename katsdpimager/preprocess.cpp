@@ -245,7 +245,7 @@ public:
      * @param vis          Visibilities (in arbitrary frame), CxNxQ, complex64
      * @param feed_angle1, feed_angle2  Feed angles in radians for the two
      *                     antennas in the baseline, for rotating from
-     *                     feed-relative to celestial frame, N, float32
+     *                     celestial to feed-relative frame, N, float32
      * @param mueller_stokes Mueller matrix that converts from celestial RL polarization
      *                     frame to the desired output Stokes parameters, Px4.
      * @param mueller_circular  Mueller matrix that converts from the frame
