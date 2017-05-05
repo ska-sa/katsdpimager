@@ -13,6 +13,7 @@
 #include <pybind11/eigen.h>
 #include <pybind11/functional.h>
 #include <pybind11/complex.h>
+#include <pybind11/factory.h>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -28,9 +29,6 @@
 #include "mulz.h"
 
 namespace py = pybind11;
-
-namespace
-{
 
 /**
  * Data for a visibility with @a P polarizations.
@@ -58,6 +56,23 @@ struct channel_config
     float cell_size;
 };
 
+namespace
+{
+
+// Recursive implementation for check_dimensions
+static void check_dimensions_impl(const py::array &array, int axis)
+{
+}
+
+template<typename T, typename ...Args>
+static void check_dimensions_impl(const py::array &array, int axis, T&& dim, Args&&... dims)
+{
+    std::ptrdiff_t expected = std::forward<T>(dim);
+    if (expected != -1 && std::size_t(expected) != array.shape(axis))
+        throw std::invalid_argument("Array has incorrect size");
+    check_dimensions_impl(array, axis + 1, std::forward<Args>(dims)...);
+}
+
 /**
  * Ensures that an array has dimensions compatible with @a dims.
  *
@@ -66,19 +81,14 @@ struct channel_config
  *
  * @exception std::invalid_argument if there is a mismatch
  */
-static void check_dimensions(const py::array &array, std::initializer_list<std::ptrdiff_t> dims)
+template<typename ...T>
+static void check_dimensions(const py::array &array, T&&... dims)
 {
-    if (array.ndim() != dims.size())
+    if (array.ndim() != sizeof...(dims))
     {
         throw std::invalid_argument("Array has incorrect number of dimensions");
     }
-    auto cur_dim = dims.begin();
-    for (std::size_t i = 0; i < dims.size(); i++, ++cur_dim)
-    {
-        auto expected = *cur_dim;
-        if (expected != -1 && std::size_t(expected) != array.shape(i))
-            throw std::invalid_argument("Array has incorrect size");
-    }
+    check_dimensions_impl(array, 0, std::forward<T>(dims)...);
 }
 
 static constexpr int array_flags = NPY_ARRAY_CARRAY_RO;
@@ -152,7 +162,7 @@ visibility_collector_base::visibility_collector_base(
     std::function<void(py::array)> emit_callback)
     : config(std::move(config)), emit_callback(std::move(emit_callback))
 {
-    check_dimensions(this->config, {-1});
+    check_dimensions(this->config, -1);
 }
 
 /**
@@ -507,14 +517,14 @@ void visibility_collector<P>::add_impl(
             std::move(mueller_stokes_array),
             std::move(mueller_circular_array));
     }
-    check_dimensions(uvw_array, {-1, 3});
+    check_dimensions(uvw_array, -1, 3);
     const std::size_t N = uvw_array.shape(0);
     const std::size_t C = num_channels;
-    check_dimensions(weights_array, {C, N, Q});
-    check_dimensions(baselines_array, {N});
-    check_dimensions(vis_array, {C, N, Q});
+    check_dimensions(weights_array, C, N, Q);
+    check_dimensions(baselines_array, N);
+    check_dimensions(vis_array, C, N, Q);
 
-    const float (*uvw)[3] = reinterpret_cast<const float[][3]>(uvw_array.data());
+    const float (*uvw)[3] = reinterpret_cast<const float(*)[3]>(uvw_array.data());
     auto baselines = baselines_array.data();
     auto vis = vis_array.data();
     auto weights = weights_array.data();
@@ -533,8 +543,8 @@ void visibility_collector<P>::add_impl(
     }
     else
     {
-        check_dimensions(feed_angle1_array, {N});
-        check_dimensions(feed_angle2_array, {N});
+        check_dimensions(feed_angle1_array, N);
+        check_dimensions(feed_angle2_array, N);
         auto feed_angle1 = feed_angle1_array.data();
         auto feed_angle2 = feed_angle2_array.data();
         typedef Eigen::Ref<const Eigen::Matrix<std::complex<float>, P, 4, Eigen::RowMajor>> mueller_stokes_t;
@@ -559,7 +569,7 @@ void visibility_collector<P>::add(
     py::array_t<std::complex<float>, array_flags> mueller_stokes,
     py::array_t<std::complex<float>, array_flags> mueller_circular)
 {
-    check_dimensions(vis, {-1, -1, -1});
+    check_dimensions(vis, -1, -1, -1);
     std::size_t Q = vis.shape(2);
     if (Q < 1 || Q > 4)
         throw std::invalid_argument("vis does not have 1-4 columns");
@@ -596,8 +606,8 @@ visibility_collector<P>::visibility_collector(
 
 // Factory for a visibility collector with *up to* P polarizations
 template<int P>
-std::unique_ptr<visibility_collector_base>
-make_visibility_collector(
+static std::unique_ptr<visibility_collector_base>
+make_visibility_collector_impl(
     int polarizations,
     py::array_t<channel_config, array_flags> config,
     std::function<void(py::array)> emit_callback,
@@ -614,7 +624,7 @@ make_visibility_collector(
     else
         // The special case for P=1 prevents an infinite template recursion.
         // When P=1, this code is unreachable.
-        return make_visibility_collector<P == 1 ? 1 : P - 1>(
+        return make_visibility_collector_impl<P == 1 ? 1 : P - 1>(
             polarizations, std::move(config),
             std::move(emit_callback), buffer_capacity);
 }
@@ -625,17 +635,27 @@ PYBIND11_PLUGIN(_preprocess)
 {
     using namespace pybind11;
 
+    // TODO: do recursively instead of copy-paste
+    PYBIND11_NUMPY_DTYPE(vis_t<1>, uv, sub_uv, weights, vis, w_plane, w_slice, channel, baseline, index);
+    PYBIND11_NUMPY_DTYPE(vis_t<2>, uv, sub_uv, weights, vis, w_plane, w_slice, channel, baseline, index);
+    PYBIND11_NUMPY_DTYPE(vis_t<3>, uv, sub_uv, weights, vis, w_plane, w_slice, channel, baseline, index);
     PYBIND11_NUMPY_DTYPE(vis_t<4>, uv, sub_uv, weights, vis, w_plane, w_slice, channel, baseline, index);
+    PYBIND11_NUMPY_DTYPE(channel_config, max_w, w_slices, w_planes, oversample, cell_size);
 
     module m("_preprocess", "C++ backend of visibility preprocessing");
     class_<visibility_collector_base>(m, "VisibilityCollector")
+        .def(init([](int polarizations,
+                     py::array_t<channel_config, array_flags> config,
+                     std::function<void(py::array)> emit_callback,
+                     std::size_t buffer_capacity) {
+            return make_visibility_collector_impl<4>(
+                polarizations, std::move(config), std::move(emit_callback), buffer_capacity);
+        }))
         .def("add", &visibility_collector_base::add)
         .def("close", &visibility_collector_base::close)
         .def_readonly("num_input", &visibility_collector_base::num_input)
         .def_readonly("num_output", &visibility_collector_base::num_output)
     ;
-    m.def("make_visibility_collector", &make_visibility_collector<4>);
-    //m.attr("CHANNEL_CONFIG_DTYPE") =
-    //    py::object(py::handle<>(make_channel_config_descr()));
+    m.attr("CHANNEL_CONFIG_DTYPE") = py::dtype::of<channel_config>();
     return m.ptr();
 }
