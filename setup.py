@@ -31,7 +31,6 @@ extensions = [
         sources=['katsdpimager/preprocess.cpp'],
         language='c++',
         include_dirs=[
-            get_include('numpy'),
             get_include('pybind11'),
             get_include('pybind11', user=True)] + list(eigen3.get('include_dirs', [])),
         depends=glob.glob('katsdpimager/*.h'),
@@ -50,7 +49,7 @@ setup(
     scripts=["scripts/imager.py"],
     ext_package='katsdpimager',
     ext_modules=extensions,
-    setup_requires=['numpy', 'pkgconfig'],
+    setup_requires=['pkgconfig'],
     install_requires=[
         'numpy>=1.10.0', 'katsdpsigproc', 'astropy>=1.3', 'progress',
         'pycuda', 'scikit-cuda', 'h5py', 'ansicolors', 'pybind11>=2.0.0'

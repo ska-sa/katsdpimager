@@ -6,8 +6,6 @@
  * Most of the functionality is documented in the wrappers in preprocess.py.
  */
 
-#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
-#include <numpy/arrayobject.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <pybind11/eigen.h>
@@ -90,7 +88,8 @@ static void check_dimensions(const py::array &array, T&&... dims)
     check_dimensions_impl(array, 0, std::forward<T>(dims)...);
 }
 
-static constexpr int array_flags = NPY_ARRAY_CARRAY_RO;
+static constexpr int array_flags = pybind11::detail::npy_api::NPY_ARRAY_C_CONTIGUOUS_ |
+                                   pybind11::detail::npy_api::NPY_ARRAY_ALIGNED_;
 
 /**
  * Abstract base class. This is the type exposed to Python, but a subclass
