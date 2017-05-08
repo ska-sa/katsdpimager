@@ -129,8 +129,7 @@ namespace pybind11
 namespace detail
 {
 
-// Based on pybind11's optional_caster for std::optional - but only
-// supports conversion in Python -> C++ direction for now.
+// Based on pybind11's optional_caster for std::optional.
 template<typename T>
 struct type_caster<optional<T>>
 {
@@ -140,9 +139,11 @@ private:
 public:
     PYBIND11_TYPE_CASTER(optional<T>, _("Optional[") + value_conv::name() + _("]"));
 
-    static handle cast(const T &src, return_value_policy policy, handle parent)
+    static handle cast(const optional<T> &src, return_value_policy policy, handle parent)
     {
-        return false;
+        if (!src)
+            return none().inc_ref();
+        return value_conv::cast(*src, policy, parent);
     }
 
     bool load(handle src, bool convert)
