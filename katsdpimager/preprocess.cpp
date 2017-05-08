@@ -27,6 +27,7 @@
 #include <utility>
 #include <Eigen/Core>
 #include "mulz.h"
+#include "optional.h"
 
 namespace py = pybind11;
 
@@ -85,9 +86,7 @@ template<typename ...T>
 static void check_dimensions(const py::array &array, T&&... dims)
 {
     if (array.ndim() != sizeof...(dims))
-    {
         throw std::invalid_argument("Array has incorrect number of dimensions");
-    }
     check_dimensions_impl(array, 0, std::forward<T>(dims)...);
 }
 
@@ -102,12 +101,13 @@ class visibility_collector_base
 protected:
     // Gridding parameters
     py::array_t<channel_config, array_flags> config;
-    std::size_t num_channels;
     /// Callback function called with compressed data as a numpy array
     std::function<void(py::array)> emit_callback;
 
 public:
     std::int64_t num_input = 0, num_output = 0;
+
+    std::size_t num_channels() const { return config.size(); }
 
     visibility_collector_base(
         py::array_t<channel_config, array_flags> config,
@@ -127,10 +127,9 @@ public:
      * requested Stokes parameters. It is the caller's responsibility to ensure
      * this does not happen.
      *
-     * If no feed angle correction is needed, pass empty arrays for @a
-     * feed_angle1, @a feed_angle2 and @a mueller_circular. In this case, @a
-     * mueller_stokes converts directly from @a vis to the output Stokes
-     * parameters.
+     * If no feed angle correction is needed, pass none for @a feed_angle1, @a
+     * feed_angle2 and @a mueller_circular. In this case, @a mueller_stokes
+     * converts directly from @a vis to the output Stokes parameters.
      *
      * @param uvw          UVW coordinates, Nx3, float32
      * @param weights      Imaging weights, CxNxQ, float32
@@ -150,10 +149,10 @@ public:
         py::array_t<float, array_flags> weights,
         py::array_t<std::int32_t, array_flags> baselines,
         py::array_t<std::complex<float>, array_flags> vis,
-        py::array_t<float, array_flags> feed_angle1,
-        py::array_t<float, array_flags> feed_angle2,
+        optional<py::array_t<float, array_flags>> feed_angle1,
+        optional<py::array_t<float, array_flags>> feed_angle2,
         py::array_t<std::complex<float>, array_flags> mueller_stokes,
-        py::array_t<std::complex<float>, array_flags> mueller_circular) = 0;
+        optional<py::array_t<std::complex<float>, array_flags>> mueller_circular) = 0;
     virtual void close() = 0;
 };
 
@@ -271,10 +270,10 @@ private:
         py::array_t<float, array_flags> weights,
         py::array_t<std::int32_t, array_flags> baselines,
         py::array_t<std::complex<float>, array_flags> vis,
-        py::array_t<float, array_flags> feed_angle1,
-        py::array_t<float, array_flags> feed_angle2,
+        optional<py::array_t<float, array_flags>> feed_angle1,
+        optional<py::array_t<float, array_flags>> feed_angle2,
         py::array_t<std::complex<float>, array_flags> mueller_stokes,
-        py::array_t<std::complex<float>, array_flags> mueller_circular);
+        optional<py::array_t<std::complex<float>, array_flags>> mueller_circular);
 
 public:
     visibility_collector(
@@ -287,10 +286,10 @@ public:
         py::array_t<float, array_flags> weights,
         py::array_t<std::int32_t, array_flags> baselines,
         py::array_t<std::complex<float>, array_flags> vis,
-        py::array_t<float, array_flags> feed_angle1,
-        py::array_t<float, array_flags> feed_angle2,
+        optional<py::array_t<float, array_flags>> feed_angle1,
+        optional<py::array_t<float, array_flags>> feed_angle2,
         py::array_t<std::complex<float>, array_flags> mueller_stokes,
-        py::array_t<std::complex<float>, array_flags> mueller_circular) override;
+        optional<py::array_t<std::complex<float>, array_flags>> mueller_circular) override;
 
     virtual void close() override;
 };
@@ -409,7 +408,7 @@ void visibility_collector<P>::add_impl2(
      */
     constexpr auto data_major = (Q == 1) ? Eigen::RowMajor : Eigen::ColMajor;
 
-    for (std::size_t channel = 0; channel < num_channels; channel++)
+    for (std::size_t channel = 0; channel < num_channels(); channel++)
     {
         const Eigen::Map<Eigen::Matrix<MulZ<std::complex<float>>, Q, Eigen::Dynamic, data_major>> vis(
             reinterpret_cast<MulZ<std::complex<float>> *>(
@@ -483,14 +482,14 @@ void visibility_collector<P>::add_impl2(
             out.index = (std::uint32_t) buffer_size;
             buffer_size++;
         }
-        if (channel + 1 < num_channels)
+        if (channel + 1 < num_channels())
         {
             // Not needed for correctness, but avoids putting the next channel
             // in the same buffer where it is unlikely to combine well.
             compress();
         }
     }
-    num_input += num_channels * N;
+    num_input += num_channels() * N;
 }
 
 template<int P>
@@ -500,10 +499,10 @@ void visibility_collector<P>::add_impl(
     py::array_t<float, array_flags> weights_array,
     py::array_t<std::int32_t, array_flags> baselines_array,
     py::array_t<std::complex<float>, array_flags> vis_array,
-    py::array_t<float, array_flags> feed_angle1_array,
-    py::array_t<float, array_flags> feed_angle2_array,
+    optional<py::array_t<float, array_flags>> feed_angle1_array,
+    optional<py::array_t<float, array_flags>> feed_angle2_array,
     py::array_t<std::complex<float>, array_flags> mueller_stokes_array,
-    py::array_t<std::complex<float>, array_flags> mueller_circular_array)
+    optional<py::array_t<std::complex<float>, array_flags>> mueller_circular_array)
 {
     if (vis_array.shape(2) < Q)
     {
@@ -519,7 +518,7 @@ void visibility_collector<P>::add_impl(
     }
     check_dimensions(uvw_array, -1, 3);
     const std::size_t N = uvw_array.shape(0);
-    const std::size_t C = num_channels;
+    const std::size_t C = num_channels();
     check_dimensions(weights_array, C, N, Q);
     check_dimensions(baselines_array, N);
     check_dimensions(vis_array, C, N, Q);
@@ -531,9 +530,9 @@ void visibility_collector<P>::add_impl(
 
     constexpr auto matrix_major = (Q != 1) ? Eigen::RowMajor : Eigen::ColMajor;
 
-    if (feed_angle1_array.is_none())
+    if (!feed_angle1_array)
     {
-        if (!feed_angle2_array.is_none() || !mueller_circular_array.is_none())
+        if (feed_angle2_array || mueller_circular_array)
             throw std::invalid_argument("feed_angle1 is None but feed_angle2 or mueller_circular is not");
         typedef Eigen::Ref<const Eigen::Matrix<std::complex<float>, P, Q, matrix_major>> mueller_stokes_t;
         auto mueller_stokes = mueller_stokes_array.cast<mueller_stokes_t>();
@@ -543,14 +542,16 @@ void visibility_collector<P>::add_impl(
     }
     else
     {
-        check_dimensions(feed_angle1_array, N);
-        check_dimensions(feed_angle2_array, N);
-        auto feed_angle1 = feed_angle1_array.data();
-        auto feed_angle2 = feed_angle2_array.data();
+        if (!feed_angle2_array || !mueller_circular_array)
+            throw std::invalid_argument("feed_angle1 is not None but feed_angle2 or mueller_circular is");
+        check_dimensions(*feed_angle1_array, N);
+        check_dimensions(*feed_angle2_array, N);
+        auto feed_angle1 = feed_angle1_array->data();
+        auto feed_angle2 = feed_angle2_array->data();
         typedef Eigen::Ref<const Eigen::Matrix<std::complex<float>, P, 4, Eigen::RowMajor>> mueller_stokes_t;
         typedef Eigen::Ref<const Eigen::Matrix<std::complex<float>, 4, Q, matrix_major>> mueller_circular_t;
         auto mueller_stokes = mueller_stokes_array.cast<mueller_stokes_t>();
-        auto mueller_circular = mueller_circular_array.cast<mueller_circular_t>();
+        auto mueller_circular = mueller_circular_array->cast<mueller_circular_t>();
         mueller_generator_parallactic<P, Q> gen(feed_angle1, feed_angle2,
                                                 mueller_stokes, mueller_circular);
         add_impl2<Q, mueller_generator_parallactic<P, Q>>(
@@ -564,15 +565,14 @@ void visibility_collector<P>::add(
     py::array_t<float, array_flags> weights,
     py::array_t<std::int32_t, array_flags> baselines,
     py::array_t<std::complex<float>, array_flags> vis,
-    py::array_t<float, array_flags> feed_angle1,
-    py::array_t<float, array_flags> feed_angle2,
+    optional<py::array_t<float, array_flags>> feed_angle1,
+    optional<py::array_t<float, array_flags>> feed_angle2,
     py::array_t<std::complex<float>, array_flags> mueller_stokes,
-    py::array_t<std::complex<float>, array_flags> mueller_circular)
+    optional<py::array_t<std::complex<float>, array_flags>> mueller_circular)
 {
     check_dimensions(vis, -1, -1, -1);
     std::size_t Q = vis.shape(2);
     if (Q < 1 || Q > 4)
-        throw std::invalid_argument("vis does not have 1-4 columns");
         throw std::invalid_argument("only 4 input polarizations are supported");
     add_impl<4>(
         std::move(uvw),
