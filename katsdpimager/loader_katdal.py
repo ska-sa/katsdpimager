@@ -110,6 +110,8 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
             if len(value) == 0:
                 raise ValueError('empty sensor')
             value = [pickle.loads(x) for x in value]
+        except (NameError, SyntaxError):
+            raise
         except Exception as e:
             raise CalibrationReadError('Could not read {}: {}'.format(key, e))
         if not all(np.array_equal(value[0], x) for x in value):
@@ -141,6 +143,8 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
         cal_pol_ordering = self._load_cal_attribute('cal_pol_ordering')
         try:
             cal_pol_ordering = np.array(cal_pol_ordering)
+        except (NameError, SyntaxError):
+            raise
         except Exception as e:
             raise CalibrationReadError(str(e))
         if cal_pol_ordering.shape != (4, 2):
@@ -161,6 +165,8 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
         return value is ``None``. Any keyword args are passed to
         :func:`scipy.interpolate.interp1d`.
 
+        Solutions that contain non-finite values are discarded.
+
         Parameters
         ----------
         key : str
@@ -178,7 +184,8 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
             ds = self._file.file['TelescopeState/' + key]
             timestamps = ds['timestamp']
             values = []
-            for i in range(len(timestamps)):
+            good_timestamps = []
+            for i, ts in enumerate(timestamps):
                 solution = pickle.loads(ds['value'][i])
                 if solution.ndim == 2:
                     # Insert a channel axis
@@ -186,12 +193,18 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
                 elif solution.ndim == 3 and stop_channel is not None:
                     solution = solution[start_channel:stop_channel, ...]
                 else:
-                    raise ValueError('wrong number of dimensions'.format(key))
-                values.append(solution)
+                    raise ValueError('wrong number of dimensions')
+                if np.all(np.isfinite(solution)):
+                    good_timestamps.append(ts)
+                    values.append(solution)
+            if not good_timestamps:
+                raise ValueError('no finite solutions')
             values = np.array(values)
             return scipy.interpolate.interp1d(
-                timestamps, values, axis=0, fill_value='extrapolate',
+                good_timestamps, values, axis=0, fill_value='extrapolate',
                 assume_sorted=True, **kwargs)
+        except (NameError, SyntaxError):
+            raise
         except Exception as e:
             _logger.warn('Could not load %s: %s', key, e)
             return None
