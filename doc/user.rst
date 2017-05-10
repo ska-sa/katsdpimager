@@ -136,6 +136,11 @@ Input selection options
    ref-ant=<NAME>
      Name of antenna to use as the reference for identifying scans. Refer to
      the katdal documentation for details.
+   apply=<TYPES>
+     1GC calibration solutions to apply. This does not do any calibration
+     itself, but uses solutions stored in the dataset. The argument can contain
+     any subset of K, B and G to select delay, bandpass and gain solutions. It
+     can also be ``all`` or ``none``.
 
    To provide multiple key-value pairs, specify :option:`-i` multiple times.
 

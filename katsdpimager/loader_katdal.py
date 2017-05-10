@@ -11,9 +11,12 @@ import argparse
 import logging
 import itertools
 import math
+import re
+import cPickle as pickle
 import katsdpimager.loader_core
 import katdal
 import katpoint
+import scipy.interpolate
 import numpy as np
 import astropy.units as units
 import astropy.time
@@ -22,6 +25,11 @@ from . import polarization
 
 
 _logger = logging.getLogger(__name__)
+
+
+class CalibrationReadError(RuntimeError):
+    """An error occurred in loading calibration values from file"""
+    pass
 
 
 def _unique(seq):
@@ -85,6 +93,109 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
                     raise ValueError('Target index {} is out of range'.format(idx))
                 return idx
 
+    def _load_cal_attribute(self, key):
+        """Load a fixed attribute from file.
+
+        If the attribute is presented as a sensor, it is checked to ensure that
+        all the values are the same.
+
+        Raises
+        ------
+        CalibrationReadError
+            if there was a problem reading the value from file (sensor does not exist,
+            does not unpickle correctly, inconsistent values etc)
+        """
+        try:
+            value = self._file.file['TelescopeState/{}'.format(key)]['value']
+            if len(value) == 0:
+                raise ValueError('empty sensor')
+            value = [pickle.loads(x) for x in value]
+        except Exception as e:
+            raise CalibrationReadError('Could not read {}: {}'.format(key, e))
+        if not all(np.array_equal(value[0], x) for x in value):
+            raise CalibrationReadError('Could not read {}: inconsistent values'.format(key))
+        return value[0]
+
+
+    def _load_cal_antlist(self):
+        """Load antenna list used for calibration.
+
+        If the value does not match the antenna list in the katdal dataset,
+        a :exc:`CalibrationReadError` is raised. Eventually this could be
+        extended to allow for an antenna list that doesn't match by permuting
+        the calibration solutions.
+        """
+        cal_antlist = self._load_cal_attribute('cal_antlist')
+        if cal_antlist != [ant.name for ant in self._file.ants]:
+            raise CalibrationReadError('cal_antlist does not match katdal antenna list')
+        return cal_antlist
+
+    def _load_cal_pol_ordering(self):
+        """Load polarization ordering used by calibration solutions.
+
+        Returns
+        -------
+        dict
+            Keys are 'h' and 'v' and values are 0 and 1, in some order
+        """
+        cal_pol_ordering = self._load_cal_attribute('cal_pol_ordering')
+        try:
+            cal_pol_ordering = np.array(cal_pol_ordering)
+        except Exception as e:
+            raise CalibrationReadError(str(e))
+        if cal_pol_ordering.shape != (4, 2):
+            raise CalibrationReadError('cal_pol_ordering does not have expected shape')
+        if cal_pol_ordering[0, 0] != cal_pol_ordering[0, 1]:
+            raise CalibrationReadError('cal_pol_ordering[0] is not consistent')
+        if cal_pol_ordering[1, 0] != cal_pol_ordering[1, 1]:
+            raise CalibrationReadError('cal_pol_ordering[1] is not consistent')
+        order = [cal_pol_ordering[0, 0], cal_pol_ordering[1, 0]]
+        if set(order) != set('vh'):
+            raise CalibrationReadError('cal_pol_ordering does not contain h and v')
+        return {order[0]: 0, order[1]: 1}
+
+    def _load_cal_product(self, key, start_channel=None, stop_channel=None, **kwargs):
+        """Loads calibration solutions from a katdal file.
+
+        If an error occurs while loading the data, a warning is printed and the
+        return value is ``None``. Any keyword args are passed to
+        :func:`scipy.interpolate.interp1d`.
+
+        Parameters
+        ----------
+        key : str
+            Name of the telescope state sensor
+
+        Returns
+        -------
+        interp : callable
+            Interpolation function which accepts timestamps and returns
+            interpolated data with shape (time, channel, pol, antenna). If the
+            solution is channel-independent, that axis will be present with
+            size 1.
+        """
+        try:
+            ds = self._file.file['TelescopeState/' + key]
+            timestamps = ds['timestamp']
+            values = []
+            for i in range(len(timestamps)):
+                solution = pickle.loads(ds['value'][i])
+                if solution.ndim == 2:
+                    # Insert a channel axis
+                    solution = solution[np.newaxis, ...]
+                elif solution.ndim == 3 and stop_channel is not None:
+                    solution = solution[start_channel:stop_channel, ...]
+                else:
+                    raise ValueError('wrong number of dimensions'.format(key))
+                values.append(solution)
+            values = np.array(values)
+            return scipy.interpolate.interp1d(
+                timestamps, values, axis=0, fill_value='extrapolate',
+                assume_sorted=True, **kwargs)
+        except Exception as e:
+            _logger.warn('Could not load %s: %s', key, e)
+            return None
+
     def __init__(self, filename, options):
         super(LoaderKatdal, self).__init__(filename, options)
         parser = argparse.ArgumentParser(
@@ -94,7 +205,16 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
         parser.add_argument('--spw', type=int, default=0, help='Spectral window index within file [%(default)s]')
         parser.add_argument('--target', type=str, help='Target to image (index or name) [auto]')
         parser.add_argument('--ref-ant', type=str, default='', help='Reference antenna for identifying scans [first in file]')
+        parser.add_argument('--apply', type=str, default='all', help='Calibration solutions to pre-apply, from K, B, G, or "all" or "none" [%(default)s]')
         args = parser.parse_args(options)
+        if args.apply == 'all':
+            args.apply = 'KBG'
+        elif args.apply == 'none':
+            args.apply = ''
+        if not re.match('^[KBG]*$', args.apply):
+            parser.error('apply must be some combination of K, B, G, or all')
+        self._apply = frozenset(args.apply)
+
         self._file = katdal.open(filename, ref_ant=args.ref_ant)
         if args.subarray < 0 or args.subarray >= len(self._file.subarrays):
             raise ValueError('Subarray {} is out of range', args.subarray)
@@ -150,6 +270,31 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
         # This determines the reference frame for UVW coordinates.
         self._ref_ant = katpoint.Antenna('', *self._file.ants[0].ref_position_wgs84)
 
+        # Load frequency-independent calibration solutions
+        self._K = None
+        self._G = None
+        self._cal_pol_ordering = None
+        if self._apply != '':
+            try:
+                self._load_cal_antlist()
+                self._cal_pol_ordering = self._load_cal_pol_ordering()
+            except CalibrationReadError as e:
+                _logger.warn('%s', e)
+                _logger.warn('No calibration solutions will be applied')
+            else:
+                if 'K' in self._apply:
+                    try:
+                        self._K = self._load_cal_product('cal_product_K', kind='linear')
+                    except CalibrationReadError as e:
+                        _logger.warn('%s', e)
+                if 'G' in self._apply:
+                    # TODO: ideally this should interpolate magnitude and phase
+                    # separately.
+                    try:
+                        self._G = self._load_cal_product('cal_product_G', kind='linear')
+                    except CalibrationReadError as e:
+                        _logger.warn('%s', e)
+
     @classmethod
     def match(cls, filename):
         return filename.lower().endswith('.h5')
@@ -198,9 +343,19 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
         timestamps = self._file.timestamps
         antenna_uvw = [None] * n_ants
         baseline_idx = np.arange(len(self._baselines)).astype(np.int32)
+        if self._K is not None:
+            # K contains delays. This turns them into complex numbers to
+            # correct phase, per channel. The phases are negated so that the
+            # resulting values can be multiplied rather than divided.
+            freqs = self._file.freqs[start_channel:stop_channel]
+            delay_to_phase = (-2j * np.pi * freqs)[np.newaxis, :, np.newaxis, np.newaxis]
+        if 'B' in self._apply:
+            B = self._load_cal_product('cal_product_B', start_channel, stop_channel, kind='linear')
+        else:
+            B = None
         for start in range(0, n_file_times, load_times):
             end = min(n_file_times, start + load_times)
-            # Load a chunk from the lazy indexer, then reindexed to order
+            # Load a chunk from the lazy indexer, then reindex to order
             # the baselines as desired.
             select = np.s_[start:end, start_channel:stop_channel, :]
             fix = np.s_[:, :, self._corr_product_permutation]
@@ -212,6 +367,29 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
                 flags[:, :, self._missing_corr_products] = True
             # Apply flags to weights
             weights *= np.logical_not(flags)
+
+            # Apply frequency-independent corrections
+            if self._K is not None:
+                K = np.exp(self._K(timestamps[start:end]) * delay_to_phase)
+            if self._G is not None:
+                G = self._G(timestamps[start:end])
+            if B is not None:
+                B_sample = B(timestamps[start:end])
+            if self._K is not None or self._G is not None or B is not None:
+                idx = 0
+                for a, b in self._baselines:
+                    for pol in self._polarizations:
+                        cpol = (self._cal_pol_ordering[pol[0]], self._cal_pol_ordering[pol[1]])
+                        if self._K is not None:
+                            vis[:, :, idx] *= K[:, :, cpol[0], a] * K[:, :, cpol[1], b].conj()
+                        if B is not None:
+                            vis[:, :, idx] /= B_sample[:, :, cpol[0], a] * B_sample[:, :, cpol[1], b].conj()
+                        if self._G is not None:
+                            # The np.reciprocal ensures that the expensive
+                            # division part is done prior to broadcasting over
+                            # channels.
+                            vis[:, :, idx] *= np.reciprocal(G[:, :, cpol[0], a] * G[:, :, cpol[1], b].conj())
+                        idx += 1
 
             # Compute per-antenna UVW coordinates and parallactic angles. The
             # tensor product yields arrays of shape 3xN, which we transpose to
