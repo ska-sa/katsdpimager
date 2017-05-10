@@ -381,7 +381,7 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
             # Apply flags to weights
             weights *= np.logical_not(flags)
 
-            # Apply frequency-independent corrections
+            # Apply calibration corrections
             if self._K is not None:
                 K = np.exp(self._K(timestamps[start:end]) * delay_to_phase)
             if self._G is not None:
