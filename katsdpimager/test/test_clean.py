@@ -138,24 +138,26 @@ class TestClean(object):
     @device_test
     def test_subtract_psf(self, context, command_queue):
         loop_gain = 0.25
-        image_shape = (4, 200, 345)
-        psf_shape = (4, 72, 131)
+        image_shape = (4, 200, 344)
+        psf_patch = (4, 72, 130)
         pos = (170, 59)    # chosen so that the PSF will be clipped to the image
         rs = np.random.RandomState(seed=1)
         dirty = rs.standard_normal(image_shape).astype(np.float32)
-        psf = rs.standard_normal(psf_shape).astype(np.float32)
+        psf = rs.standard_normal(psf_patch).astype(np.float32)
         expected = dirty.copy()
         peak_pixel = dirty[:, pos[0], pos[1]]
-        expected[:, 134:200, 0:125] -= loop_gain * peak_pixel[:, np.newaxis, np.newaxis] * psf[:, :66, 6:]
+        expected[:, 134:200, 0:124] -= loop_gain * peak_pixel[:, np.newaxis, np.newaxis] * psf[:, :66, 6:]
+        psf_full = np.ones(image_shape, np.float32)
+        psf_full[:, 64:136, 107:237] = psf
 
         template = clean._SubtractPsfTemplate(context, np.float32, 4)
-        fn = template.instantiate(command_queue, loop_gain, image_shape, psf_shape)
+        fn = template.instantiate(command_queue, loop_gain, image_shape, image_shape)
         fn.ensure_all_bound()
         fn.buffer('dirty').set(command_queue, dirty)
-        fn.buffer('psf').set(command_queue, psf)
+        fn.buffer('psf').set(command_queue, psf_full)
         fn.buffer('peak_pixel').set(command_queue, peak_pixel)
         self._zero_buffer(command_queue, fn.buffer('model'))
-        fn(pos)
+        fn(pos, psf_patch)
         dirty = fn.buffer('dirty').get(command_queue)
         model = fn.buffer('model').get(command_queue)
         np.testing.assert_allclose(expected, dirty, atol=1e-4)

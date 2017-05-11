@@ -478,15 +478,25 @@ class _SubtractPsf(accel.Operation):
         self.template = template
         self.kernel = template.program.get_kernel('subtract_psf')
 
-    def __call__(self, pos, **kwargs):
-        """Execute the operation, centering the PSF at `pos` in the image. Note
-        that `pos` is specified as (row, col).
+    def __call__(self, pos, psf_patch, **kwargs):
+        """Execute the operation.
+
+        Parameters
+        ----------
+        pos : tuple
+            row, col in image at which to center the PSF
+        psf_patch : tuple
+            num_polarizations, height, width of central area of PSF to subtract
+            (num_polarizations is ignored)
         """
         self.bind(**kwargs)
         self.ensure_all_bound()
         dirty = self.buffer('dirty')
         model = self.buffer('model')
         psf = self.buffer('psf')
+        psf_y = psf.shape[1] // 2 - psf_patch[1] // 2
+        psf_x = psf.shape[2] // 2 - psf_patch[2] // 2
+        psf_addr_offset = psf_y * psf.padded_shape[2] + psf_x
         self.command_queue.enqueue_kernel(
             self.kernel,
             [
@@ -499,16 +509,17 @@ class _SubtractPsf(accel.Operation):
                 psf.buffer,
                 np.int32(psf.padded_shape[2]),
                 np.int32(psf.padded_shape[1] * psf.padded_shape[2]),
-                np.int32(psf.shape[2]),
-                np.int32(psf.shape[1]),
+                np.int32(psf_patch[2]),
+                np.int32(psf_patch[1]),
+                np.int32(psf_addr_offset),
                 self.buffer('peak_pixel').buffer,
                 np.int32(pos[1]), np.int32(pos[0]),
-                np.int32(pos[1] - psf.shape[2] // 2),
-                np.int32(pos[0] - psf.shape[1] // 2),
+                np.int32(pos[1] - psf_patch[2] // 2),
+                np.int32(pos[0] - psf_patch[1] // 2),
                 np.float32(self.loop_gain)
             ],
-            global_size=(accel.roundup(psf.shape[2], self.template.wgsx),
-                         accel.roundup(psf.shape[1], self.template.wgsy)),
+            global_size=(accel.roundup(psf_patch[2], self.template.wgsx),
+                         accel.roundup(psf_patch[1], self.template.wgsy)),
             local_size=(self.template.wgsx, self.template.wgsy))
 
 
@@ -589,15 +600,13 @@ class Clean(accel.OperationSequence):
             raise ValueError('dtype mismatch')
         image_shape = (len(image_parameters.polarizations),
                        image_parameters.pixels, image_parameters.pixels)
-        psf_patch = min(image_parameters.pixels, template.clean_parameters.psf_patch)
-        psf_shape = (template.num_polarizations, psf_patch, psf_patch)
         self._update_tiles = template._update_tiles.instantiate(
             command_queue, image_shape, template.clean_parameters.border, allocator)
         tile_shape = self._update_tiles.slots['tile_max'].shape
         self._find_peak = template._find_peak.instantiate(
             command_queue, image_shape, tile_shape, allocator)
         self._subtract_psf = template._subtract_psf.instantiate(
-            command_queue, template.clean_parameters.loop_gain, image_shape, psf_shape,
+            command_queue, template.clean_parameters.loop_gain, image_shape, image_shape,
             allocator)
         ops = [
             ('update_tiles', self._update_tiles),
@@ -630,11 +639,13 @@ class Clean(accel.OperationSequence):
         dirty = self.buffer('dirty')
         self._update_tiles(0, 0, dirty.shape[2], dirty.shape[1])
 
-    def __call__(self, threshold=0):
+    def __call__(self, psf_patch, threshold=0):
         """Run a single minor CLEAN cycle.
 
         Parameters
         ----------
+        psf_patch : tuple
+            Shape of the PSF patch to use for subtraction
         threshold : float, optional
             If specified, skip the cycle if the peak value metric is less
             than this threshold. Note that this value must be chosen relative
@@ -660,13 +671,12 @@ class Clean(accel.OperationSequence):
         if peak_value[0] < threshold:
             return None
 
-        self._subtract_psf(peak_pos)
+        self._subtract_psf(peak_pos, psf_patch)
         # Update the tiles
-        psf_shape = self.buffer('psf').shape
-        x0 = peak_pos[1] - psf_shape[2] // 2
-        x1 = x0 + psf_shape[2]
-        y0 = peak_pos[0] - psf_shape[1] // 2
-        y1 = y0 + psf_shape[1]
+        x0 = peak_pos[1] - psf_patch[2] // 2
+        x1 = x0 + psf_patch[2]
+        y0 = peak_pos[0] - psf_patch[1] // 2
+        y1 = y0 + psf_patch[1]
         self._update_tiles(x0, y0, x1, y1)
         return peak_value[0]
 
@@ -770,22 +780,24 @@ class CleanHost(object):
         self._tile_max[y, x] = best_value
         self._tile_pos[y, x] = best_pos
 
-    def _subtract_psf(self, y, x):
+    def _subtract_psf(self, y, x, psf_patch):
         psf_size_x = self.psf.shape[2]
         psf_size_y = self.psf.shape[1]
+        psf_patch_x = psf_patch[2]
+        psf_patch_y = psf_patch[1]
         image_size_x = self.image.shape[2]
         image_size_y = self.image.shape[1]
         # Centre point to subtract at (x, y) in image
         psf_x = psf_size_x // 2
         psf_y = psf_size_y // 2
-        x0 = x - psf_x
-        x1 = x0 + psf_size_x
-        y0 = y - psf_y
-        y1 = y0 + psf_size_y
-        psf_x0 = 0
-        psf_y0 = 0
-        psf_x1 = psf_size_x
-        psf_y1 = psf_size_y
+        x0 = x - psf_patch_x // 2
+        x1 = x0 + psf_patch_x
+        y0 = y - psf_patch_y // 2
+        y1 = y0 + psf_patch_y
+        psf_x0 = psf_x - psf_patch_x // 2
+        psf_y0 = psf_y - psf_patch_y // 2
+        psf_x1 = psf_x0 + psf_patch_x
+        psf_y1 = psf_y0 + psf_patch_y
         if x0 < 0:
             psf_x0 -= x0
             x0 = 0
@@ -814,14 +826,14 @@ class CleanHost(object):
             for x in range(self._tile_max.shape[1]):
                 self._update_tile(y, x)
 
-    def __call__(self, threshold=0):
+    def __call__(self, psf_patch, threshold=0):
         """Execute a single CLEAN minor cycle."""
         peak_tile = np.unravel_index(np.argmax(self._tile_max), self._tile_max.shape)
         peak_pos = self._tile_pos[peak_tile]
         peak_value = self._tile_max[peak_tile]
         if peak_value < threshold:
             return None
-        (y0, x0, y1, x1) = self._subtract_psf(peak_pos[0], peak_pos[1])
+        (y0, x0, y1, x1) = self._subtract_psf(peak_pos[0], peak_pos[1], psf_patch)
         border = self.clean_parameters.border
         tile_y0 = max((y0 - border) // self.tile_size, 0)
         tile_x0 = max((x0 - border) // self.tile_size, 0)

@@ -19,6 +19,7 @@ void subtract_psf(
     const GLOBAL T * RESTRICT psf,
     int psf_row_stride, int psf_pol_stride,
     int psf_width, int psf_height,
+    int psf_addr_offset,
     const GLOBAL pixel * RESTRICT center,
     int centerx, int centery,
     int startx, int starty,
@@ -49,7 +50,7 @@ void subtract_psf(
         int y = starty + gy;
         if (x >= 0 && x < image_width && y >= 0 && y < image_height)
         {
-            int psf_addr = gy * psf_row_stride + gx;
+            int psf_addr = gy * psf_row_stride + gx + psf_addr_offset;
             int image_addr = y * image_row_stride + x;
             for (int i = 0; i < NPOLS; i++)
             {
