@@ -32,6 +32,30 @@ class CalibrationReadError(RuntimeError):
     pass
 
 
+class ComplexInterpolate1D(object):
+    """Interpolator that separates magnitude and phase of complex values.
+
+    The phase interpolation is done by first linearly interpolating the
+    complex values, then normalising. This is not perfect because the angular
+    velocity changes (slower at the ends and faster in the middle), but it
+    avoids the loss of amplitude that occurs without normalisation.
+
+    The parameters are the same as for :func:`scipy.interpolate.interp1d`,
+    except that fill values other than nan and "extrapolate" should not be
+    used.
+    """
+    def __init__(self, x, y, *args, **kwargs):
+        mag = np.abs(y)
+        phase = y / mag
+        self._mag = scipy.interpolate.interp1d(x, mag, *args, **kwargs)
+        self._phase = scipy.interpolate.interp1d(x, phase, *args, **kwargs)
+
+    def __call__(self, x):
+        mag = self._mag(x)
+        phase = self._phase(x)
+        return phase / np.abs(phase) * mag
+
+
 def _unique(seq):
     """Like np.unique, but operates in pure Python.
 
@@ -163,7 +187,7 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
 
         If an error occurs while loading the data, a warning is printed and the
         return value is ``None``. Any keyword args are passed to
-        :func:`scipy.interpolate.interp1d`.
+        :func:`scipy.interpolate.interp1d` or `ComplexInterpolate1D`.
 
         Solutions that contain non-finite values are discarded.
 
@@ -200,7 +224,12 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
             if not good_timestamps:
                 raise ValueError('no finite solutions')
             values = np.array(values)
-            return scipy.interpolate.interp1d(
+            kind = kwargs.get('kind', 'linear')
+            if np.iscomplexobj(values) and kind not in ['zero', 'nearest']:
+                interp = ComplexInterpolate1D
+            else:
+                interp = scipy.interpolate.interp1d
+            return interp(
                 good_timestamps, values, axis=0, fill_value='extrapolate',
                 assume_sorted=True, **kwargs)
         except (NameError, SyntaxError):
