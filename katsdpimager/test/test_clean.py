@@ -8,8 +8,30 @@ from katsdpsigproc.test.test_accel import device_test
 from nose.tools import *
 
 
-class TestPsfPatch(object):
-    """Tests for :class:`~katsdpimager.clean.PsfPatch`."""
+class _TestPsfPatchBase(object):
+    """Tests for :class:`~katsdpimager.clean.PsfPatch` and :class:`~katsdpimager.clean.psf_patch_host."""
+    def test_peak_only(self):
+        assert_equal((4, 2, 2), self._test())
+
+    def test_low_corner(self):
+        self.psf_host[0, 0, 0] = 0.1
+        assert_equal((4, 206, 304), self._test())
+
+    def test_high_corner(self):
+        self.psf_host[3, 205, 303] = -0.2
+        assert_equal((4, 206, 304), self._test())
+
+    def test_1d(self):
+        target = self.psf_host[1, 0, :152]
+        target[:] = np.arange(152)
+        threshold = 50.5
+        box = self._test(threshold=threshold)
+        hw = box[2] // 2
+        assert_equal(0, sum(target[:-hw] >= threshold))
+        assert_less(0, sum(target[:-hw + 2] >= threshold))
+
+
+class TestPsfPatch(_TestPsfPatchBase):
     @device_test
     def setup(self, context, command_queue):
         self.template = clean.PsfPatchTemplate(context, np.float32, 4)
@@ -25,25 +47,13 @@ class TestPsfPatch(object):
         self.psf.set(self.fn.command_queue, self.psf_host)
         return self.fn(threshold)
 
-    def test_peak_only(self):
-        assert_equal((4, 2, 2), self._test())
 
-    def test_low_corner(self):
-        self.psf_host[0, 0, 0] = 0.1
-        assert_equal((4, 206, 304), self._test())
+class TestPsfPatchHost(_TestPsfPatchBase):
+    def setup(self):
+        self.psf_host = np.zeros((4, 206, 304), np.float32)
 
-    def test_high_corner(self):
-        self.psf_host[3, 205, 303] = 1.0
-        assert_equal((4, 206, 304), self._test())
-
-    def test_1d(self):
-        target = self.psf_host[1, 0, :152]
-        target[:] = np.arange(152)
-        threshold = 50.5
-        box = self._test(threshold=threshold)
-        hw = box[2] // 2
-        assert_equal(0, sum(target[:-hw] >= threshold))
-        assert_less(0, sum(target[:-hw + 2] >= threshold))
+    def _test(self, threshold=0.01):
+        return clean.psf_patch_host(self.psf_host, threshold)
 
 
 class TestClean(object):

@@ -671,6 +671,37 @@ class Clean(accel.OperationSequence):
         return peak_value[0]
 
 
+def psf_patch_host(psf, threshold):
+    """Compute the size of the bounding box of the PSF required to contain all
+    values above `threshold`.
+
+    This is a CPU-only equivalent to :class:`PsfPatch`.
+
+    Parameters
+    ----------
+    psf : ndarray
+        Point spread function, with shape (polarizations, height, width)
+    threshold : float
+        Minimum value that must be included inside the box
+
+    Returns
+    -------
+    box : tuple
+        Shape of the central part of `psf` to retain, with the same
+        dimensions. The size is always even.
+    """
+    nz = np.nonzero(np.abs(psf) >= threshold)
+    if len(nz[0]) == 0:
+        # No values above threshold at all. This should never happen, because
+        # the peak should be 1.0, but return a 2x2 box.
+        return (psf.shape[0], 2, 2)
+    y_dist = np.max(np.abs(nz[1] - psf.shape[1] // 2))
+    x_dist = np.max(np.abs(nz[2] - psf.shape[2] // 2))
+    y_size = min(psf.shape[1], 2 * y_dist + 2)
+    x_size = min(psf.shape[2], 2 * x_dist + 2)
+    return (psf.shape[0], y_size, x_size)
+
+
 @numba.jit(nopython=True)
 def _tile_peak(y0, x0, y1, x1, image, mode, zero):
     """Implementation of :meth:`CleanHost._update_tile`, split out as a
