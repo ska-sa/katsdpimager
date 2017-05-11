@@ -297,7 +297,7 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
             else:
                 if 'K' in self._apply:
                     try:
-                        self._K = self._load_cal_product('cal_product_K', kind='linear')
+                        self._K = self._load_cal_product('cal_product_K', kind='zero')
                     except CalibrationReadError as e:
                         _logger.warn('%s', e)
                 if 'G' in self._apply:
@@ -363,7 +363,7 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
             freqs = self._file.freqs[start_channel:stop_channel]
             delay_to_phase = (-2j * np.pi * freqs)[np.newaxis, :, np.newaxis, np.newaxis]
         if 'B' in self._apply:
-            B = self._load_cal_product('cal_product_B', start_channel, stop_channel, kind='linear')
+            B = self._load_cal_product('cal_product_B', start_channel, stop_channel, kind='zero')
         else:
             B = None
         for start in range(0, n_file_times, load_times):
