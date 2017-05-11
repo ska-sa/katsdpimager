@@ -27,6 +27,119 @@ CLEAN_I = 0
 CLEAN_SUMSQ = 1
 
 
+class PsfPatchTemplate(object):
+    """Examines a PSF to determine how big a PSF patch is required to
+    enclosure all values above some threshold.
+
+    Parameters
+    ----------
+    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+        Context for which kernels will be compiled
+    dtype : {`np.float32`, `np.float64`}
+        Precision of image
+    num_polarizations : int
+        Number of polarizations stored in the dirty image
+    tuning : dict, optional
+        Tuning parameters (unused for now)
+    """
+    def __init__(self, context, dtype, num_polarizations, tuning=None):
+        # TODO: autotuning
+        self.num_polarizations = num_polarizations
+        self.dtype = dtype
+        self.wgsx = 16
+        self.wgsy = 16
+        self.program = accel.build(
+            context, "imager_kernels/clean/psf_patch.mako",
+            {
+                'real_type': katsdpimager.types.dtype_to_ctype(dtype),
+                'wgsx': self.wgsx,
+                'wgsy': self.wgsy,
+                'num_polarizations': num_polarizations
+            },
+            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+
+    def instantiate(self, *args, **kwargs):
+        return PsfPatch(self, *args, **kwargs)
+
+
+class PsfPatch(accel.Operation):
+    """Instantiation of :class:`PsfPatchTemplate`.
+
+    The implementation works by dividing the PSF into tiles, with a workgroup
+    per tile, and doing a workgroup-level reduction in each tile. The
+    inter-tile reduction is done on the host.
+
+    The returned patch size is always even, and to simplify the
+    implementation, may be one pixel larger (in each direction) than
+    necessary. However, the patch size will never exceed the PSF size.
+
+    .. rubric:: Slots
+
+    **psf** : array of shape(num_polarizations, width, height), real
+        PSF, already scaled so that the central value is 1.
+    **bound** : array, int
+        Array of implementation-dependent size containing lower bounds on the
+        l and m distance from the centre, in pixels.
+
+    Parameters
+    ----------
+    template : :class:`PsfPatchTemplate`
+        Operation template
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+        Command queue for the operation
+    shape : tuple of ints
+        Shape for the PSF
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
+    """
+
+    def __init__(self, template, command_queue, shape, allocator=None):
+        if shape[0] != template.num_polarizations:
+            raise ValueError('Mismatch in number of polarizations')
+        super(PsfPatch, self).__init__(command_queue, allocator)
+        wg_x = accel.divup(shape[2], template.wgsx)
+        wg_y = accel.divup(shape[1], template.wgsy)
+        polarizations = accel.Dimension(template.num_polarizations, exact=True)
+        self.slots['psf'] = accel.IOSlot([polarizations, shape[1], shape[2]], template.dtype)
+        self.slots['bound'] = accel.IOSlot([
+            accel.Dimension(wg_y, exact=True),
+            accel.Dimension(wg_x, exact=True),
+            accel.Dimension(2, exact=True)], np.int32)
+        self._bound_host = accel.HostArray((wg_y, wg_x, 2), np.int32, context=command_queue.context)
+        self.template = template
+        self.kernel = template.program.get_kernel('psf_patch')
+
+    def __call__(self, threshold, **kwargs):
+        self.bind(**kwargs)
+        self.ensure_all_bound()
+        psf = self.buffer('psf')
+        bound = self.buffer('bound')
+        self.command_queue.enqueue_kernel(
+            self.kernel,
+            [
+                psf.buffer,
+                np.int32(psf.padded_shape[2]),
+                np.int32(psf.padded_shape[1] * psf.padded_shape[2]),
+                bound.buffer,
+                np.int32(psf.shape[2] - 1),
+                np.int32(psf.shape[1] - 1),
+                np.int32(psf.shape[2] // 2),
+                np.int32(psf.shape[1] // 2),
+                np.float32(threshold)
+            ],
+            global_size=(bound.shape[1] * self.template.wgsx, bound.shape[0] * self.template.wgsy),
+            local_size=(self.template.wgsx, self.template.wgsy)
+        )
+        if isinstance(bound, accel.SVMArray):
+            self.command_queue.finish()
+        bound.get(self.command_queue, self._bound_host)
+        # Turn distances from the centre into a symmetric bounding box size.
+        box = 2 * np.max(self._bound_host, axis=(0, 1)) + 2
+        return (self.template.num_polarizations,
+                min(box[1], psf.shape[1]),
+                min(box[0], psf.shape[2]))
+
+
 def metric_to_power(mode, metric):
     """Convert a peak-finding metric to a value that scales linearly with
     power (e.g. Jy/beam).

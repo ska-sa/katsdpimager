@@ -8,6 +8,44 @@ from katsdpsigproc.test.test_accel import device_test
 from nose.tools import *
 
 
+class TestPsfPatch(object):
+    """Tests for :class:`~katsdpimager.clean.PsfPatch`."""
+    @device_test
+    def setup(self, context, command_queue):
+        self.template = clean.PsfPatchTemplate(context, np.float32, 4)
+        self.fn = self.template.instantiate(command_queue, (4, 206, 304))
+        self.fn.ensure_all_bound()
+        self.psf = self.fn.buffer('psf')
+        self.psf_host = self.psf.empty_like()
+        self.psf_host.fill(0.0)
+        self.psf_host[:, 103, 152] = 1.0    # Set central peak
+
+    def _test(self, threshold=0.01):
+        """Run the function using psf_host, returning the resulting patch size."""
+        self.psf.set(self.fn.command_queue, self.psf_host)
+        return self.fn(threshold)
+
+    def test_peak_only(self):
+        assert_equal((4, 2, 2), self._test())
+
+    def test_low_corner(self):
+        self.psf_host[0, 0, 0] = 0.1
+        assert_equal((4, 206, 304), self._test())
+
+    def test_high_corner(self):
+        self.psf_host[3, 205, 303] = 1.0
+        assert_equal((4, 206, 304), self._test())
+
+    def test_1d(self):
+        target = self.psf_host[1, 0, :152]
+        target[:] = np.arange(152)
+        threshold = 50.5
+        box = self._test(threshold=threshold)
+        hw = box[2] // 2
+        assert_equal(0, sum(target[:-hw] >= threshold))
+        assert_less(0, sum(target[:-hw + 2] >= threshold))
+
+
 class TestClean(object):
     @classmethod
     def _make_psf(cls, size):
