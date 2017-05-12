@@ -606,7 +606,7 @@ visibility_collector<P>::visibility_collector(
 // Factory for a visibility collector with *up to* P polarizations
 template<int P>
 static std::unique_ptr<visibility_collector_base>
-make_visibility_collector_impl(
+make_visibility_collector(
     int polarizations,
     py::array_t<channel_config, array_flags> config,
     std::function<void(py::array)> emit_callback,
@@ -623,7 +623,7 @@ make_visibility_collector_impl(
     else
         // The special case for P=1 prevents an infinite template recursion.
         // When P=1, this code is unreachable.
-        return make_visibility_collector_impl<P == 1 ? 1 : P - 1>(
+        return make_visibility_collector<P == 1 ? 1 : P - 1>(
             polarizations, std::move(config),
             std::move(emit_callback), buffer_capacity);
 }
@@ -643,13 +643,7 @@ PYBIND11_PLUGIN(_preprocess)
 
     module m("_preprocess", "C++ backend of visibility preprocessing");
     class_<visibility_collector_base>(m, "VisibilityCollector")
-        .def(init([](int polarizations,
-                     py::array_t<channel_config, array_flags> config,
-                     std::function<void(py::array)> emit_callback,
-                     std::size_t buffer_capacity) {
-            return make_visibility_collector_impl<4>(
-                polarizations, std::move(config), std::move(emit_callback), buffer_capacity);
-        }))
+        .def(init(&make_visibility_collector<4>))
         .def("add", &visibility_collector_base::add)
         .def("close", &visibility_collector_base::close)
         .def_readonly("num_input", &visibility_collector_base::num_input)
