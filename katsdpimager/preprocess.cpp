@@ -67,7 +67,7 @@ template<typename T, typename ...Args>
 static void check_dimensions_impl(const py::array &array, int axis, T&& dim, Args&&... dims)
 {
     std::ptrdiff_t expected = std::forward<T>(dim);
-    if (expected != -1 && std::size_t(expected) != array.shape(axis))
+    if (expected != -1 && expected != array.shape(axis))
         throw std::invalid_argument("Array has incorrect size");
     check_dimensions_impl(array, axis + 1, std::forward<Args>(dims)...);
 }
