@@ -7,7 +7,16 @@ Requirements
 ============
 katsdpimager is implemented in Python, and is installed with standard Python
 packaging tools. The pure-Python dependencies are automatically handled by
-these packaging tools, but there are some additional requirements:
+these packaging tools, with one exception: for now a special fork of pybind11
+is required, which can be installed with
+
+.. code-block:: sh
+
+    pip install git+ssh://git@github.com/bmerry/pybind11@factory-constructors#egg=pybind11
+
+At some point this functionality is expected to be merged into pybind11.
+
+There are some additional requirements:
 
  - An SSH key that is authorised for Github access to the SKA South Africa
    private repositories;
@@ -17,7 +26,6 @@ these packaging tools, but there are some additional requirements:
    reading Measurement Sets);
  - libhdf5, including development headers (``libhdf5-dev`` in Debian/Ubuntu)
  - `Eigen3`_ (`libeigen3-dev` in Debian/Ubuntu);
- - Boost.Python;
  - A C++ compiler such as GCC.
 
 .. _Casacore: https://github.com/casacore/casacore
