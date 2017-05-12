@@ -204,14 +204,16 @@ Quality options
    also used in the gridding and Fourier transforms. Note that most NVIDIA
    GPUs other than Tesla have extremely poor double-precision performance.
 
-.. option:: --psf-patch
+.. option:: --psf-cutoff
 
-   Pixels in beam patch used for CLEAN.
+   Fraction of PSF peak at which to truncate the PSF for CLEAN. Using a larger
+   value will reduce the cost of each CLEAN cycle, but too large a value may
+   prevent CLEAN from converging.
 
 .. option:: --major <N>, --minor <M>
 
-   Number of major cycles and number of minor cycles per major cycle for
-   CLEAN.
+   Number of major cycles and maximum number of minor cycles per major cycle
+   for CLEAN.
 
 .. option:: --eps-w <VALUE>
 
