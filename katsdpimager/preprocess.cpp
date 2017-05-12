@@ -12,6 +12,7 @@
 #include <pybind11/functional.h>
 #include <pybind11/complex.h>
 #include <pybind11/factory.h>
+#include <pybind11/stl.h>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -24,8 +25,8 @@
 #include <memory>
 #include <utility>
 #include <Eigen/Core>
-#include "mulz.h"
 #include "optional.h"
+#include "mulz.h"
 
 namespace py = pybind11;
 

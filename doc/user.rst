@@ -27,6 +27,8 @@ There are some additional requirements:
  - libhdf5, including development headers (``libhdf5-dev`` in Debian/Ubuntu)
  - `Eigen3`_ (`libeigen3-dev` in Debian/Ubuntu);
  - A C++ compiler such as GCC.
+ - Boost headers, if the C++ compiler is too old to provide either
+   ``std::experimental::optional`` or ``std::optional``.
 
 .. _Casacore: https://github.com/casacore/casacore
 
