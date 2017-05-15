@@ -425,12 +425,19 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
                         if self._K is not None:
                             vis[:, :, idx] *= K[:, :, cpol[0], a] * K[:, :, cpol[1], b].conj()
                         if B is not None:
-                            vis[:, :, idx] /= B_sample[:, :, cpol[0], a] * B_sample[:, :, cpol[1], b].conj()
+                            scale = B_sample[:, :, cpol[0], a] * B_sample[:, :, cpol[1], b].conj()
+                            vis[:, :, idx] /= scale
+                            # Weight is inverse variance, so scale by squared
+                            # magnitude. This ignores the uncertainty in B,
+                            # since we don't know it.
+                            weights[:, :, idx] *= scale.real**2 + scale.imag**2
                         if self._G is not None:
+                            scale = G[:, :, cpol[0], a] * G[:, :, cpol[1], b].conj()
                             # The np.reciprocal ensures that the expensive
                             # division part is done prior to broadcasting over
                             # channels.
-                            vis[:, :, idx] *= np.reciprocal(G[:, :, cpol[0], a] * G[:, :, cpol[1], b].conj())
+                            vis[:, :, idx] *= np.reciprocal(scale)
+                            weights[:, :, idx] *= scale.real**2 + scale.imag**2
                         idx += 1
 
             # Compute per-antenna UVW coordinates and parallactic angles. The
