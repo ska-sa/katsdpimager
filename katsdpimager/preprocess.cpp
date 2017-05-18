@@ -24,6 +24,7 @@
 #include <complex>
 #include <memory>
 #include <utility>
+#include <type_traits>
 #include <Eigen/Core>
 #include "optional.h"
 #include "mulz.h"
@@ -629,17 +630,24 @@ make_visibility_collector(
             std::move(emit_callback), buffer_capacity);
 }
 
+// Registers those with P or fewer
+template<int P>
+static typename std::enable_if<P == 0>::type register_vis_dtypes() {}
+
+template<int P>
+static typename std::enable_if<0 < P>::type register_vis_dtypes()
+{
+    register_vis_dtypes<P - 1>();
+    PYBIND11_NUMPY_DTYPE(vis_t<P>, uv, sub_uv, weights, vis, w_plane, w_slice, channel, baseline, index);
+}
+
 } // anonymous namespace
 
 PYBIND11_PLUGIN(_preprocess)
 {
     using namespace pybind11;
 
-    // TODO: do recursively instead of copy-paste
-    PYBIND11_NUMPY_DTYPE(vis_t<1>, uv, sub_uv, weights, vis, w_plane, w_slice, channel, baseline, index);
-    PYBIND11_NUMPY_DTYPE(vis_t<2>, uv, sub_uv, weights, vis, w_plane, w_slice, channel, baseline, index);
-    PYBIND11_NUMPY_DTYPE(vis_t<3>, uv, sub_uv, weights, vis, w_plane, w_slice, channel, baseline, index);
-    PYBIND11_NUMPY_DTYPE(vis_t<4>, uv, sub_uv, weights, vis, w_plane, w_slice, channel, baseline, index);
+    register_vis_dtypes<4>();
     PYBIND11_NUMPY_DTYPE(channel_config, max_w, w_slices, w_planes, oversample, cell_size);
 
     module m("_preprocess", "C++ backend of visibility preprocessing");
@@ -650,6 +658,6 @@ PYBIND11_PLUGIN(_preprocess)
         .def_readonly("num_input", &visibility_collector_base::num_input)
         .def_readonly("num_output", &visibility_collector_base::num_output)
     ;
-    m.attr("CHANNEL_CONFIG_DTYPE") = py::dtype::of<channel_config>();
+    m.add_object("CHANNEL_CONFIG_DTYPE", py::dtype::of<channel_config>());
     return m.ptr();
 }

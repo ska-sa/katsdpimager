@@ -147,17 +147,9 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
             is the number of output polarizations)
         """
 
-        # Force to single precision, since that's what the C++ code demands.
-        # Note: this is true even when gridding at double precision, as
-        # individual visibilities are very noisy. Also ensure C-contiguous
-        # layout, since otherwise they get converted again.
-        weights = np.require(weights, np.float32, 'C')
-        vis = np.require(vis, np.complex64, 'C')
-        uvw = np.require(uvw, np.float32, 'C')
-        if feed_angle1 is not None:
-            feed_angle1 = np.require(feed_angle1, np.float32, 'C')
-        if feed_angle2 is not None:
-            feed_angle2 = np.require(feed_angle2, np.float32, 'C')
+        # Ensure metres
+        uvw = units.Quantity(uvw, unit=units.m, copy=False)
+        uvw = np.require(uvw.value, np.float32, 'C')
         super(VisibilityCollector, self).add(
             uvw, weights, baselines, vis, feed_angle1, feed_angle2,
             mueller_stokes, mueller_circular)

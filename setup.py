@@ -34,7 +34,7 @@ extensions = [
             get_include('pybind11'),
             get_include('pybind11', user=True)] + list(eigen3.get('include_dirs', [])),
         depends=glob.glob('katsdpimager/*.h'),
-        extra_compile_args=['-std=c++1y', '-g0'],
+        extra_compile_args=['-std=c++1y', '-g0', '-fvisibility=hidden'],
         libraries=list(eigen3.get('libraries', []))
     )
 ]
