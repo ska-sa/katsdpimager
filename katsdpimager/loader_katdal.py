@@ -247,15 +247,15 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
         parser.add_argument('--spw', type=int, default=0, help='Spectral window index within file [%(default)s]')
         parser.add_argument('--target', type=str, help='Target to image (index or name) [auto]')
         parser.add_argument('--ref-ant', type=str, default='', help='Reference antenna for identifying scans [first in file]')
-        parser.add_argument('--apply', type=str, default='all', help='Calibration solutions to pre-apply, from K, B, G, or "all" or "none" [%(default)s]')
+        parser.add_argument('--apply-cal', type=str, default='all', help='Calibration solutions to pre-apply, from K, B, G, or "all" or "none" [%(default)s]')
         args = parser.parse_args(options)
-        if args.apply == 'all':
-            args.apply = 'KBG'
-        elif args.apply == 'none':
-            args.apply = ''
-        if not re.match('^[KBG]*$', args.apply):
-            parser.error('apply must be some combination of K, B, G, or all')
-        self._apply = frozenset(args.apply)
+        if args.apply_cal == 'all':
+            args.apply_cal = 'KBG'
+        elif args.apply_cal == 'none':
+            args.apply_cal = ''
+        if not re.match('^[KBG]*$', args.apply_cal):
+            parser.error('apply-cal must be some combination of K, B, G, or all')
+        self._apply_cal = frozenset(args.apply_cal)
 
         self._file = katdal.open(filename, ref_ant=args.ref_ant)
         if args.subarray < 0 or args.subarray >= len(self._file.subarrays):
@@ -316,7 +316,7 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
         self._K = None
         self._G = None
         self._cal_pol_ordering = None
-        if self._apply != '':
+        if self._apply_cal != '':
             try:
                 self._load_cal_antlist()
                 self._cal_pol_ordering = self._load_cal_pol_ordering()
@@ -324,12 +324,12 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
                 _logger.warn('%s', e)
                 _logger.warn('No calibration solutions will be applied')
             else:
-                if 'K' in self._apply:
+                if 'K' in self._apply_cal:
                     try:
                         self._K = self._load_cal_product('cal_product_K', kind='zero')
                     except CalibrationReadError as e:
                         _logger.warn('%s', e)
-                if 'G' in self._apply:
+                if 'G' in self._apply_cal:
                     # TODO: ideally this should interpolate magnitude and phase
                     # separately.
                     try:
@@ -391,7 +391,7 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
             # resulting values can be multiplied rather than divided.
             freqs = self._file.freqs[start_channel:stop_channel]
             delay_to_phase = (-2j * np.pi * freqs)[np.newaxis, :, np.newaxis, np.newaxis]
-        if 'B' in self._apply:
+        if 'B' in self._apply_cal:
             B = self._load_cal_product('cal_product_B', start_channel, stop_channel, kind='zero')
         else:
             B = None
