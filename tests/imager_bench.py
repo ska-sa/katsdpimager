@@ -31,6 +31,10 @@ def add_parameters(args):
     # argument to vary ONLY the kernel width used in gridding, without
     # simultaneously affecting the set of visibilities used.
     nominal_kernel_width = 60
+    if hasattr(args, 'kernel_width'):
+        kernel_width = args.kernel_width
+    else:
+        kernel_width = nominal_kernel_width
     eps_w = 0.001
     antennas = load_antennas()
     longest = 0.0
@@ -63,7 +67,7 @@ def add_parameters(args):
         w_slices=w_slices,
         w_planes=w_planes,
         max_w=longest,
-        kernel_width=args.kernel_width)
+        kernel_width=kernel_width)
     args.antennas = antennas
     args.array_parameters = array_parameters
     args.grid_parameters = grid_parameters
@@ -105,8 +109,8 @@ def make_vis(args, n_time):
     n_baselines = len(args.antennas) * (len(args.antennas) - 1) // 2
     N = n_time * n_baselines
     uvw = make_uvw(args, n_time)
-    weights = np.ones((N, args.polarizations), np.float32)
-    vis = np.ones((N, args.polarizations), np.complex64)
+    weights = np.ones((1, N, args.polarizations), np.float32)
+    vis = np.ones((1, N, args.polarizations), np.complex64)
     baselines = np.repeat(np.arange(n_baselines, dtype=np.int32), n_time)
     return uvw, weights, baselines, vis
 
@@ -130,12 +134,12 @@ def make_compressed_vis(args, n_time):
     if args.write:
         collector = preprocess.VisibilityCollectorHDF5(
                 args.write,
-                [args.image_parameters], args.grid_parameters, len(vis))
+                [args.image_parameters], [args.grid_parameters], vis.shape[1])
     else:
         collector = preprocess.VisibilityCollectorMem(
-                [args.image_parameters], args.grid_parameters, len(vis))
+                [args.image_parameters], [args.grid_parameters], vis.shape[1])
     mueller = np.identity(args.polarizations, np.complex64)
-    collector.add(0, uvw, weights, baselines, vis, None, None, mueller, None)
+    collector.add(uvw, weights, baselines, vis, None, None, mueller, None)
     collector.close()
     reader = collector.reader()
     return reader
@@ -145,15 +149,17 @@ def benchmark_preprocess(args):
     add_parameters(args)
     n_time = 900
     uvw, weights, baselines, vis = make_vis(args, n_time)
+    n_vis = vis.shape[0] * vis.shape[1]
     start = timeit.default_timer()
     collector = preprocess.VisibilityCollectorMem(
-            [args.image_parameters], args.grid_parameters, len(vis))
-    collector.add(0, uvw, weights, baselines, vis)
+            [args.image_parameters], [args.grid_parameters], n_vis)
+    mueller = np.identity(args.polarizations, np.complex64)
+    collector.add(uvw, weights, baselines, vis, None, None, mueller, None)
     collector.close()
     end = timeit.default_timer()
     elapsed = end - start
-    print("preprocessed {} visibilities in {} seconds".format(len(vis), elapsed))
-    print("{:.2f} Mvis/s".format(len(vis) / elapsed / 1e6))
+    print("preprocessed {} visibilities in {} seconds".format(n_vis, elapsed))
+    print("{:.2f} Mvis/s".format(n_vis / elapsed / 1e6))
 
 
 def benchmark_grid_degrid(args):
@@ -172,7 +178,7 @@ def benchmark_grid_degrid(args):
     uv = gridder.buffer('uv').empty_like()
     w_plane = gridder.buffer('w_plane').empty_like()
     vis = gridder.buffer('vis').empty_like()
-    for w_slice in range(reader.num_w_slices):
+    for w_slice in range(reader.num_w_slices(0)):
         gridder.num_vis = reader.len(0, w_slice)
         N_compressed += gridder.num_vis
         if gridder.num_vis > 0:
