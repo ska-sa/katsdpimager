@@ -10,6 +10,7 @@ from __future__ import print_function, division, absolute_import
 import argparse
 import logging
 import itertools
+import math
 import katsdpimager.loader_core
 import katdal
 import katpoint
@@ -178,7 +179,7 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
             'vh': polarization.STOKES_YX,
             'vv': polarization.STOKES_YY
         }
-        return sorted(out_map[pol] for pol in self._polarizations)
+        return [out_map[pol] for pol in self._polarizations]
 
     def has_feed_angles(self):
         return True
@@ -226,6 +227,9 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
             antenna_pa = units.Quantity(
                 self._file.parangle[start:end, :].transpose(),
                 unit=units.deg, dtype=np.float32, copy=False).to(units.rad)
+            # We've mapped H to x and V to y, so we need the angle from x to H
+            # rather than from x to V.
+            antenna_pa -= math.pi / 2 * units.rad
             # Combine these into per-baseline UVW coordinates and feed angles
             uvw = np.empty((end - start, len(self._baselines), 3), np.float32)
             feed_angle1 = np.empty((end - start, len(self._baselines)), np.float32)
