@@ -82,8 +82,7 @@ def get_parser():
     group.add_argument('--kernel-width', type=int, default=60, help='Support of combined anti-aliasing + w kernel [computed]')
     group.add_argument('--eps-w', type=float, default=0.01, help='Level at which to truncate W kernel [%(default)s]')
     group = parser.add_argument_group('Cleaning options')
-    # TODO: compute from some heuristic if not specified, instead of a hard-coded default
-    group.add_argument('--psf-patch', type=int, default=100, help='Pixels in beam patch for cleaning [%(default)s]')
+    group.add_argument('--psf-cutoff', type=float, default=0.05, help='fraction of PSF peak at which to truncate PSF [%(default)s]')
     group.add_argument('--loop-gain', type=float, default=0.1, help='Loop gain for cleaning [%(default)s]')
     group.add_argument('--major-gain', type=float, default=0.85, help='Fraction of peak to clean in each major cycle [%(default)s]')
     group.add_argument('--major', type=int, default=1, help='Major cycles [%(default)s]')
@@ -226,18 +225,16 @@ def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block
             queue.finish()
 
 
-def extract_psf(image, psf):
-    """Copy the central region of `image` to `psf`.
+def extract_psf(psf, psf_patch):
+    """Extract the central region of a PSF.
 
-    .. todo::
-
-        Move to clean module, and ideally on the GPU.
+    This function is 2D: the polarization axis must have already been removed.
     """
-    y0 = (image.shape[1] - psf.shape[1]) // 2
-    y1 = y0 + psf.shape[1]
-    x0 = (image.shape[2] - psf.shape[2]) // 2
-    x1 = y0 + psf.shape[2]
-    psf[...] = image[..., y0:y1, x0:x1]
+    y0 = (psf.shape[0] - psf_patch[0]) // 2
+    y1 = y0 + psf_patch[0]
+    x0 = (psf.shape[1] - psf_patch[1]) // 2
+    x1 = x0 + psf_patch[1]
+    return psf[..., y0:y1, x0:x1]
 
 
 class ColorFormatter(logging.Formatter):
@@ -351,10 +348,9 @@ class ChannelParameters(object):
             clean_mode = clean.CLEAN_SUMSQ
         else:
             raise ValueError('Unhandled --clean-mode {}'.format(args.clean_mode))
-        psf_patch = min(args.psf_patch, self.image_p.pixels)
         border = int(round(self.image_p.pixels * args.border))
         self.clean_p = parameters.CleanParameters(
-            args.minor, args.loop_gain, args.major_gain, clean_mode, psf_patch, border)
+            args.minor, args.loop_gain, args.major_gain, clean_mode, args.psf_cutoff, border)
 
     def log_parameters(self, suffix=''):
         log_parameters("Image parameters" + suffix, self.image_p)
@@ -401,11 +397,18 @@ def process_channel(dataset, args, start_channel,
     scale = np.reciprocal(dirty[..., dirty.shape[1] // 2, dirty.shape[2] // 2])
     imager.scale_dirty(scale)
     queue.finish()
-    extract_psf(dirty, psf)
-    restoring_beam = beam.fit_beam(psf[0])
+    imager.dirty_to_psf()
+    # dirty_to_psf works by swapping, so re-fetch the buffer pointers
+    psf = imager.buffer('psf')
+    dirty = imager.buffer('dirty')
+    psf_patch = imager.psf_patch()
+    logger.info('Using %dx%d patch for PSF', psf_patch[2], psf_patch[1])
+    # Extract the patch for beam fitting
+    psf_core = extract_psf(psf[0], psf_patch[1:])
+    restoring_beam = beam.fit_beam(psf_core)
     if args.write_psf is not None:
         with progress.step('Write PSF'):
-            io.write_fits_image(dataset, dirty, image_p,
+            io.write_fits_image(dataset, psf, image_p,
                                 args.write_psf, channel, restoring_beam)
 
     #### Imaging ####
@@ -430,7 +433,7 @@ def process_channel(dataset, args, start_channel,
 
         #### Deconvolution ####
         imager.clean_reset()
-        peak_value = imager.clean_cycle()
+        peak_value = imager.clean_cycle(psf_patch)
         peak_power = clean.metric_to_power(clean_p.mode, peak_value)
         threshold_power = (1.0 - clean_p.major_gain) * peak_power
         threshold_metric = clean.power_to_metric(clean_p.mode, threshold_power)
@@ -438,7 +441,7 @@ def process_channel(dataset, args, start_channel,
         bar = progress.make_progressbar('CLEAN', max=clean_p.minor - 1)
         with progress.finishing(bar):
             for j in bar.iter(range(clean_p.minor - 1)):
-                value = imager.clean_cycle(threshold_metric)
+                value = imager.clean_cycle(psf_patch, threshold_metric)
                 if value is None:
                     break
         queue.finish()

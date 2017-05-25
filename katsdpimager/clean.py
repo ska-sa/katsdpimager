@@ -27,6 +27,119 @@ CLEAN_I = 0
 CLEAN_SUMSQ = 1
 
 
+class PsfPatchTemplate(object):
+    """Examines a PSF to determine how big a PSF patch is required to
+    enclosure all values above some threshold.
+
+    Parameters
+    ----------
+    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+        Context for which kernels will be compiled
+    dtype : {`np.float32`, `np.float64`}
+        Precision of image
+    num_polarizations : int
+        Number of polarizations stored in the dirty image
+    tuning : dict, optional
+        Tuning parameters (unused for now)
+    """
+    def __init__(self, context, dtype, num_polarizations, tuning=None):
+        # TODO: autotuning
+        self.num_polarizations = num_polarizations
+        self.dtype = dtype
+        self.wgsx = 16
+        self.wgsy = 16
+        self.program = accel.build(
+            context, "imager_kernels/clean/psf_patch.mako",
+            {
+                'real_type': katsdpimager.types.dtype_to_ctype(dtype),
+                'wgsx': self.wgsx,
+                'wgsy': self.wgsy,
+                'num_polarizations': num_polarizations
+            },
+            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+
+    def instantiate(self, *args, **kwargs):
+        return PsfPatch(self, *args, **kwargs)
+
+
+class PsfPatch(accel.Operation):
+    """Instantiation of :class:`PsfPatchTemplate`.
+
+    The implementation works by dividing the PSF into tiles, with a workgroup
+    per tile, and doing a workgroup-level reduction in each tile. The
+    inter-tile reduction is done on the host.
+
+    The returned patch size is generally odd, but will never exceed the PSF size
+    (so if the side lobes extend all the way to the edge, it will be equal to the
+    PSF size, which is even).
+
+    .. rubric:: Slots
+
+    **psf** : array of shape(num_polarizations, width, height), real
+        PSF, already scaled so that the central value is 1.
+    **bound** : array, int
+        Array of implementation-dependent size containing lower bounds on the
+        l and m distance from the centre, in pixels.
+
+    Parameters
+    ----------
+    template : :class:`PsfPatchTemplate`
+        Operation template
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+        Command queue for the operation
+    shape : tuple of ints
+        Shape for the PSF
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
+    """
+
+    def __init__(self, template, command_queue, shape, allocator=None):
+        if shape[0] != template.num_polarizations:
+            raise ValueError('Mismatch in number of polarizations')
+        super(PsfPatch, self).__init__(command_queue, allocator)
+        wg_x = accel.divup(shape[2], template.wgsx)
+        wg_y = accel.divup(shape[1], template.wgsy)
+        polarizations = accel.Dimension(template.num_polarizations, exact=True)
+        self.slots['psf'] = accel.IOSlot([polarizations, shape[1], shape[2]], template.dtype)
+        self.slots['bound'] = accel.IOSlot([
+            accel.Dimension(wg_y, exact=True),
+            accel.Dimension(wg_x, exact=True),
+            accel.Dimension(2, exact=True)], np.int32)
+        self._bound_host = accel.HostArray((wg_y, wg_x, 2), np.int32, context=command_queue.context)
+        self.template = template
+        self.kernel = template.program.get_kernel('psf_patch')
+
+    def __call__(self, threshold, **kwargs):
+        self.bind(**kwargs)
+        self.ensure_all_bound()
+        psf = self.buffer('psf')
+        bound = self.buffer('bound')
+        self.command_queue.enqueue_kernel(
+            self.kernel,
+            [
+                psf.buffer,
+                np.int32(psf.padded_shape[2]),
+                np.int32(psf.padded_shape[1] * psf.padded_shape[2]),
+                bound.buffer,
+                np.int32(psf.shape[2] - 1),
+                np.int32(psf.shape[1] - 1),
+                np.int32(psf.shape[2] // 2),
+                np.int32(psf.shape[1] // 2),
+                np.float32(threshold)
+            ],
+            global_size=(bound.shape[1] * self.template.wgsx, bound.shape[0] * self.template.wgsy),
+            local_size=(self.template.wgsx, self.template.wgsy)
+        )
+        if isinstance(bound, accel.SVMArray):
+            self.command_queue.finish()
+        bound.get(self.command_queue, self._bound_host)
+        # Turn distances from the centre into a symmetric bounding box size.
+        box = 2 * np.max(self._bound_host, axis=(0, 1)) + 1
+        return (self.template.num_polarizations,
+                min(box[1], psf.shape[1]),
+                min(box[0], psf.shape[2]))
+
+
 def metric_to_power(mode, metric):
     """Convert a peak-finding metric to a value that scales linearly with
     power (e.g. Jy/beam).
@@ -365,15 +478,25 @@ class _SubtractPsf(accel.Operation):
         self.template = template
         self.kernel = template.program.get_kernel('subtract_psf')
 
-    def __call__(self, pos, **kwargs):
-        """Execute the operation, centering the PSF at `pos` in the image. Note
-        that `pos` is specified as (row, col).
+    def __call__(self, pos, psf_patch, **kwargs):
+        """Execute the operation.
+
+        Parameters
+        ----------
+        pos : tuple
+            row, col in image at which to center the PSF
+        psf_patch : tuple
+            num_polarizations, height, width of central area of PSF to subtract
+            (num_polarizations is ignored)
         """
         self.bind(**kwargs)
         self.ensure_all_bound()
         dirty = self.buffer('dirty')
         model = self.buffer('model')
         psf = self.buffer('psf')
+        psf_y = psf.shape[1] // 2 - psf_patch[1] // 2
+        psf_x = psf.shape[2] // 2 - psf_patch[2] // 2
+        psf_addr_offset = psf_y * psf.padded_shape[2] + psf_x
         self.command_queue.enqueue_kernel(
             self.kernel,
             [
@@ -386,16 +509,17 @@ class _SubtractPsf(accel.Operation):
                 psf.buffer,
                 np.int32(psf.padded_shape[2]),
                 np.int32(psf.padded_shape[1] * psf.padded_shape[2]),
-                np.int32(psf.shape[2]),
-                np.int32(psf.shape[1]),
+                np.int32(psf_patch[2]),
+                np.int32(psf_patch[1]),
+                np.int32(psf_addr_offset),
                 self.buffer('peak_pixel').buffer,
                 np.int32(pos[1]), np.int32(pos[0]),
-                np.int32(pos[1] - psf.shape[2] // 2),
-                np.int32(pos[0] - psf.shape[1] // 2),
+                np.int32(pos[1] - psf_patch[2] // 2),
+                np.int32(pos[0] - psf_patch[1] // 2),
                 np.float32(self.loop_gain)
             ],
-            global_size=(accel.roundup(psf.shape[2], self.template.wgsx),
-                         accel.roundup(psf.shape[1], self.template.wgsy)),
+            global_size=(accel.roundup(psf_patch[2], self.template.wgsx),
+                         accel.roundup(psf_patch[1], self.template.wgsy)),
             local_size=(self.template.wgsx, self.template.wgsy))
 
 
@@ -476,15 +600,13 @@ class Clean(accel.OperationSequence):
             raise ValueError('dtype mismatch')
         image_shape = (len(image_parameters.polarizations),
                        image_parameters.pixels, image_parameters.pixels)
-        psf_patch = min(image_parameters.pixels, template.clean_parameters.psf_patch)
-        psf_shape = (template.num_polarizations, psf_patch, psf_patch)
         self._update_tiles = template._update_tiles.instantiate(
             command_queue, image_shape, template.clean_parameters.border, allocator)
         tile_shape = self._update_tiles.slots['tile_max'].shape
         self._find_peak = template._find_peak.instantiate(
             command_queue, image_shape, tile_shape, allocator)
         self._subtract_psf = template._subtract_psf.instantiate(
-            command_queue, template.clean_parameters.loop_gain, image_shape, psf_shape,
+            command_queue, template.clean_parameters.loop_gain, image_shape, image_shape,
             allocator)
         ops = [
             ('update_tiles', self._update_tiles),
@@ -517,11 +639,13 @@ class Clean(accel.OperationSequence):
         dirty = self.buffer('dirty')
         self._update_tiles(0, 0, dirty.shape[2], dirty.shape[1])
 
-    def __call__(self, threshold=0):
+    def __call__(self, psf_patch, threshold=0):
         """Run a single minor CLEAN cycle.
 
         Parameters
         ----------
+        psf_patch : tuple
+            Shape of the PSF patch to use for subtraction
         threshold : float, optional
             If specified, skip the cycle if the peak value metric is less
             than this threshold. Note that this value must be chosen relative
@@ -547,15 +671,45 @@ class Clean(accel.OperationSequence):
         if peak_value[0] < threshold:
             return None
 
-        self._subtract_psf(peak_pos)
+        self._subtract_psf(peak_pos, psf_patch)
         # Update the tiles
-        psf_shape = self.buffer('psf').shape
-        x0 = peak_pos[1] - psf_shape[2] // 2
-        x1 = x0 + psf_shape[2]
-        y0 = peak_pos[0] - psf_shape[1] // 2
-        y1 = y0 + psf_shape[1]
+        x0 = peak_pos[1] - psf_patch[2] // 2
+        x1 = x0 + psf_patch[2]
+        y0 = peak_pos[0] - psf_patch[1] // 2
+        y1 = y0 + psf_patch[1]
         self._update_tiles(x0, y0, x1, y1)
         return peak_value[0]
+
+
+def psf_patch_host(psf, threshold):
+    """Compute the size of the bounding box of the PSF required to contain all
+    values above `threshold`.
+
+    This is a CPU-only equivalent to :class:`PsfPatch`.
+
+    Parameters
+    ----------
+    psf : ndarray
+        Point spread function, with shape (polarizations, height, width)
+    threshold : float
+        Minimum value that must be included inside the box
+
+    Returns
+    -------
+    box : tuple
+        Shape of the central part of `psf` to retain, with the same
+        dimensions. The size is always even.
+    """
+    nz = np.nonzero(np.abs(psf) >= threshold)
+    if len(nz[0]) == 0:
+        # No values above threshold at all. This should never happen, because
+        # the peak should be 1.0, but return a 1x1 box.
+        return (psf.shape[0], 1, 1)
+    y_dist = np.max(np.abs(nz[1] - psf.shape[1] // 2))
+    x_dist = np.max(np.abs(nz[2] - psf.shape[2] // 2))
+    y_size = min(psf.shape[1], 2 * y_dist + 1)
+    x_size = min(psf.shape[2], 2 * x_dist + 1)
+    return (psf.shape[0], y_size, x_size)
 
 
 @numba.jit(nopython=True)
@@ -626,22 +780,24 @@ class CleanHost(object):
         self._tile_max[y, x] = best_value
         self._tile_pos[y, x] = best_pos
 
-    def _subtract_psf(self, y, x):
+    def _subtract_psf(self, y, x, psf_patch):
         psf_size_x = self.psf.shape[2]
         psf_size_y = self.psf.shape[1]
+        psf_patch_x = psf_patch[2]
+        psf_patch_y = psf_patch[1]
         image_size_x = self.image.shape[2]
         image_size_y = self.image.shape[1]
         # Centre point to subtract at (x, y) in image
         psf_x = psf_size_x // 2
         psf_y = psf_size_y // 2
-        x0 = x - psf_x
-        x1 = x0 + psf_size_x
-        y0 = y - psf_y
-        y1 = y0 + psf_size_y
-        psf_x0 = 0
-        psf_y0 = 0
-        psf_x1 = psf_size_x
-        psf_y1 = psf_size_y
+        x0 = x - psf_patch_x // 2
+        x1 = x0 + psf_patch_x
+        y0 = y - psf_patch_y // 2
+        y1 = y0 + psf_patch_y
+        psf_x0 = psf_x - psf_patch_x // 2
+        psf_y0 = psf_y - psf_patch_y // 2
+        psf_x1 = psf_x0 + psf_patch_x
+        psf_y1 = psf_y0 + psf_patch_y
         if x0 < 0:
             psf_x0 -= x0
             x0 = 0
@@ -670,14 +826,14 @@ class CleanHost(object):
             for x in range(self._tile_max.shape[1]):
                 self._update_tile(y, x)
 
-    def __call__(self, threshold=0):
+    def __call__(self, psf_patch, threshold=0):
         """Execute a single CLEAN minor cycle."""
         peak_tile = np.unravel_index(np.argmax(self._tile_max), self._tile_max.shape)
         peak_pos = self._tile_pos[peak_tile]
         peak_value = self._tile_max[peak_tile]
         if peak_value < threshold:
             return None
-        (y0, x0, y1, x1) = self._subtract_psf(peak_pos[0], peak_pos[1])
+        (y0, x0, y1, x1) = self._subtract_psf(peak_pos[0], peak_pos[1], psf_patch)
         border = self.clean_parameters.border
         tile_y0 = max((y0 - border) // self.tile_size, 0)
         tile_x0 = max((x0 - border) // self.tile_size, 0)

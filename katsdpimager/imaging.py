@@ -32,6 +32,8 @@ class ImagingTemplate(object):
         self.degridder = grid.DegridderTemplate(context, image_parameters, grid_parameters)
         self.grid_image = image.GridImageTemplate(
             command_queue, layer_shape, padded_layer_shape, image_parameters.real_dtype)
+        self.psf_patch = clean.PsfPatchTemplate(
+            context, image_parameters.real_dtype, image_shape[0])
         self.clean = clean.CleanTemplate(
             context, clean_parameters, image_parameters.real_dtype, image_shape[0])
         self.scale = image.ScaleTemplate(
@@ -68,6 +70,8 @@ class Imaging(accel.OperationSequence):
             grid_shape, lm_scale, lm_bias, allocator)
         self._image_to_grid = template.grid_image.instantiate_image_to_grid(
             degrid_shape, lm_scale, lm_bias, allocator)
+        self._psf_patch = template.psf_patch.instantiate(
+            template.command_queue, image_shape, allocator)
         self._clean = template.clean.instantiate(
             template.command_queue, template.image_parameters, allocator)
         self._scale = template.scale.instantiate(
@@ -80,6 +84,7 @@ class Imaging(accel.OperationSequence):
             ('degridder', self._degridder),
             ('grid_to_image', self._grid_to_image),
             ('image_to_grid', self._image_to_grid),
+            ('psf_patch', self._psf_patch),
             ('clean', self._clean),
             ('scale', self._scale)
         ]
@@ -94,7 +99,7 @@ class Imaging(accel.OperationSequence):
             'layer': ['grid_to_image:layer', 'image_to_grid:layer'],
             'dirty': ['grid_to_image:image', 'clean:dirty', 'scale:data'],
             'model': ['clean:model', 'image_to_grid:image'],
-            'psf': ['clean:psf'],
+            'psf': ['clean:psf', 'psf_patch:psf'],
             'tile_max': ['clean:tile_max'],
             'tile_pos': ['clean:tile_pos'],
             'peak_value': ['clean:peak_value'],
@@ -182,13 +187,22 @@ class Imaging(accel.OperationSequence):
         self._scale.set_scale_factor(scale_factor)
         self._scale()
 
+    def dirty_to_psf(self):
+        dirty = self.buffer('dirty')
+        psf = self.buffer('psf')
+        self.bind(dirty=psf, psf=dirty)
+
+    def psf_patch(self):
+        self.ensure_all_bound()
+        return self._psf_patch(self.template.clean_parameters.psf_cutoff)
+
     def clean_reset(self):
         self.ensure_all_bound()
         self._clean.reset()
 
-    def clean_cycle(self, threshold=None):
+    def clean_cycle(self, psf_patch, threshold=None):
         self.ensure_all_bound()
-        return self._clean(threshold)
+        return self._clean(psf_patch, threshold)
 
 
 class ImagingHost(object):
@@ -197,8 +211,7 @@ class ImagingHost(object):
     def __init__(self, image_parameters, weight_parameters, grid_parameters, clean_parameters):
         lm_scale = float(image_parameters.pixel_size)
         lm_bias = -0.5 * image_parameters.pixels * lm_scale
-        psf_shape = (len(image_parameters.polarizations),
-                     clean_parameters.psf_patch, clean_parameters.psf_patch)
+        self._psf_cutoff = clean_parameters.psf_cutoff
         self._gridder = grid.GridderHost(image_parameters, grid_parameters)
         self._degridder = grid.DegridderHost(image_parameters, grid_parameters)
         self._grid = self._gridder.values
@@ -209,7 +222,7 @@ class ImagingHost(object):
         self._layer = np.empty(self._grid.shape, image_parameters.complex_dtype)
         self._dirty = np.empty(self._grid.shape, image_parameters.real_dtype)
         self._model = np.empty(self._grid.shape, image_parameters.real_dtype)
-        self._psf = np.empty(psf_shape, image_parameters.real_dtype)
+        self._psf = np.empty(self._grid.shape, image_parameters.real_dtype)
         self._grid_to_image = image.GridToImageHost(
             self._grid, self._layer, self._dirty,
             self._gridder.kernel.taper(image_parameters.pixels), lm_scale, lm_bias)
@@ -285,8 +298,14 @@ class ImagingHost(object):
     def scale_dirty(self, scale_factor):
         self._dirty *= scale_factor[:, np.newaxis, np.newaxis]
 
+    def dirty_to_psf(self):
+        self._psf[:] = self._dirty
+
+    def psf_patch(self):
+        return clean.psf_patch_host(self._psf, self._psf_cutoff)
+
     def clean_reset(self):
         self._clean.reset()
 
-    def clean_cycle(self, threshold=None):
-        return self._clean(threshold)
+    def clean_cycle(self, psf_patch, threshold=None):
+        return self._clean(psf_patch, threshold)

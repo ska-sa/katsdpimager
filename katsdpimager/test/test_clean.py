@@ -8,6 +8,54 @@ from katsdpsigproc.test.test_accel import device_test
 from nose.tools import *
 
 
+class _TestPsfPatchBase(object):
+    """Tests for :class:`~katsdpimager.clean.PsfPatch` and :class:`~katsdpimager.clean.psf_patch_host."""
+    def test_peak_only(self):
+        assert_equal((4, 1, 1), self._test())
+
+    def test_low_corner(self):
+        self.psf_host[0, 0, 0] = 0.1
+        assert_equal((4, 206, 304), self._test())
+
+    def test_high_corner(self):
+        self.psf_host[3, 205, 303] = -0.2
+        assert_equal((4, 205, 303), self._test())
+
+    def test_1d(self):
+        target = self.psf_host[1, 0, :152]
+        target[:] = np.arange(152)
+        threshold = 50.5
+        box = self._test(threshold=threshold)
+        hw = box[2] // 2
+        assert_equal(0, sum(target[:-hw] >= threshold))
+        assert_greater_equal(target[-hw], threshold)
+
+
+class TestPsfPatch(_TestPsfPatchBase):
+    @device_test
+    def setup(self, context, command_queue):
+        self.template = clean.PsfPatchTemplate(context, np.float32, 4)
+        self.fn = self.template.instantiate(command_queue, (4, 206, 304))
+        self.fn.ensure_all_bound()
+        self.psf = self.fn.buffer('psf')
+        self.psf_host = self.psf.empty_like()
+        self.psf_host.fill(0.0)
+        self.psf_host[:, 103, 152] = 1.0    # Set central peak
+
+    def _test(self, threshold=0.01):
+        """Run the function using psf_host, returning the resulting patch size."""
+        self.psf.set(self.fn.command_queue, self.psf_host)
+        return self.fn(threshold)
+
+
+class TestPsfPatchHost(_TestPsfPatchBase):
+    def setup(self):
+        self.psf_host = np.zeros((4, 206, 304), np.float32)
+
+    def _test(self, threshold=0.01):
+        return clean.psf_patch_host(self.psf_host, threshold)
+
+
 class TestClean(object):
     @classmethod
     def _make_psf(cls, size):
@@ -90,24 +138,26 @@ class TestClean(object):
     @device_test
     def test_subtract_psf(self, context, command_queue):
         loop_gain = 0.25
-        image_shape = (4, 200, 345)
-        psf_shape = (4, 72, 131)
+        image_shape = (4, 200, 344)
+        psf_patch = (4, 72, 130)
         pos = (170, 59)    # chosen so that the PSF will be clipped to the image
         rs = np.random.RandomState(seed=1)
         dirty = rs.standard_normal(image_shape).astype(np.float32)
-        psf = rs.standard_normal(psf_shape).astype(np.float32)
+        psf = rs.standard_normal(psf_patch).astype(np.float32)
         expected = dirty.copy()
         peak_pixel = dirty[:, pos[0], pos[1]]
-        expected[:, 134:200, 0:125] -= loop_gain * peak_pixel[:, np.newaxis, np.newaxis] * psf[:, :66, 6:]
+        expected[:, 134:200, 0:124] -= loop_gain * peak_pixel[:, np.newaxis, np.newaxis] * psf[:, :66, 6:]
+        psf_full = np.ones(image_shape, np.float32)
+        psf_full[:, 64:136, 107:237] = psf
 
         template = clean._SubtractPsfTemplate(context, np.float32, 4)
-        fn = template.instantiate(command_queue, loop_gain, image_shape, psf_shape)
+        fn = template.instantiate(command_queue, loop_gain, image_shape, image_shape)
         fn.ensure_all_bound()
         fn.buffer('dirty').set(command_queue, dirty)
-        fn.buffer('psf').set(command_queue, psf)
+        fn.buffer('psf').set(command_queue, psf_full)
         fn.buffer('peak_pixel').set(command_queue, peak_pixel)
         self._zero_buffer(command_queue, fn.buffer('model'))
-        fn(pos)
+        fn(pos, psf_patch)
         dirty = fn.buffer('dirty').get(command_queue)
         model = fn.buffer('model').get(command_queue)
         np.testing.assert_allclose(expected, dirty, atol=1e-4)

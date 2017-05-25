@@ -240,12 +240,14 @@ Kernel support: {self.kernel_width} cells""".format(self=self)
 
 
 class CleanParameters(object):
-    def __init__(self, minor, loop_gain, major_gain, mode, psf_patch, border):
+    def __init__(self, minor, loop_gain, major_gain, mode, psf_cutoff, border):
         self.minor = minor
         self.loop_gain = loop_gain
         self.major_gain = major_gain
         self.mode = mode
-        self.psf_patch = psf_patch
+        self.psf_cutoff = psf_cutoff
+        if self.psf_cutoff >= 1.0:
+            raise ValueError('PSF cutoff must be less than 1')
         self.border = border
 
     def __str__(self):
@@ -253,7 +255,7 @@ class CleanParameters(object):
 Loop gain: {self.loop_gain}
 Major cycle gain: {self.major_gain}
 Max minor cycles: {self.minor}
-PSF patch size: {self.psf_patch} pixels
+PSF cutoff: {self.psf_cutoff}
 Peak function: {mode}
 Border: {self.border} pixels""".format(
             self=self, mode='I' if self.mode == clean.CLEAN_I else 'I^2+Q^2+U^2+V^2')
