@@ -36,3 +36,6 @@ unittest2
 git+ssh://git@github.com/ska-sa/katdal#egg=katdal
 git+ssh://git@github.com/ska-sa/katpoint#egg=point
 git+ssh://git@github.com/ska-sa/katsdpsigproc#egg=katsdpsigproc
+# Currently still depends on a feature not yet merged into pybind11, so using
+# bmerry's personal fork.
+git+https://github.com/bmerry/pybind11@factory-constructors#egg=pybind11
