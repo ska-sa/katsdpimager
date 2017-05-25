@@ -11,7 +11,7 @@ from nose.tools import *
 class _TestPsfPatchBase(object):
     """Tests for :class:`~katsdpimager.clean.PsfPatch` and :class:`~katsdpimager.clean.psf_patch_host."""
     def test_peak_only(self):
-        assert_equal((4, 2, 2), self._test())
+        assert_equal((4, 1, 1), self._test())
 
     def test_low_corner(self):
         self.psf_host[0, 0, 0] = 0.1
@@ -19,7 +19,7 @@ class _TestPsfPatchBase(object):
 
     def test_high_corner(self):
         self.psf_host[3, 205, 303] = -0.2
-        assert_equal((4, 206, 304), self._test())
+        assert_equal((4, 205, 303), self._test())
 
     def test_1d(self):
         target = self.psf_host[1, 0, :152]
@@ -28,7 +28,7 @@ class _TestPsfPatchBase(object):
         box = self._test(threshold=threshold)
         hw = box[2] // 2
         assert_equal(0, sum(target[:-hw] >= threshold))
-        assert_less(0, sum(target[:-hw + 2] >= threshold))
+        assert_greater_equal(target[-hw], threshold)
 
 
 class TestPsfPatch(_TestPsfPatchBase):

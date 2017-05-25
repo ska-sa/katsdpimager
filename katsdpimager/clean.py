@@ -69,9 +69,9 @@ class PsfPatch(accel.Operation):
     per tile, and doing a workgroup-level reduction in each tile. The
     inter-tile reduction is done on the host.
 
-    The returned patch size is always even, and to simplify the
-    implementation, may be one pixel larger (in each direction) than
-    necessary. However, the patch size will never exceed the PSF size.
+    The returned patch size is generally odd, but will never exceed the PSF size
+    (so if the side lobes extend all the way to the edge, it will be equal to the
+    PSF size, which is even).
 
     .. rubric:: Slots
 
@@ -134,7 +134,7 @@ class PsfPatch(accel.Operation):
             self.command_queue.finish()
         bound.get(self.command_queue, self._bound_host)
         # Turn distances from the centre into a symmetric bounding box size.
-        box = 2 * np.max(self._bound_host, axis=(0, 1)) + 2
+        box = 2 * np.max(self._bound_host, axis=(0, 1)) + 1
         return (self.template.num_polarizations,
                 min(box[1], psf.shape[1]),
                 min(box[0], psf.shape[2]))
@@ -703,12 +703,12 @@ def psf_patch_host(psf, threshold):
     nz = np.nonzero(np.abs(psf) >= threshold)
     if len(nz[0]) == 0:
         # No values above threshold at all. This should never happen, because
-        # the peak should be 1.0, but return a 2x2 box.
-        return (psf.shape[0], 2, 2)
+        # the peak should be 1.0, but return a 1x1 box.
+        return (psf.shape[0], 1, 1)
     y_dist = np.max(np.abs(nz[1] - psf.shape[1] // 2))
     x_dist = np.max(np.abs(nz[2] - psf.shape[2] // 2))
-    y_size = min(psf.shape[1], 2 * y_dist + 2)
-    x_size = min(psf.shape[2], 2 * x_dist + 2)
+    y_size = min(psf.shape[1], 2 * y_dist + 1)
+    x_size = min(psf.shape[2], 2 * x_dist + 1)
     return (psf.shape[0], y_size, x_size)
 
 
