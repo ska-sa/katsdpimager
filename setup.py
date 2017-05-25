@@ -63,7 +63,7 @@ setup(
         'cpu': ['numba'],
         'report': ['aplpy', 'matplotlib', 'mako'],
         'ms': ['python-casacore'],
-        'katdal': ['katdal', 'katpoint'],
+        'katdal': ['katdal', 'katpoint', 'scipy>=0.17'],
         'benchmark': ['katpoint']
     }
 )
