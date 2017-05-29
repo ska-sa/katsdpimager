@@ -1,4 +1,5 @@
 <%include file="/port.mako"/>
+<%include file="metric.mako"/>
 <%namespace name="sample" file="sample.mako"/>
 
 #define WGSX ${wgsx}
@@ -49,17 +50,7 @@ void update_tiles(
             if (image_x < image_width && image_y < image_height)
             {
                 int pixel_offset = image_y * image_row_stride + image_x;
-                T pix = image[pixel_offset];
-% if clean_sumsq:
-                value = pix * pix;
-                for (int i = 1; i < NPOLS; i++)
-                {
-                    pix = image[i * image_pol_stride + pixel_offset];
-                    value = fma(pix, pix, value);
-                }
-% else:
-                value = fabs(pix);
-% endif
+                value = clean_metric(image, pixel_offset, image_pol_stride);
             }
             else
                 value = -1;
