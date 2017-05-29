@@ -176,7 +176,7 @@ class TestClean(object):
         dirty.flat[rs.choice(dirty.size, 1000, replace=False)] += 1e6
 
         # Test with CLEAN_I
-        template = clean._NoiseTemplate(context, np.float32, 4, clean.CLEAN_I)
+        template = clean.NoiseEstTemplate(context, np.float32, 4, clean.CLEAN_I)
         fn = template.instantiate(command_queue, image_shape, border)
         fn.ensure_all_bound()
         fn.buffer('dirty').set(command_queue, dirty)
@@ -184,7 +184,7 @@ class TestClean(object):
         np.testing.assert_allclose(estimated, std, rtol=rtol)
 
         # Test with CLEAN_SUMSQ
-        template = clean._NoiseTemplate(context, np.float32, 4, clean.CLEAN_SUMSQ)
+        template = clean.NoiseEstTemplate(context, np.float32, 4, clean.CLEAN_SUMSQ)
         fn = template.instantiate(command_queue, image_shape, border)
         fn.ensure_all_bound()
         fn.buffer('dirty').set(command_queue, dirty)

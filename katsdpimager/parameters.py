@@ -240,10 +240,11 @@ Kernel support: {self.kernel_width} cells""".format(self=self)
 
 
 class CleanParameters(object):
-    def __init__(self, minor, loop_gain, major_gain, mode, psf_cutoff, border):
+    def __init__(self, minor, loop_gain, major_gain, threshold, mode, psf_cutoff, border):
         self.minor = minor
         self.loop_gain = loop_gain
         self.major_gain = major_gain
+        self.threshold = threshold
         self.mode = mode
         self.psf_cutoff = psf_cutoff
         if self.psf_cutoff >= 1.0:
@@ -254,6 +255,7 @@ class CleanParameters(object):
         return """\
 Loop gain: {self.loop_gain}
 Major cycle gain: {self.major_gain}
+Threshold: {self.threshold} sigma
 Max minor cycles: {self.minor}
 PSF cutoff: {self.psf_cutoff}
 Peak function: {mode}

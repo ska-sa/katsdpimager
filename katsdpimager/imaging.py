@@ -34,6 +34,8 @@ class ImagingTemplate(object):
             command_queue, layer_shape, padded_layer_shape, image_parameters.real_dtype)
         self.psf_patch = clean.PsfPatchTemplate(
             context, image_parameters.real_dtype, image_shape[0])
+        self.noise_est = clean.NoiseEstTemplate(
+            context, image_parameters.real_dtype, image_shape[0], clean_parameters.mode)
         self.clean = clean.CleanTemplate(
             context, clean_parameters, image_parameters.real_dtype, image_shape[0])
         self.scale = image.ScaleTemplate(
@@ -72,6 +74,8 @@ class Imaging(accel.OperationSequence):
             degrid_shape, lm_scale, lm_bias, allocator)
         self._psf_patch = template.psf_patch.instantiate(
             template.command_queue, image_shape, allocator)
+        self._noise_est = template.noise_est.instantiate(
+            template.command_queue, image_shape, template.clean_parameters.border, allocator)
         self._clean = template.clean.instantiate(
             template.command_queue, template.image_parameters, allocator)
         self._scale = template.scale.instantiate(
@@ -85,6 +89,7 @@ class Imaging(accel.OperationSequence):
             ('grid_to_image', self._grid_to_image),
             ('image_to_grid', self._image_to_grid),
             ('psf_patch', self._psf_patch),
+            ('noise_est', self._noise_est),
             ('clean', self._clean),
             ('scale', self._scale)
         ]
@@ -97,7 +102,7 @@ class Imaging(accel.OperationSequence):
             'grid': ['gridder:grid', 'grid_to_image:grid'],
             'degrid': ['degridder:grid', 'image_to_grid:grid'],
             'layer': ['grid_to_image:layer', 'image_to_grid:layer'],
-            'dirty': ['grid_to_image:image', 'clean:dirty', 'scale:data'],
+            'dirty': ['grid_to_image:image', 'noise_est:dirty', 'clean:dirty', 'scale:data'],
             'model': ['clean:model', 'image_to_grid:image'],
             'psf': ['clean:psf', 'psf_patch:psf'],
             'tile_max': ['clean:tile_max'],
@@ -107,7 +112,9 @@ class Imaging(accel.OperationSequence):
             'peak_pixel': ['clean:peak_pixel']
         }
         # TODO: could alias weights with something, since it's only needed
-        # early on while setting up weights_grid
+        # early on while setting up weights_grid.
+        # TODO: could alias noise_est:rank with something, since it's only
+        # needed at the start of the minor cycles (it is small though).
         super(Imaging, self).__init__(
             template.command_queue, operations, compounds, allocator=allocator)
 
@@ -195,6 +202,10 @@ class Imaging(accel.OperationSequence):
     def psf_patch(self):
         self.ensure_all_bound()
         return self._psf_patch(self.template.clean_parameters.psf_cutoff)
+
+    def noise_est(self):
+        self.ensure_all_bound()
+        return self._noise_est()
 
     def clean_reset(self):
         self.ensure_all_bound()

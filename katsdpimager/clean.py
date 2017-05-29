@@ -162,6 +162,151 @@ def power_to_metric(mode, power):
         raise ValueError('Invalid mode {}'.format(mode))
 
 
+class NoiseEstTemplate(object):
+    """Robust estimation of the noise (as a standard deviation) in an image.
+
+    The noise is estimated by computing the median via binary search.
+
+    Parameters
+    ----------
+    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+        Context for which kernels will be compiled
+    dtype : {`np.float32`, `np.float64`}
+        Image precision
+    num_polarizations : int
+        number of polarizations stored in the dirty/residual image
+    mode : {:data:`CLEAN_I`, :data:`CLEAN_SUMSQ`}
+        Metric for scoring pixels
+    tuning : dict, optional
+        Tuning parameters (unused for now)
+    """
+    def __init__(self, context, dtype, num_polarizations, mode, tuning=None):
+        self.context = context
+        self.dtype = np.dtype(dtype)
+        self.num_polarizations = num_polarizations
+        self.mode = mode
+        self.wgsx = 32
+        self.wgsy = 8
+        self.tilex = 32
+        self.tiley = 32
+        self.program = accel.build(
+            context, "imager_kernels/clean/rank.mako",
+            {
+                'real_type': katsdpimager.types.dtype_to_ctype(dtype),
+                'wgsx': self.wgsx,
+                'wgsy': self.wgsy,
+                'tilex': self.tilex,
+                'tiley': self.tiley,
+                'num_polarizations': num_polarizations,
+                'clean_mode': mode
+            },
+            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+
+    def instantiate(self, *args, **kwargs):
+        return NoiseEst(self, *args, **kwargs)
+
+
+class NoiseEst(accel.Operation):
+    """Instantiation of :class:`NoiseEstTemplate`
+
+    .. rubric:: Slots
+
+    **dirty** : array of shape (num_polarizations, height, width), real
+        Dirty image
+    **rank** : implementation-defined
+        Temporary buffer used during operation. It holds a rank of a test
+        value for each workgroup.
+
+    Parameters
+    ----------
+    template : :class:`NoiseEstTemplate`
+        Operation template
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+        Command queue for the operation
+    image_shape : tuple of ints
+        Shape for the dirty image
+    border : int
+        Distance from each edge of dirty image to ignore in ranking
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
+    """
+
+    def __init__(self, template, command_queue, image_shape, border, allocator=None):
+        if image_shape[0] != template.num_polarizations:
+            raise ValueError('Mismatch in number of polarizations')
+        if border * 2 >= min(image_shape[1], image_shape[2]):
+            raise ValueError('Border must be less than half the image size')
+        super(NoiseEst, self).__init__(command_queue, allocator)
+        self._num_tiles_x = accel.divup(image_shape[2] - 2 * border, template.tilex)
+        self._num_tiles_y = accel.divup(image_shape[1] - 2 * border, template.tiley)
+        self.template = template
+        self.border = border
+        self.slots['dirty'] = accel.IOSlot([
+            accel.Dimension(template.num_polarizations, exact=True),
+            image_shape[1], image_shape[2]], template.dtype)
+        self.slots['rank'] = accel.IOSlot([
+            accel.Dimension(self._num_tiles_y, exact=True),
+            accel.Dimension(self._num_tiles_x, exact=True)], np.uint32)
+        self.kernel = template.program.get_kernel('compute_rank')
+
+    def __call__(self, **kwargs):
+        self.bind(**kwargs)
+        self.ensure_all_bound()
+        dtype = self.template.dtype
+        if dtype == np.float32:
+            itype = np.uint32
+        elif dtype == np.float64:
+            itype = np.uint64
+        else:
+            raise TypeError('dtype {} is not supported'.format(dtype))
+        # We do binary search on the bit representation of the floating point
+        # value.
+        low = dtype.type(0)
+        high = dtype.type(np.inf)
+        dirty = self.buffer('dirty')
+        rank = self.buffer('rank')
+        rank_host = rank.empty_like()
+        median_rank = (dirty.shape[1] - 2 * self.border) * (dirty.shape[2] - 2 * self.border) // 2
+        # We don't need a super-accurate estimate down to the last bit.
+        # The check against tiny is to prevent an infinite loop if all
+        # the values are zero.
+        while high > np.finfo(dtype).tiny and high > low * 1.0001:
+            # Average the integer bit representations, which will effectively
+            # binary search the exponent.
+            ilow = low.view(itype)
+            ihigh = high.view(itype)
+            imid = ilow + (ihigh - ilow) // 2
+            mid = imid.astype(itype).view(dtype)
+            self.command_queue.enqueue_kernel(
+                self.kernel,
+                [
+                    dirty.buffer,
+                    np.int32(dirty.padded_shape[2]),
+                    np.int32(dirty.padded_shape[1] * dirty.padded_shape[2]),
+                    np.int32(dirty.shape[2] - self.border),
+                    np.int32(dirty.shape[1] - self.border),
+                    np.int32(self.border),
+                    rank.buffer,
+                    mid
+                ],
+                global_size=(self._num_tiles_x * self.template.wgsx,
+                             self._num_tiles_y * self.template.wgsy),
+                local_size=(self.template.wgsx, self.template.wgsy))
+            if isinstance(rank, accel.SVMArray):
+                self.command_queue.finish()
+            rank.get(self.command_queue, rank_host)
+            cur_rank = rank_host.sum()
+            if cur_rank < median_rank:
+                low = mid
+            else:
+                high = mid
+        # low and high are very close, but we use low so that if the input is
+        # more than 50% zeros then the output is zero.
+        # The magic number is the ratio between median and stddev in a
+        # Gaussian.
+        return metric_to_power(self.template.mode, low) * 1.48260222
+
+
 class _UpdateTilesTemplate(object):
     """Operation template to compute the peak (including location) for each
     tile intersecting a window.
@@ -521,149 +666,6 @@ class _SubtractPsf(accel.Operation):
             global_size=(accel.roundup(psf_patch[2], self.template.wgsx),
                          accel.roundup(psf_patch[1], self.template.wgsy)),
             local_size=(self.template.wgsx, self.template.wgsy))
-
-
-class _NoiseTemplate(object):
-    """Robust estimation of the noise (as a standard deviation) in an image.
-
-    The noise is estimated by computing the median via binary search.
-
-    Parameters
-    ----------
-    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
-        Context for which kernels will be compiled
-    dtype : {`np.float32`, `np.float64`}
-        Image precision
-    num_polarizations : int
-        number of polarizations stored in the dirty/residual image
-    mode : {:data:`CLEAN_I`, :data:`CLEAN_SUMSQ`}
-        Metric for scoring pixels
-    tuning : dict, optional
-        Tuning parameters (unused for now)
-    """
-    def __init__(self, context, dtype, num_polarizations, mode, tuning=None):
-        self.context = context
-        self.dtype = np.dtype(dtype)
-        self.num_polarizations = num_polarizations
-        self.mode = mode
-        self.wgsx = 32
-        self.wgsy = 8
-        self.tilex = 32
-        self.tiley = 32
-        self.program = accel.build(
-            context, "imager_kernels/clean/rank.mako",
-            {
-                'real_type': katsdpimager.types.dtype_to_ctype(dtype),
-                'wgsx': self.wgsx,
-                'wgsy': self.wgsy,
-                'tilex': self.tilex,
-                'tiley': self.tiley,
-                'num_polarizations': num_polarizations,
-                'clean_mode': mode
-            },
-            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
-
-    def instantiate(self, *args, **kwargs):
-        return _Noise(self, *args, **kwargs)
-
-
-class _Noise(accel.Operation):
-    """Instantiation of :class:`_NoiseTemplate`
-
-    .. rubric:: Slots
-
-    **dirty** : array of shape (num_polarizations, height, width), real
-        Dirty image
-    **rank** : implementation-defined
-        Temporary buffer used during operation. It holds a rank of a test
-        value for each workgroup.
-
-    Parameters
-    ----------
-    template : :class:`_NoiseTemplate`
-        Operation template
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
-        Command queue for the operation
-    image_shape : tuple of ints
-        Shape for the dirty image
-    border : int
-        Distance from each edge of dirty image to ignore in ranking
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
-        Allocator used to allocate unbound slots
-    """
-
-    def __init__(self, template, command_queue, image_shape, border, allocator=None):
-        if image_shape[0] != template.num_polarizations:
-            raise ValueError('Mismatch in number of polarizations')
-        if border * 2 >= min(image_shape[1], image_shape[2]):
-            raise ValueError('Border must be less than half the image size')
-        super(_Noise, self).__init__(command_queue, allocator)
-        self._num_tiles_x = accel.divup(image_shape[2] - 2 * border, template.tilex)
-        self._num_tiles_y = accel.divup(image_shape[1] - 2 * border, template.tiley)
-        self.template = template
-        self.border = border
-        self.slots['dirty'] = accel.IOSlot([
-            accel.Dimension(template.num_polarizations, exact=True),
-            image_shape[1], image_shape[2]], template.dtype)
-        self.slots['rank'] = accel.IOSlot([
-            accel.Dimension(self._num_tiles_y, exact=True),
-            accel.Dimension(self._num_tiles_x, exact=True)], np.uint32)
-        self.kernel = template.program.get_kernel('compute_rank')
-
-    def __call__(self, **kwargs):
-        self.bind(**kwargs)
-        self.ensure_all_bound()
-        dtype = self.template.dtype
-        if dtype == np.float32:
-            itype = np.uint32
-        elif dtype == np.float64:
-            itype = np.uint64
-        else:
-            raise TypeError('dtype {} is not supported'.format(dtype))
-        # We do binary search on the bit representation of the floating point
-        # value.
-        low = dtype.type(0)
-        high = dtype.type(np.inf)
-        dirty = self.buffer('dirty')
-        rank = self.buffer('rank')
-        rank_host = rank.empty_like()
-        median_rank = (dirty.shape[1] - 2 * self.border) * (dirty.shape[2] - 2 * self.border) // 2
-        # We don't need a super-accurate estimate down to the last bit.
-        # The check against tiny is to prevent an infinite loop if all
-        # the values are zero.
-        while high > np.finfo(dtype).tiny and high > low * 1.0001:
-            # Average the integer bit representations, which will effectively
-            # binary search the exponent.
-            ilow = low.view(itype)
-            ihigh = high.view(itype)
-            imid = ilow + (ihigh - ilow) // 2
-            mid = imid.astype(itype).view(dtype)
-            self.command_queue.enqueue_kernel(
-                self.kernel,
-                [
-                    dirty.buffer,
-                    np.int32(dirty.padded_shape[2]),
-                    np.int32(dirty.padded_shape[1] * dirty.padded_shape[2]),
-                    np.int32(dirty.shape[2] - self.border),
-                    np.int32(dirty.shape[1] - self.border),
-                    np.int32(self.border),
-                    rank.buffer,
-                    mid
-                ],
-                global_size=(self._num_tiles_x * self.template.wgsx,
-                             self._num_tiles_y * self.template.wgsy),
-                local_size=(self.template.wgsx, self.template.wgsy))
-            rank.get(self.command_queue, rank_host)
-            cur_rank = rank_host.sum()
-            if cur_rank < median_rank:
-                low = mid
-            else:
-                high = mid
-        # low and high are very close, but we use low so that if the input is
-        # more than 50% zeros then the output is zero.
-        # The magic number is the ratio between median and stddev in a
-        # Gaussian.
-        return metric_to_power(self.template.mode, low) * 1.48260222
 
 
 class CleanTemplate(object):
