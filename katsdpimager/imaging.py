@@ -222,7 +222,7 @@ class ImagingHost(object):
     def __init__(self, image_parameters, weight_parameters, grid_parameters, clean_parameters):
         lm_scale = float(image_parameters.pixel_size)
         lm_bias = -0.5 * image_parameters.pixels * lm_scale
-        self._psf_cutoff = clean_parameters.psf_cutoff
+        self._clean_parameters = clean_parameters
         self._gridder = grid.GridderHost(image_parameters, grid_parameters)
         self._degridder = grid.DegridderHost(image_parameters, grid_parameters)
         self._grid = self._gridder.values
@@ -313,7 +313,11 @@ class ImagingHost(object):
         self._psf[:] = self._dirty
 
     def psf_patch(self):
-        return clean.psf_patch_host(self._psf, self._psf_cutoff)
+        return clean.psf_patch_host(self._psf, self._clean_parameters.psf_cutoff)
+
+    def noise_est(self):
+        return clean.noise_est_host(self._dirty, self._clean_parameters.border,
+                                    self._clean_parameters.mode)
 
     def clean_reset(self):
         self._clean.reset()

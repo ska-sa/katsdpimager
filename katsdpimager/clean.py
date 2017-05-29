@@ -857,6 +857,17 @@ def psf_patch_host(psf, threshold):
     return (psf.shape[0], y_size, x_size)
 
 
+def noise_est_host(image, border, mode):
+    """Host implementation of :class:`NoiseEstTemplate`."""
+    image = image[:, border:-border, border:-border]
+    if mode == CLEAN_I:
+        metric = np.abs(image)
+    elif mode == CLEAN_SUMSQ:
+        metric = np.sum(image**2, axis=0)
+    median = np.median(metric)
+    return metric_to_power(mode, median) * 1.48260222
+
+
 @numba.jit(nopython=True)
 def _tile_peak(y0, x0, y1, x1, image, mode, zero):
     """Implementation of :meth:`CleanHost._update_tile`, split out as a
