@@ -275,8 +275,8 @@ class NoiseEst(accel.Operation):
             # binary search the exponent.
             ilow = low.view(itype)
             ihigh = high.view(itype)
-            imid = ilow + (ihigh - ilow) // 2
-            mid = imid.astype(itype).view(dtype)
+            imid = ilow + (ihigh - ilow) // itype(2)
+            mid = imid.view(dtype)
             self.command_queue.enqueue_kernel(
                 self.kernel,
                 [
