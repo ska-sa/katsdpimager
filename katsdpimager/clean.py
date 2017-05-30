@@ -165,7 +165,8 @@ def power_to_metric(mode, power):
 class NoiseEstTemplate(object):
     """Robust estimation of the noise (as a standard deviation) in an image.
 
-    The noise is estimated by computing the median via binary search.
+    The noise is estimated by computing the median absolute value via binary
+    search.
 
     Parameters
     ----------
@@ -302,8 +303,8 @@ class NoiseEst(accel.Operation):
                 high = mid
         # low and high are very close, but we use low so that if the input is
         # more than 50% zeros then the output is zero.
-        # The magic number is the ratio between median and stddev in a
-        # Gaussian.
+        # The magic number is the ratio between median absolute deviation and
+        # standard deviation of a Gaussian.
         return metric_to_power(self.template.mode, low) * 1.48260222
 
 
