@@ -214,16 +214,28 @@ Quality options
    also used in the gridding and Fourier transforms. Note that most NVIDIA
    GPUs other than Tesla have extremely poor double-precision performance.
 
-.. option:: --psf-cutoff
+.. option:: --psf-cutoff <VALUE>
 
    Fraction of PSF peak at which to truncate the PSF for CLEAN. Using a larger
    value will reduce the cost of each CLEAN cycle, but too large a value may
    prevent CLEAN from converging.
 
+.. option:: --major-gain <VALUE>
+
+   Fraction of the peak at the start of a major cycle that will be cleaned in
+   that cycle.
+
+.. option:: --threshold <SIGMAS>
+
+   Threshold at which CLEAN should stop, as a multiple of the estimated RMS
+   noise. CLEAN is stopped when any of the conditions specified by
+   :option:`--major-gain`, :option:`--threshold` or :option:`--minor` is
+   reached.
+
 .. option:: --major <N>, --minor <M>
 
-   Number of major cycles and maximum number of minor cycles per major cycle
-   for CLEAN.
+   Maximum number of major cycles and maximum number of minor cycles per major
+   cycle for CLEAN.
 
 .. option:: --eps-w <VALUE>
 
