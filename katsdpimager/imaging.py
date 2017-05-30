@@ -133,7 +133,7 @@ class Imaging(accel.OperationSequence):
 
     def finalize_weights(self):
         self.ensure_all_bound()
-        self._weights.finalize()
+        return self._weights.finalize()
 
     def clear_grid(self):
         self.ensure_all_bound()
@@ -259,7 +259,7 @@ class ImagingHost(object):
         self._weights.grid(uv, weights)
 
     def finalize_weights(self):
-        self._weights.finalize()
+        return self._weights.finalize()
 
     def clear_grid(self):
         self._grid.fill(0)

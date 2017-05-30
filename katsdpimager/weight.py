@@ -17,8 +17,8 @@ stages:
 
 3. The total statistical weight per cell is converted into a density weight.
    If :math:`W_i` is the total statistical weight for a cell, then a uniform
-   weight is computed as :math:`1 / W` and a robust weight as :math:`1 / (WS^2 +
-   1)`, where
+   weight is computed as :math:`1 / W_i` and a robust weight as
+   :math:`1 / (W_i S^2 + 1)`, where
 
    .. math:: S^2 = \overline{W}(5\cdot 10^{-R})^2
 
@@ -215,6 +215,9 @@ class DensityWeights(accel.Operation):
     is :math:`1 / (aW + b)`. This allows for natural, uniform or robust
     weights. If not altered, the default gives uniform weights.
 
+    It also computes and returns the normalized thermal RMS, as described in
+    equation 3.5 of [Bri95]_.
+
     .. rubric:: Slots
 
     **grid** : array of shape `num_polarizations` × height × width, float32
@@ -244,13 +247,18 @@ class DensityWeights(accel.Operation):
              accel.Dimension(grid_shape[1], self.template.wgs_y),
              accel.Dimension(grid_shape[2], self.template.wgs_x)),
             np.float32)
+        self.slots['sums'] = accel.IOSlot((3,), np.float32)
         self._kernel = self.template.program.get_kernel('density_weights')
+        self._sums_host = accel.HostArray((3,), np.float32, context=self.template.context)
 
     def _run(self):
         grid = self.buffer('grid')
+        sums = self.buffer('sums')
+        sums.zero(self.command_queue)
         self.command_queue.enqueue_kernel(
             self._kernel,
             [
+                sums.buffer,
                 grid.buffer,
                 np.int32(grid.padded_shape[2]),
                 np.int32(grid.padded_shape[1] * grid.padded_shape[2]),
@@ -261,6 +269,10 @@ class DensityWeights(accel.Operation):
                          accel.roundup(grid.shape[1], self.template.wgs_y)),
             local_size=(self.template.wgs_x, self.template.wgs_y)
         )
+        if isinstance(sums, accel.SVMArray):
+            self.command_queue.finish()
+        sums.get(self.command_queue, self._sums_host)
+        return np.sqrt(self._sums_host[2] * self._sums_host[0]) / self._sums_host[1]
 
     def parameters(self):
         return {
@@ -274,7 +286,7 @@ class DensityWeights(accel.Operation):
 
 class MeanWeightTemplate(object):
     """Template for computing the "mean weight", as defined by equation 3.17 in
-    [Bri95]_. The input is the gridded density weights. The kernel outputs the
+    [Bri95]_. The input is the gridded statistical weights. The kernel outputs the
     sum of squared cell weights and the sum of weights, and the Python code
     computes the mean weight from these. Only the first polarization is used.
 
@@ -397,7 +409,7 @@ class Weights(accel.OperationSequence):
      1. If using :const:`ROBUST` weighting, set :attr:`robustness`.
      2. Call :meth:`clear`.
      3. For each batch of weights, call :meth:`grid`.
-     4. Call :meth:`finalize`.
+     4. Call :meth:`finalize`, which returns the normalized thermal RMS.
 
     .. rubric:: Slots
 
@@ -502,9 +514,12 @@ class Weights(accel.OperationSequence):
             self._density_weights.a = S2
             self._density_weights.b = 1.0
         if self._density_weights is not None:
-            self._density_weights()
+            normalized_rms = self._density_weights()
+        else:
+            normalized_rms = 1.0
         if self._fill is not None:
             self._fill()
+        return normalized_rms
 
 
 class WeightsHost(object):
@@ -543,13 +558,29 @@ class WeightsHost(object):
     def finalize(self):
         if self.weight_type == NATURAL:
             self.weights_grid.fill(1)
+            normalized_rms = 1.0
         elif self.weight_type == UNIFORM:
+            sum_w = np.sum(self.weights_grid[0])
+            sum_dw = np.count_nonzero(self.weights_grid[0])
+            # Force density weights to be zero for cells with no visibilities
+            self.weights_grid[self.weights_grid == 0] = np.inf
             np.reciprocal(self.weights_grid, out=self.weights_grid)
+            # d^2w == d, because d is 1/w
+            sum_d2w = np.sum(self.weights_grid[0])
+            normalized_rms = np.sqrt(sum_d2w * sum_w) / sum_dw
         elif self.weight_type == ROBUST:
             sum_sq = np.dot(self.weights_grid[0].flat, self.weights_grid[0].flat)
             sum = np.sum(self.weights_grid[0])
             mean_weight = sum_sq / sum
             S2 = (5 * 10**(-self.robustness))**2 / mean_weight
-            self.weights_grid[:] = np.reciprocal(self.weights_grid * S2 + 1)
+            old_weights0 = self.weights_grid[0].copy()
+            # Force density weights to be zero for cells with no visibilities
+            self.weights_grid[self.weights_grid == 0] = np.inf
+            np.reciprocal(self.weights_grid * S2 + 1, out=self.weights_grid)
+            sum_w = np.sum(old_weights0)
+            sum_dw = np.sum(self.weights_grid[0] * old_weights0)
+            sum_d2w = np.sum(self.weights_grid[0]**2 * old_weights0)
+            normalized_rms = np.sqrt(sum_d2w * sum_w) / sum_dw
         else:
             raise ValueError('Unknown weight_type {}'.format(self.weight_type))
+        return normalized_rms
