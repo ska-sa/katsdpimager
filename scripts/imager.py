@@ -187,8 +187,9 @@ def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block):
                     bar.next(len(chunk.uv))
         else:
             bar.next(total)
-        imager.finalize_weights()
+        normalized_rms = imager.finalize_weights()
         queue.finish()
+    logger.info('Normalized thermal RMS: %g', normalized_rms)
 
 
 def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block, full_cycle=False):

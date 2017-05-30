@@ -63,10 +63,20 @@ class TestDensityWeights(object):
         self.data = np.zeros(self.grid_shape, np.float32)
         self.expected = np.zeros(self.grid_shape, np.float32)
         n_indices = 100
-        indices = zip(*(rs.randint(0, x, size=n_indices) for x in self.grid_shape))
-        for index in indices:
-            self.data[index] = rs.uniform(low=0.1, high=2.0)
-            self.expected[index] = 1.0 / (2.5 * self.data[index] + 1.75)
+        flat_indices = rs.choice(self.data.size, n_indices, replace=False)
+        sum_w = 0.0
+        sum_dw = 0.0
+        sum_d2w = 0.0
+        for index in flat_indices:
+            w = rs.uniform(low=0.1, high=2.0)
+            d = 1.0 / (2.5 * w + 1.75)
+            self.data.flat[index] = w
+            self.expected.flat[index] = d
+            if index < self.data[0].size:
+                sum_w += w
+                sum_dw += d * w
+                sum_d2w += d**2 * w
+        self.normalized_rms = np.sqrt(sum_d2w * sum_w) / sum_dw
 
     @device_test
     def test(self, context, command_queue):
@@ -76,9 +86,10 @@ class TestDensityWeights(object):
         fn.a = 2.5
         fn.b = 1.75
         fn.buffer('grid').set(command_queue, self.data)
-        fn()
+        normalized_rms = fn()
         actual = fn.buffer('grid').get(command_queue)
         np.testing.assert_allclose(self.expected, actual, 1e-5, 1e-5)
+        np.testing.assert_allclose(self.normalized_rms, normalized_rms)
 
 
 class TestMeanWeight(object):
