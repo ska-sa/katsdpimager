@@ -12,20 +12,19 @@ is required, which can be installed with
 
 .. code-block:: sh
 
-    pip install git+ssh://git@github.com/bmerry/pybind11@factory-constructors#egg=pybind11
+    pip install git+https://github.com/bmerry/pybind11@factory-constructors#egg=pybind11
 
 At some point this functionality is expected to be merged into pybind11.
 
 There are some additional requirements:
 
- - An SSH key that is authorised for Github access to the SKA South Africa
-   private repositories;
+ - A Github account with access to the SKA South Africa private repositories;
  - An NVIDIA GPU with the CUDA toolkit. At least version 6.0 is required, but
-   testing is only done with 7.5 and later (but see :ref:`cpu`);
+   testing is only done with 8.0 and later (but see :ref:`cpu`);
  - `Casacore`_ 2.x, compiled with Python support (optional, only needed for
    reading Measurement Sets);
  - libhdf5, including development headers (``libhdf5-dev`` in Debian/Ubuntu)
- - `Eigen3`_ (`libeigen3-dev` in Debian/Ubuntu);
+ - `Eigen3`_ (``libeigen3-dev`` in Debian/Ubuntu);
  - A C++ compiler such as GCC.
  - Boost headers, if the C++ compiler is too old to provide either
    ``std::experimental::optional`` or ``std::optional``.
