@@ -85,6 +85,7 @@ def get_parser():
     group.add_argument('--psf-cutoff', type=float, default=0.05, help='fraction of PSF peak at which to truncate PSF [%(default)s]')
     group.add_argument('--loop-gain', type=float, default=0.1, help='Loop gain for cleaning [%(default)s]')
     group.add_argument('--major-gain', type=float, default=0.85, help='Fraction of peak to clean in each major cycle [%(default)s]')
+    group.add_argument('--threshold', type=float, default=5.0, help='CLEAN threshold in sigma [%(default)s]')
     group.add_argument('--major', type=int, default=1, help='Major cycles [%(default)s]')
     group.add_argument('--minor', type=int, default=10000, help='Max minor cycles per major cycle [%(default)s]')
     group.add_argument('--border', type=float, default=0.02, help='CLEAN border as a fraction of image size [%(default)s]')
@@ -350,7 +351,8 @@ class ChannelParameters(object):
             raise ValueError('Unhandled --clean-mode {}'.format(args.clean_mode))
         border = int(round(self.image_p.pixels * args.border))
         self.clean_p = parameters.CleanParameters(
-            args.minor, args.loop_gain, args.major_gain, clean_mode, args.psf_cutoff, border)
+            args.minor, args.loop_gain, args.major_gain, args.threshold,
+            clean_mode, args.psf_cutoff, border)
 
     def log_parameters(self, suffix=''):
         log_parameters("Image parameters" + suffix, self.image_p)
@@ -432,12 +434,20 @@ def process_channel(dataset, args, start_channel,
                                     args.write_dirty, channel, restoring_beam)
 
         #### Deconvolution ####
+        noise = imager.noise_est()
         imager.clean_reset()
         peak_value = imager.clean_cycle(psf_patch)
         peak_power = clean.metric_to_power(clean_p.mode, peak_value)
-        threshold_power = (1.0 - clean_p.major_gain) * peak_power
-        threshold_metric = clean.power_to_metric(clean_p.mode, threshold_power)
-        logger.info('CLEANing to threshold %g', threshold_power)
+        noise_threshold = noise * clean_p.threshold
+        mgain_threshold = (1.0 - clean_p.major_gain) * peak_power
+        logger.info('Threshold from noise estimate: %g', noise_threshold)
+        logger.info('Threshold from mgain:          %g', mgain_threshold)
+        threshold = max(noise_threshold, mgain_threshold)
+        if peak_power <= threshold:
+            logger.info('Threshold reached, terminating')
+            break
+        logger.info('CLEANing to threshold:         %g', threshold)
+        threshold_metric = clean.power_to_metric(clean_p.mode, threshold)
         bar = progress.make_progressbar('CLEAN', max=clean_p.minor - 1)
         with progress.finishing(bar):
             for j in bar.iter(range(clean_p.minor - 1)):

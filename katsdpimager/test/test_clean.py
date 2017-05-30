@@ -162,3 +162,42 @@ class TestClean(object):
         model = fn.buffer('model').get(command_queue)
         np.testing.assert_allclose(expected, dirty, atol=1e-4)
         np.testing.assert_allclose(loop_gain * peak_pixel, model[:, pos[0], pos[1]])
+
+    def _test_noise(self, context, command_queue, std, rtol):
+        rs = np.random.RandomState(seed=1)
+        image_shape = (4, 400, 544)
+        border = 45
+        # Start with a standard normal distribution
+        dirty = rs.standard_normal(image_shape).astype(np.float32)
+        # Scale it up only inside the border, to ensure that the border value
+        # is being respected.
+        dirty[:, border:-border, border:-border] *= std
+        # Add some big values to ensure robustness
+        dirty.flat[rs.choice(dirty.size, 1000, replace=False)] += 1e6
+
+        # Test with CLEAN_I
+        template = clean.NoiseEstTemplate(context, np.float32, 4, clean.CLEAN_I)
+        fn = template.instantiate(command_queue, image_shape, border)
+        fn.ensure_all_bound()
+        fn.buffer('dirty').set(command_queue, dirty)
+        estimated = fn()
+        np.testing.assert_allclose(estimated, std, rtol=rtol)
+
+        # Test with CLEAN_SUMSQ
+        template = clean.NoiseEstTemplate(context, np.float32, 4, clean.CLEAN_SUMSQ)
+        fn = template.instantiate(command_queue, image_shape, border)
+        fn.ensure_all_bound()
+        fn.buffer('dirty').set(command_queue, dirty)
+        estimated = fn()
+        # Magic number is the ratio of the medians of the chi distribution with
+        # 4 and 1 degrees of freedom:
+        # scipy.stats.chi(4).median() / scipy.stats.chi(1).median()
+        np.testing.assert_allclose(estimated, std * 2.716317430527251, rtol=rtol)
+
+    @device_test
+    def test_noise(self, context, command_queue):
+        self._test_noise(context, command_queue, 3.2, 1e-2)
+
+    @device_test
+    def test_noise_zero(self, context, command_queue):
+        self._test_noise(context, command_queue, 0.0, 0.0)
