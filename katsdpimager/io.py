@@ -70,7 +70,7 @@ def _fits_polarizations(header, axis, polarizations):
     if len(polarizations) > 1:
         pol_delta = polarizations[1] - polarizations[0]
     else:
-        pol_delta = 0
+        pol_delta = 1
     if np.any(polarizations != np.arange(len(polarizations)) * pol_delta + pol_ref):
         raise ValueError('Polarizations do not form a linear sequence in FITS enumeration')
     header['CTYPE{}'.format(axis)] = 'STOKES'
