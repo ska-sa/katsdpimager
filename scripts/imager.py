@@ -389,7 +389,7 @@ def process_channel(dataset, args, start_channel,
     if args.write_weights is not None:
         with progress.step('Write image weights'):
             io.write_fits_image(dataset, imager.buffer('weights_grid'), image_p,
-                                args.write_weights, channel, bunit=None)
+                                args.write_weights, channel, image_p.wavelength, bunit=None)
 
     #### Create PSF ####
     slice_w_step = float(grid_p.max_w / image_p.wavelength / (grid_p.w_slices - 0.5))
@@ -411,8 +411,8 @@ def process_channel(dataset, args, start_channel,
     restoring_beam = beam.fit_beam(psf_core)
     if args.write_psf is not None:
         with progress.step('Write PSF'):
-            io.write_fits_image(dataset, psf, image_p,
-                                args.write_psf, channel, restoring_beam)
+            io.write_fits_image(dataset, psf, image_p, args.write_psf,
+                                channel, image_p.wavelength, restoring_beam)
 
     #### Imaging ####
     imager.clear_model()
@@ -431,8 +431,8 @@ def process_channel(dataset, args, start_channel,
                                        image_p, args.write_grid, channel)
         if i == 0 and args.write_dirty is not None:
             with progress.step('Write dirty image'):
-                io.write_fits_image(dataset, dirty, image_p,
-                                    args.write_dirty, channel, restoring_beam)
+                io.write_fits_image(dataset, dirty, image_p, args.write_dirty,
+                                    channel, image_p.wavelength, restoring_beam)
 
         #### Deconvolution ####
         noise = imager.noise_est()
@@ -459,10 +459,12 @@ def process_channel(dataset, args, start_channel,
 
     if args.write_model is not None:
         with progress.step('Write model'):
-            io.write_fits_image(dataset, model, image_p, args.write_model, channel)
+            io.write_fits_image(dataset, model, image_p, args.write_model,
+                                channel, image_p.wavelength)
     if args.write_residuals is not None:
         with progress.step('Write residuals'):
-            io.write_fits_image(dataset, dirty, image_p, args.write_residuals, channel, restoring_beam)
+            io.write_fits_image(dataset, dirty, image_p, args.write_residuals,
+                                channel, image_p.wavelength, restoring_beam)
 
     # Try to free up memory for the beam convolution
     del grid_data
@@ -486,7 +488,8 @@ def process_channel(dataset, args, start_channel,
 
     model += dirty
     with progress.step('Write clean image'):
-        io.write_fits_image(dataset, model, image_p, args.output_file, channel, restoring_beam)
+        io.write_fits_image(dataset, model, image_p, args.output_file,
+                            channel, image_p.wavelength, restoring_beam)
 
 
 def main():

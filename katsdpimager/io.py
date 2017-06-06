@@ -70,7 +70,7 @@ def _fits_polarizations(header, axis, polarizations):
     if len(polarizations) > 1:
         pol_delta = polarizations[1] - polarizations[0]
     else:
-        pol_delta = 0
+        pol_delta = 1
     if np.any(polarizations != np.arange(len(polarizations)) * pol_delta + pol_ref):
         raise ValueError('Polarizations do not form a linear sequence in FITS enumeration')
     header['CTYPE{}'.format(axis)] = 'STOKES'
@@ -80,7 +80,8 @@ def _fits_polarizations(header, axis, polarizations):
     return pol_permute
 
 
-def write_fits_image(dataset, image, image_parameters, filename, channel, beam=None, bunit='JY/BEAM'):
+def write_fits_image(dataset, image, image_parameters, filename, channel,
+                     frequency, beam=None, bunit='JY/BEAM'):
     """Write an image to a FITS file.
 
     Parameters
@@ -96,6 +97,8 @@ def write_fits_image(dataset, image, image_parameters, filename, channel, beam=N
         File to write. It is silently overwritten if already present.
     channel : int
         Channel number to substitute into `filename` with printf formatting.
+    frequency : Quantity
+        Frequency of the data
     beam : :class:`katsdpimager.beam.Beam`, optional
         Synthesized beam model to write to the header
     bunit : str, optional
@@ -114,17 +117,20 @@ def write_fits_image(dataset, image, image_parameters, filename, channel, beam=N
     header['ORIGIN'] = 'katsdpimager'
 
     # Transformation from pixel coordinates to intermediate world coordinates,
-    # which are taken to be l, m coordinates. The reference point is current
+    # which are taken to be l, m coordinates. The reference point is currently
     # taken to be the centre of the image (actually half a pixel beyond the
     # centre, because of the way fftshift works).  Note that astropy.io.fits
     # reverses the axis order. The X coordinate is computed differently
     # because the X axis is flipped to allow RA to increase right-to-left.
+    header['WCSAXES'] = 4
     header['CRPIX1'] = image.shape[2] * 0.5
     header['CRPIX2'] = image.shape[1] * 0.5 + 1.0
+    header['CRPIX4'] = 1.0
     # FITS uses degrees; and RA increases right-to-left
     delt = np.arcsin(image_parameters.pixel_size).to(units.deg).value
     header['CDELT1'] = -delt
     header['CDELT2'] = delt
+    header['CDELT4'] = 1.0
 
     # Transformation from intermediate world coordinates to world
     # coordinates (celestial coordinates in this case).
@@ -134,10 +140,13 @@ def write_fits_image(dataset, image, image_parameters, filename, channel, beam=N
     header['RADESYS'] = 'FK5'   # Julian equinox
     header['CUNIT1'] = 'deg'
     header['CUNIT2'] = 'deg'
+    header['CUNIT4'] = 'Hz'
     header['CTYPE1'] = 'RA---SIN'
     header['CTYPE2'] = 'DEC--SIN'
+    header['CTYPE4'] = 'FREQ    '
     header['CRVAL1'] = phase_centre[0].to(units.deg).value
     header['CRVAL2'] = phase_centre[1].to(units.deg).value
+    header['CRVAL4'] = frequency.to(units.Hz, equivalencies=units.spectral()).value
     if beam is not None:
         major = beam.major * image_parameters.pixel_size * units.rad
         minor = beam.minor * image_parameters.pixel_size * units.rad
@@ -161,7 +170,7 @@ def write_fits_image(dataset, image, image_parameters, filename, channel, beam=N
 
 
 def _split_array(x, dtype):
-    """Return a view of x which has one extra dimension. Each element is x is
+    """Return a view of x which has one extra dimension. Each element in x is
     treated as some number of elements of type `dtype`, whose size must divide
     into the element size of `x`."""
     in_dtype = x.dtype
