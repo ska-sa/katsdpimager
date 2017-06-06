@@ -89,7 +89,7 @@ class TestDensityWeights(object):
         normalized_rms = fn()
         actual = fn.buffer('grid').get(command_queue)
         np.testing.assert_allclose(self.expected, actual, 1e-5, 1e-5)
-        np.testing.assert_allclose(self.normalized_rms, normalized_rms)
+        np.testing.assert_allclose(self.normalized_rms, normalized_rms, 1e-6)
 
 
 class TestMeanWeight(object):
