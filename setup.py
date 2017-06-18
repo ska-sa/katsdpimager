@@ -49,10 +49,10 @@ setup(
     scripts=["scripts/imager.py"],
     ext_package='katsdpimager',
     ext_modules=extensions,
-    setup_requires=['pkgconfig'],
+    setup_requires=['pkgconfig', 'pybind11>=2.2.0.dev0'],
     install_requires=[
         'numpy>=1.10.0', 'katsdpsigproc', 'astropy>=1.3', 'progress',
-        'pycuda', 'scikit-cuda', 'h5py', 'ansicolors', 'pybind11>=2.2.0.dev0'
+        'pycuda', 'scikit-cuda', 'h5py', 'ansicolors'
     ],
     tests_require=tests_require,
     extras_require={
