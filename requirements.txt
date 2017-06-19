@@ -16,6 +16,7 @@ mock
 nose
 numba==0.29.0; platform_machine == 'x86_64'
 numpy
+pandas
 pbr
 pkgconfig==1.1.0
 pkginfo
@@ -25,6 +26,7 @@ pycuda
 pyephem
 pytest
 python-casacore
+python-dateutil
 pytools
 scikit-cuda
 scipy==0.19.0
