@@ -8,6 +8,7 @@ import matplotlib
 matplotlib.use('Agg')
 import aplpy
 from astropy.io import fits
+from astropy.wcs import WCS
 from mako.template import Template
 import argparse
 import os
@@ -127,15 +128,25 @@ class Image(object):
         # into one image, and if so, slice it.
         filename = os.path.join(output_dir, self.fits_filename(mode, stokes, channel, rel_channel))
         with closing(fits.open(filename)) as hdulist:
-            naxis = int(hdulist[0].header['NAXIS'])
-            slices = [0] * (naxis - 2)
-            for i in range(3, naxis + 1):
-                axis_type = hdulist[0].header['CTYPE{}'.format(i)]
-                if axis_type == 'STOKES':
+            wcs = WCS(hdulist[0])
+            wcsaxes = wcs.naxis
+            # Reverse shape to put back into same order as axis_types
+            shape = list(reversed(hdulist[0].shape))
+            if wcsaxes < 2:
+                raise ValueError('At least two dimensions expected')
+            axis_types = wcs.get_axis_types()
+            if axis_types[0]['coordinate_type'] != 'celestial' or axis_types[0]['number'] != 0:
+                raise ValueError('First axis is not longitudinal')
+            if axis_types[1]['coordinate_type'] != 'celestial' or axis_types[1]['number'] != 1:
+                raise ValueError('Second axis is not latitudinal')
+            slices = [0] * (len(shape) - 2)
+            for i in range(2, len(shape)):
+                ctype = axis_types[i]['coordinate_type']
+                if ctype == 'stokes':
                     # TODO: should use the WCS transformation
-                    slices[i - 3] = 'IQUV'.find(stokes)
-                elif axis_type == 'VOPT':
-                    slices[i - 3] = rel_channel
+                    slices[i - 2] = 'IQUV'.find(stokes)
+                elif ctype == 'spectral' and shape[i] > 1:
+                    slices[i - 2] = rel_channel
         self._render_thumb(output_dir, filename, slices, mode, stokes, channel)
         self._render_full(output_dir, filename, slices, mode, stokes, channel)
 

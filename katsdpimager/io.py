@@ -122,7 +122,6 @@ def write_fits_image(dataset, image, image_parameters, filename, channel,
     # centre, because of the way fftshift works).  Note that astropy.io.fits
     # reverses the axis order. The X coordinate is computed differently
     # because the X axis is flipped to allow RA to increase right-to-left.
-    header['WCSAXES'] = 4
     header['CRPIX1'] = image.shape[2] * 0.5
     header['CRPIX2'] = image.shape[1] * 0.5 + 1.0
     header['CRPIX4'] = 1.0
@@ -162,7 +161,12 @@ def write_fits_image(dataset, image, image_parameters, filename, channel,
     # 2. If the image is little-endian, then astropy.io.fits will convert to
     #    big endian, write, and convert back again.
     # The disadvantage is an increase in memory usage.
-    image = np.require(image[:, :, ::-1], image.dtype.newbyteorder('>'), 'C')
+    #
+    # The np.newaxis adds an axis for frequency. While it's not required for
+    # the FITS file to be valid (it's legal for the WCS transformations to
+    # reference additional virtual axes), aplpy 1.1.1 doesn't handle it
+    # (https://github.com/aplpy/aplpy/issues/350).
+    image = np.require(image[np.newaxis, :, :, ::-1], image.dtype.newbyteorder('>'), 'C')
     hdu = fits.PrimaryHDU(image, header)
     if '%' in filename:
         filename = filename % (channel,)
