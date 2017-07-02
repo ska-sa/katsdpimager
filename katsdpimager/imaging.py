@@ -1,7 +1,7 @@
 """Top-level objects for accelerated imaging, that glue the lower-level
 objects together."""
 
-from __future__ import print_function, division
+from __future__ import division, print_function, absolute_import
 import numpy as np
 from katsdpsigproc import accel
 from . import grid, weight, image, clean

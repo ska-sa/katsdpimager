@@ -24,13 +24,16 @@ only adjacent visibilities are candidates for merging.
 The core pieces are implemented in C++ for speed (see preprocess.cpp).
 """
 
-from __future__ import print_function, division
+from __future__ import division, print_function, absolute_import
+import sys
 import h5py
 import numpy as np
 import math
 import logging
 from katsdpimager import _preprocess
 import astropy.units as units
+import six
+from six.moves import range
 
 
 logger = logging.getLogger(__name__)
@@ -162,7 +165,7 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
 
 
 def _is_prime(n):
-    for i in xrange(2, int(math.sqrt(n) + 1)):
+    for i in range(2, int(math.sqrt(n) + 1)):
         if n % i == 0:
             return False
     return True
@@ -223,6 +226,8 @@ class VisibilityCollectorHDF5(VisibilityCollector):
         while not _is_prime(slots):
             slots += 2
         logger.debug('Setting cache size to %d slots, %d bytes', slots, cache_size)
+        if isinstance(filename, six.text_type):
+            filename = filename.encode(sys.getfilesystemencoding())
         self.filename = filename
         self._file = h5py.File(h5py.h5f.create(filename, fapl=_make_fapl(slots, cache_size, 1.0)))
         self._length = np.zeros((self.num_channels, max_w_slices), np.int64)
@@ -347,7 +352,7 @@ class VisibilityReaderHDF5(VisibilityReader):
         buf3d = np.rec.recarray((1, 1, block_size), self._dataset.dtype)
         buf = buf3d[0, 0, :]
         N = self.len(channel, w_slice)
-        for start in xrange(0, N - block_size + 1, block_size):
+        for start in range(0, N - block_size + 1, block_size):
             self._dataset.read_direct(
                 buf3d,
                 np.s_[channel : channel+1, w_slice : w_slice+1, start : start+block_size],

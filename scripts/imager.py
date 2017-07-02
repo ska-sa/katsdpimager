@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from __future__ import print_function, division
+from __future__ import division, print_function, absolute_import
 import sys
 import argparse
 import astropy.units as units
@@ -13,6 +13,7 @@ import katsdpsigproc.accel as accel
 from katsdpimager import \
     loader, parameters, polarization, preprocess, io, clean, weight, imaging, progress, beam, numba
 from contextlib import closing, contextmanager
+from six.moves import range
 
 
 logger = logging.getLogger()

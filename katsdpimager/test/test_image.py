@@ -1,5 +1,6 @@
 """Tests for :mod:`katsdpimager.image`"""
 
+from __future__ import division, print_function, absolute_import
 import numpy as np
 import math
 import katsdpimager.image as image

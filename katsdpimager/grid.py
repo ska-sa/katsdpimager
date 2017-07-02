@@ -115,7 +115,7 @@ devices, and even then may limit the block size.
    http://www.astron.nl/~romein/papers/ICS-12/gridding.pdf
 """
 
-from __future__ import division, print_function
+from __future__ import division, print_function, absolute_import
 import numpy as np
 import math
 import pkg_resources
@@ -124,6 +124,7 @@ import katsdpsigproc.tune as tune
 import katsdpimager.types
 from katsdpimager import numba
 import logging
+from six.moves import range
 
 
 logger = logging.getLogger(__name__)

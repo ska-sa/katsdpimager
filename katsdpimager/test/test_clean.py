@@ -1,11 +1,12 @@
 """Tests for :py:mod:`katsdpimager.clean`"""
 
-from __future__ import division, print_function
+from __future__ import division, print_function, absolute_import
 import numpy as np
 import scipy.signal
 from .. import clean
 from katsdpsigproc.test.test_accel import device_test
 from nose.tools import *
+from six.moves import range
 
 
 class _TestPsfPatchBase(object):

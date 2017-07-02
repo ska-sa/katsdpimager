@@ -11,7 +11,7 @@ corresponding pixel in the second file, interpolating as necessary, or
 reporting NaN if it falls outside the footprint.
 """
 
-from __future__ import print_function, division
+from __future__ import division, print_function, absolute_import
 import argparse
 import numpy as np
 import scipy.interpolate

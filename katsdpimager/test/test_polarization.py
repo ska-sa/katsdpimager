@@ -1,6 +1,6 @@
 """Tests for :py:mod:`katsdpimager.polarization`."""
 
-from __future__ import print_function, division
+from __future__ import division, print_function, absolute_import
 import numpy as np
 from nose.tools import *
 import katsdpimager.polarization as polarization

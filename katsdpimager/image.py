@@ -1,13 +1,14 @@
 """Kernels for image-domain processing, and conversion between visibility and
 image planes."""
 
-from __future__ import print_function, division
+from __future__ import division, print_function, absolute_import
 import numpy as np
 import math
 import pkg_resources
 from katsdpsigproc import accel
 from . import fft
 import katsdpimager.types
+from six.moves import range, zip
 
 
 class _LayerImageTemplate(object):

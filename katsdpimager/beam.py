@@ -34,7 +34,7 @@ and its square root is
 .. _Mathworld: http://mathworld.wolfram.com/FourierTransformGaussian.html
 """
 
-from __future__ import print_function, division
+from __future__ import division, print_function, absolute_import
 import math
 import numpy as np
 import pkg_resources

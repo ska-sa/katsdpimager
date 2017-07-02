@@ -43,9 +43,11 @@ different beam shapes for the different polarizations.
    http://www.aoc.nrao.edu/dissertations/dbriggs/
 """
 
+from __future__ import division, print_function, absolute_import
 import pkg_resources
 import numpy as np
 from katsdpsigproc import accel, fill
+from six.moves import range
 
 
 NATURAL = 0

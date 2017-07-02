@@ -1,12 +1,13 @@
 """Tests for :py:mod:`katsdpimager.beam`"""
 
-from __future__ import division, print_function
+from __future__ import division, print_function, absolute_import
 import numpy as np
 import scipy.signal
 from astropy.modeling import models
 from katsdpimager import beam
 from katsdpsigproc.test.test_accel import device_test, cuda_test
 from nose.tools import *
+from six.moves import range
 
 
 def convolve_beam_reference(model, beam):

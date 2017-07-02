@@ -2,7 +2,7 @@
 
 """Benchmark suite for various steps in imaging"""
 
-from __future__ import print_function, absolute_import, division
+from __future__ import division, print_function, absolute_import
 import argparse
 import katpoint
 import pkg_resources
@@ -12,6 +12,7 @@ import json
 from astropy import units
 from katsdpimager import grid, preprocess, parameters, polarization, fft
 from katsdpsigproc import accel
+from six.moves import range
 
 
 def load_antennas():

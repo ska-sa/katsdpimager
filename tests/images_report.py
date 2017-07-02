@@ -4,6 +4,7 @@
 Creates an HTML page showing the images written by the Jenkins script.
 """
 
+from __future__ import division, print_function, absolute_import
 import matplotlib
 matplotlib.use('Agg')
 import aplpy
@@ -21,6 +22,7 @@ import timeit
 import io
 import glob
 from contextlib import closing
+from six.moves import range
 
 
 MODE_CLEAN = 'Clean'
@@ -163,7 +165,7 @@ def write_index(args, images, build_info, modes):
             revision=commit,
             modes=modes,
             stokes=args.stokes,
-            channels=range(args.start_channel, args.stop_channel),
+            channels=list(range(args.start_channel, args.stop_channel)),
             images=images,
             build_info=build_info))
 
@@ -174,7 +176,7 @@ def write_build_log(args, image, build_info, modes):
     with io.open(os.path.join(args.output_dir, image.build_info_filename()), 'w', encoding='utf-8') as f:
         f.write(template.render_unicode(
             image=image, build_info=build_info, modes=modes, stokes=args.stokes,
-            channels=range(args.start_channel, args.stop_channel)))
+            channels=list(range(args.start_channel, args.stop_channel))))
 
 
 def run(args, images, modes):
@@ -184,7 +186,7 @@ def run(args, images, modes):
         if not os.path.isdir(args.output_dir):
             raise
     build_info = {}
-    channels = range(args.start_channel, args.stop_channel)
+    channels = list(range(args.start_channel, args.stop_channel))
     for image in images:
         if not args.skip_build:
             build_info[image] = image.build(args.ms, args.output_dir, modes, args.stokes, channels)

@@ -13,13 +13,14 @@ to put in a threshold later. It should still be possible to do batches of
 minor cycles if the launch overheads become an issue.
 """
 
-from __future__ import division, print_function
+from __future__ import division, print_function, absolute_import
 import math
 import numpy as np
 from katsdpimager import numba
 import katsdpsigproc.accel as accel
 import katsdpimager.types
 import pkg_resources
+from six.moves import range
 
 #: Use only Stokes I to find peaks
 CLEAN_I = 0

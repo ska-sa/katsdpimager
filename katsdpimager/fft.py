@@ -1,11 +1,12 @@
 """Utilities to wrap skcuda.fft for imaging purposes"""
 
-from __future__ import print_function, division
+from __future__ import division, print_function, absolute_import
 import numpy as np
 import pkg_resources
 import skcuda.fft
 from katsdpsigproc import accel
 import katsdpimager.types
+from six.moves import zip
 
 #: Forward FFT
 FFT_FORWARD = 0

@@ -1,5 +1,6 @@
 """Data loading backend for CASA Measurement Sets."""
 
+from __future__ import division, print_function, absolute_import
 import argparse
 import logging
 import katsdpimager.loader_core
@@ -9,6 +10,7 @@ import numpy as np
 import astropy.units as units
 import astropy.time
 import astropy.coordinates
+from six.moves import range
 
 
 _logger = logging.getLogger(__name__)
@@ -314,7 +316,7 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         pos = self.antenna_positions()
         pos = astropy.coordinates.EarthLocation.from_geocentric(pos[:, 0], pos[:, 1], pos[:, 2])
         pole = astropy.coordinates.SkyCoord(ra=0 * units.deg, dec=90 * units.deg, frame='fk5')
-        for start in xrange(0, self._main.nrows(), max_chunk_vis):
+        for start in range(0, self._main.nrows(), max_chunk_vis):
             end = min(self._main.nrows(), start + max_chunk_vis)
             nrows = end - start
             flag_row = _getcol(self._main, 'FLAG_ROW', start, nrows)

@@ -7,7 +7,7 @@ This wraps the :py:mod:`progress` module to add certain enhancements:
 - A fallback implementation is used when stderr is not a TTY.
 """
 
-from __future__ import print_function, absolute_import
+from __future__ import division, print_function, absolute_import
 import progress
 import progress.bar
 import sys

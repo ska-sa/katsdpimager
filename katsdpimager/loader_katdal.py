@@ -6,13 +6,13 @@ on correlation products while katsdpimager works on baselines, so some
 conversion is needed.
 """
 
-from __future__ import print_function, division, absolute_import
+from __future__ import division, print_function, absolute_import
 import argparse
 import logging
 import itertools
 import math
 import re
-import cPickle as pickle
+import six.moves.cPickle as pickle
 import katsdpimager.loader_core
 import katdal
 import katpoint
@@ -22,6 +22,7 @@ import astropy.units as units
 import astropy.time
 import astropy.coordinates
 from . import polarization
+from six.moves import range
 
 
 _logger = logging.getLogger(__name__)

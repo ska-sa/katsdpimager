@@ -1,9 +1,11 @@
 """Tests for :mod:`katsdpimager.fft`"""
 
+from __future__ import division, print_function, absolute_import
 import numpy as np
 import katsdpimager.fft as fft
 import katsdpsigproc.accel as accel
 from katsdpsigproc.test.test_accel import device_test, cuda_test
+from six.moves import range
 
 
 class TestFftshift(object):

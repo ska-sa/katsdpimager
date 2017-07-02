@@ -1,6 +1,6 @@
 """Tests for :mod:`katsdpimager.grid`."""
 
-from __future__ import print_function, division
+from __future__ import division, print_function, absolute_import
 import numpy as np
 import katsdpimager.parameters as parameters
 import katsdpimager.polarization as polarization
@@ -10,6 +10,7 @@ import katsdpsigproc.accel as accel
 from katsdpsigproc.test.test_accel import device_test, force_autotune
 from nose.tools import *
 import mock
+from six.moves import range, zip
 
 
 def _middle(array, shape):

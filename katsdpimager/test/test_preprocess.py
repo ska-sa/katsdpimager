@@ -1,6 +1,6 @@
 """Tests for :py:mod:`katsdpimager.preprocess`."""
 
-from __future__ import print_function, division
+from __future__ import division, print_function, absolute_import
 import astropy.units as units
 import numpy as np
 import tempfile
@@ -11,6 +11,7 @@ from nose.tools import *
 import katsdpimager.parameters as parameters
 import katsdpimager.polarization as polarization
 import katsdpimager.preprocess as preprocess
+from six.moves import range
 
 
 def _empty_recarray(dtype):
