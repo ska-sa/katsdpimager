@@ -786,7 +786,7 @@ class Clean(accel.OperationSequence):
         dirty = self.buffer('dirty')
         self._update_tiles(0, 0, dirty.shape[2], dirty.shape[1])
 
-    def __call__(self, psf_patch, threshold=0):
+    def __call__(self, psf_patch, threshold=0.0):
         """Run a single minor CLEAN cycle.
 
         Parameters
@@ -984,7 +984,7 @@ class CleanHost(object):
             for x in range(self._tile_max.shape[1]):
                 self._update_tile(y, x)
 
-    def __call__(self, psf_patch, threshold=0):
+    def __call__(self, psf_patch, threshold=0.0):
         """Execute a single CLEAN minor cycle."""
         peak_tile = np.unravel_index(np.argmax(self._tile_max), self._tile_max.shape)
         peak_pos = self._tile_pos[peak_tile]

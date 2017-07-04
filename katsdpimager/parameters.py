@@ -101,7 +101,7 @@ class ImageParameters(object):
         self.polarizations = polarizations
 
     def __str__(self):
-        import polarization
+        from . import polarization
         return """\
 Pixel size: {:.3f}
 Pixels: {}
