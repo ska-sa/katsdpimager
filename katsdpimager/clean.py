@@ -137,8 +137,8 @@ class PsfPatch(accel.Operation):
         # Turn distances from the centre into a symmetric bounding box size.
         box = 2 * np.max(self._bound_host, axis=(0, 1)) + 1
         return (self.template.num_polarizations,
-                min(box[1], psf.shape[1]),
-                min(box[0], psf.shape[2]))
+                int(min(box[1], psf.shape[1])),
+                int(min(box[0], psf.shape[2])))
 
 
 def metric_to_power(mode, metric):
@@ -814,6 +814,7 @@ class Clean(accel.OperationSequence):
             self.command_queue.finish()
         peak_value = peak_value_device.get_async(self.command_queue, self._peak_value_host)
         peak_pos = peak_pos_device.get_async(self.command_queue, self._peak_pos_host)
+        peak_pos = [int(x) for x in peak_pos]
         self.command_queue.finish()
         if peak_value[0] < threshold:
             return None
