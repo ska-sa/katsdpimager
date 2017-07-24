@@ -15,7 +15,7 @@ Mako
 MarkupSafe
 mock
 nose
-numba; platform_machine == 'x86_64'
+numba
 numpy
 pandas
 pbr
