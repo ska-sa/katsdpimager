@@ -6,6 +6,7 @@ Cython
 decorator
 enum34
 funcsigs
+future
 futures
 h5py
 katversion
