@@ -109,6 +109,4 @@ class TestMeanWeight(object):
         actual = fn()
         pol0 = self.data[0]
         expected = np.sum(pol0 * pol0) / np.sum(pol0)
-        # The tolerance has to be very large here because the addition is
-        # numerically unstable.
-        np.testing.assert_allclose(expected, actual, rtol=1e-2)
+        np.testing.assert_allclose(expected, actual, rtol=1e-5)
