@@ -350,6 +350,7 @@ class MeanWeight(accel.Operation):
     def _run(self):
         grid = self.buffer('grid')
         sums = self.buffer('sums')
+        self.command_queue.enqueue_zero_buffer(sums.buffer)
         self.command_queue.enqueue_kernel(
             self._kernel,
             [
