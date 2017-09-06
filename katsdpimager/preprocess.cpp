@@ -11,7 +11,6 @@
 #include <pybind11/eigen.h>
 #include <pybind11/functional.h>
 #include <pybind11/complex.h>
-#include <pybind11/factory.h>
 #include <pybind11/stl.h>
 #include <cstddef>
 #include <cstdint>
@@ -643,14 +642,14 @@ static typename std::enable_if<0 < P>::type register_vis_dtypes()
 
 } // anonymous namespace
 
-PYBIND11_PLUGIN(_preprocess)
+PYBIND11_MODULE(_preprocess, m)
 {
     using namespace pybind11;
 
+    m.doc() = "C++ backend of visibility preprocessing";
     register_vis_dtypes<4>();
     PYBIND11_NUMPY_DTYPE(channel_config, max_w, w_slices, w_planes, oversample, cell_size);
 
-    module m("_preprocess", "C++ backend of visibility preprocessing");
     class_<visibility_collector_base>(m, "VisibilityCollector")
         .def(init(&make_visibility_collector<4>))
         .def("add", &visibility_collector_base::add)
@@ -659,5 +658,4 @@ PYBIND11_PLUGIN(_preprocess)
         .def_readonly("num_output", &visibility_collector_base::num_output)
     ;
     m.add_object("CHANNEL_CONFIG_DTYPE", py::dtype::of<channel_config>());
-    return m.ptr();
 }
