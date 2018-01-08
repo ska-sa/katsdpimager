@@ -14,6 +14,7 @@ catchError {
             deleteDir()
             katsdp.unpackGit()
             katsdp.unpackVenv()
+            katsdp.unpackKatsdpdockerbase()
             /* Meqtrees won't run against our virtualenv, since it uses system
              * Python, so run it outside the virtualenv closure. On the other
              * hand, the system Tigger is broken
