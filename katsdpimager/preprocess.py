@@ -251,7 +251,9 @@ class VisibilityCollectorHDF5(VisibilityCollector):
         elements = np.ndarray(elements.shape, self.store_dtype, elements, 0, elements.strides)
         # This slightly contorted access is for performance reasons: see
         # https://github.com/h5py/h5py/issues/492
-        self._dataset[channel : channel+1, w_slice : w_slice+1, old_length : self._length[channel, w_slice]] = \
+        self._dataset[channel : channel+1,
+                      w_slice : w_slice+1,
+                      old_length : self._length[channel, w_slice]] = \
             elements.astype(self.store_dtype)[np.newaxis, np.newaxis, :]
 
     def close(self):
@@ -263,7 +265,8 @@ class VisibilityCollectorHDF5(VisibilityCollector):
             expected = self.store_dtype.itemsize * n_compressed
             if expected > 0:
                 logger.info("Wrote %d visibilities in %d bytes to %s (%.2f%% compression ratio)",
-                            n_compressed, filesize, self._file.filename, 100.0 * filesize / expected)
+                            n_compressed, filesize, self._file.filename,
+                            100.0 * filesize / expected)
             else:
                 logger.info("Wrote %d bytes to %s (no visibilities)",
                             filesize, self._file.filename)

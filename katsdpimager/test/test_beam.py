@@ -6,7 +6,6 @@ import scipy.signal
 from astropy.modeling import models
 from katsdpimager import beam
 from katsdpsigproc.test.test_accel import device_test, cuda_test
-from nose.tools import *
 from six.moves import range
 
 

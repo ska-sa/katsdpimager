@@ -8,7 +8,6 @@ import katsdpimager.grid as grid
 import astropy.units as units
 import katsdpsigproc.accel as accel
 from katsdpsigproc.test.test_accel import device_test, force_autotune
-from nose.tools import *
 import mock
 from six.moves import range, zip
 
@@ -116,7 +115,8 @@ class BaseTest(object):
         pixels = self.image_parameters.pixels
         shape = (4, pixels, pixels)
         rs = np.random.RandomState(seed=2)
-        grid_data = (rs.uniform(-1, 1, size=shape) + 1j * rs.uniform(-1, 1, size=shape)).astype(np.complex128)
+        grid_data = (rs.uniform(-1, 1, size=shape)
+                     + 1j * rs.uniform(-1, 1, size=shape)).astype(np.complex128)
         vis = (rs.uniform(-1, 1, size=(n_vis, 4)) +
                1j * rs.uniform(-1, 1, size=(n_vis, 4))).astype(np.complex128)
         weights = rs.uniform(0.5, 1.5, size=(n_vis, 4)).astype(np.float64)
@@ -129,7 +129,8 @@ class BaseTest(object):
             v = self.uv[i, 1] - uv_bias
             for j in range(4):
                 footprint = grid_data[j, v : v + kernel.shape[0], u : u + kernel.shape[1]]
-                expected[i, j] = vis[i, j] - weights[i, j] * np.dot(kernel.ravel(), footprint.ravel())
+                expected[i, j] = (vis[i, j]
+                                  - weights[i, j] * np.dot(kernel.ravel(), footprint.ravel()))
         residuals = callback(max_vis, grid_data, weights, vis)
         np.testing.assert_allclose(expected, residuals, 1e-5)
 

@@ -11,6 +11,8 @@ The GPU implementation currently round-trips to the CPU on each minor cycle.
 It could be done entirely on the GPU, but round-tripping will make it easier
 to put in a threshold later. It should still be possible to do batches of
 minor cycles if the launch overheads become an issue.
+
+.. include:: macros.rst
 """
 
 from __future__ import division, print_function, absolute_import
@@ -34,7 +36,7 @@ class PsfPatchTemplate(object):
 
     Parameters
     ----------
-    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+    context : |Context|
         Context for which kernels will be compiled
     dtype : {`np.float32`, `np.float64`}
         Precision of image
@@ -86,7 +88,7 @@ class PsfPatch(accel.Operation):
     ----------
     template : :class:`PsfPatchTemplate`
         Operation template
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+    command_queue : |CommandQueue|
         Command queue for the operation
     shape : tuple of ints
         Shape for the PSF
@@ -171,7 +173,7 @@ class NoiseEstTemplate(object):
 
     Parameters
     ----------
-    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+    context : |Context|
         Context for which kernels will be compiled
     dtype : {`np.float32`, `np.float64`}
         Image precision
@@ -223,7 +225,7 @@ class NoiseEst(accel.Operation):
     ----------
     template : :class:`NoiseEstTemplate`
         Operation template
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+    command_queue : |CommandQueue|
         Command queue for the operation
     image_shape : tuple of ints
         Shape for the dirty image
@@ -315,7 +317,7 @@ class _UpdateTilesTemplate(object):
 
     Parameters
     ----------
-    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+    context : |Context|
         Context for which kernels will be compiled
     dtype : {`np.float32`, `np.float64`}
         Precision of image
@@ -368,7 +370,7 @@ class _UpdateTiles(accel.Operation):
     ----------
     template : :class:`_UpdateTilesTemplate`
         Operation template
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+    command_queue : |CommandQueue|
         Command queue for the operation
     image_shape : tuple of ints
         Shape for the dirty image
@@ -396,7 +398,7 @@ class _UpdateTiles(accel.Operation):
         self.slots['dirty'] = accel.IOSlot([image_pols, image_height, image_width], template.dtype)
         self.slots['tile_max'] = accel.IOSlot([tiles_height, tiles_width], template.dtype)
         self.slots['tile_pos'] = accel.IOSlot(
-                [tiles_height, tiles_width, accel.Dimension(2, exact=True)], np.int32)
+            [tiles_height, tiles_width, accel.Dimension(2, exact=True)], np.int32)
         self.kernel = template.program.get_kernel('update_tiles')
 
     def __call__(self, x0, y0, x1, y1, **kwargs):
@@ -435,7 +437,7 @@ class _FindPeakTemplate(object):
 
     Parameters
     ----------
-    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+    context : |Context|
         Context for which kernels will be compiled
     dtype : {`np.float32`, `np.float64`}
         Image precision
@@ -486,7 +488,7 @@ class _FindPeak(accel.Operation):
     ----------
     template : :class:`_FindPeakTemplate`
         Operation template
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+    command_queue : |CommandQueue|
         Command queue for the operation
     image_shape : tuple of int
         Shape of the dirty image, as (num_polarizations, height, width)
@@ -542,7 +544,7 @@ class _SubtractPsfTemplate(object):
 
     Parameters
     ----------
-    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+    context : |Context|
         Context for which kernels will be compiled
     dtype : {`np.float32`, `np.float64`}
         Image precision
@@ -590,7 +592,7 @@ class _SubtractPsf(accel.Operation):
     ----------
     template : :class:`_SubtractPsfTemplate`
         Operation template
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+    command_queue : |CommandQueue|
         Command queue for the operation
     loop_gain : float
         Scale factor for subtraction. The PSF is scaled by both `loop_gain` and
@@ -675,7 +677,7 @@ class CleanTemplate(object):
 
     Parameters
     ----------
-    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+    context : |Context|
         Context for which kernels will be compiled
     clean_parameters : :class:`katsdpimager.parameters.CleanParameters`
         Command-line parameters for CLEAN
@@ -728,7 +730,7 @@ class Clean(accel.OperationSequence):
     ----------
     template : :class:`_UpdateTilesTemplate`
         Operation template
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+    command_queue : |CommandQueue|
         Command queue for the operation
     image_parameters : :class:`katsdpimager.parameters.ImageParameters`
         Command-line parameters with image properties

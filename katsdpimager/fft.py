@@ -1,4 +1,7 @@
-"""Utilities to wrap skcuda.fft for imaging purposes"""
+"""Utilities to wrap skcuda.fft for imaging purposes
+
+.. include:: macros.rst
+"""
 
 from __future__ import division, print_function, absolute_import
 import numpy as np
@@ -59,7 +62,7 @@ class FftshiftTemplate(object):
 
     Parameters
     ----------
-    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+    context : |Context|
         Context for which kernels will be compiled
     dtype : numpy dtype
         Data type being stored
@@ -97,7 +100,7 @@ class Fftshift(accel.Operation):
     ----------
     template : :class:`FftshiftTemplate`
         Operation template
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+    command_queue : |CommandQueue|
         Command queue for the operation
     shape : tuple of int
         Shape of the data.

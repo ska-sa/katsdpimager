@@ -4,7 +4,6 @@ from __future__ import division, print_function, absolute_import
 import numpy as np
 from katsdpsigproc.test.test_accel import device_test
 from katsdpimager import weight
-from nose.tools import *
 from six.moves import range
 
 

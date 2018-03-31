@@ -1,0 +1,12 @@
+[flake8]
+exclude = doc/conf.py
+max-line-length = 100
+ignore =
+    # whitespace before ':' - flake8 doesn't handle slices properly
+    E203,
+    # The rest are a subset of flake8 defaults
+    # missing whitespace around arithmetic operator - sometimes useful for inner ops
+    E226,
+    # line break before binary operator - that's what PEP8 recommends!
+    W503
+

@@ -5,12 +5,6 @@ Creates an HTML page showing the images written by the Jenkins script.
 """
 
 from __future__ import division, print_function, absolute_import
-import matplotlib
-matplotlib.use('Agg')
-import aplpy
-from astropy.io import fits
-from astropy.wcs import WCS
-from mako.template import Template
 import argparse
 import os
 import os.path
@@ -22,7 +16,15 @@ import timeit
 import io
 import glob
 from contextlib import closing
+
 from six.moves import range
+
+from mako.template import Template
+import matplotlib
+matplotlib.use('Agg')   # noqa: E402
+import aplpy
+from astropy.io import fits
+from astropy.wcs import WCS
 
 
 MODE_CLEAN = 'Clean'
@@ -61,7 +63,9 @@ class BuildInfo(object):
 
 
 class Image(object):
-    def __init__(self, name, filebase, clean_fits_pattern, dirty_fits_pattern, cmd_patterns, clean_globs=[]):
+    def __init__(self, name, filebase,
+                 clean_fits_pattern, dirty_fits_pattern, cmd_patterns,
+                 clean_globs=[]):
         self.name = name
         self.filebase = filebase
         self.fits_patterns = {MODE_CLEAN: clean_fits_pattern, MODE_DIRTY: dirty_fits_pattern}
@@ -69,7 +73,8 @@ class Image(object):
         self.clean_globs = list(clean_globs)
 
     def fits_filename(self, mode, stokes, channel, rel_channel):
-        return self.fits_patterns[mode].format(stokes=stokes, channel=channel, rel_channel=rel_channel)
+        return self.fits_patterns[mode].format(stokes=stokes, channel=channel,
+                                               rel_channel=rel_channel)
 
     def svg_filename_thumb(self, mode, stokes, channel):
         return '{}-{}-{}-{}-thumb.svg'.format(self.filebase, mode, stokes, channel)
@@ -90,7 +95,8 @@ class Image(object):
         build_info = BuildInfo(cmds)
         # Clean up unwanted files, making sure not to delete any files we
         # actually wanted.
-        keep = set(os.path.join(output_dir, self.fits_filename(mode, s, channel, channel - channels[0]))
+        keep = set(os.path.join(output_dir,
+                                self.fits_filename(mode, s, channel, channel - channels[0]))
                    for mode in modes
                    for s in stokes
                    for channel in channels)
@@ -173,7 +179,8 @@ def write_index(args, images, build_info, modes):
 def write_build_log(args, image, build_info, modes):
     template_filename = os.path.join(os.path.dirname(__file__), 'build_log.html.mako')
     template = Template(filename=template_filename)
-    with io.open(os.path.join(args.output_dir, image.build_info_filename()), 'w', encoding='utf-8') as f:
+    path = os.path.join(args.output_dir, image.build_info_filename())
+    with io.open(path, 'w', encoding='utf-8') as f:
         f.write(template.render_unicode(
             image=image, build_info=build_info, modes=modes, stokes=args.stokes,
             channels=list(range(args.start_channel, args.stop_channel))))
@@ -217,7 +224,8 @@ def main():
     parser.add_argument('--skip-build', action='store_true', help='Use existing image files')
     parser.add_argument('--stokes', default='IQUV', help='Stokes parameters to show')
     parser.add_argument('--start-channel', type=int, default=0, help='First channel to image')
-    parser.add_argument('--stop-channel', type=int, default=1, help='One past last channel to image')
+    parser.add_argument('--stop-channel', type=int, default=1,
+                        help='One past last channel to image')
     args = parser.parse_args()
 
     pixel_size = 1.7    # in arcsec
@@ -239,7 +247,9 @@ def main():
         'cellsize={}arcsec'.format(pixel_size), 'wprojplanes=128', 'threshold=0.01Jy',
         'weight=natural', 'stokes=${stokes}', 'data=CORRECTED_DATA']
     images = [
-        Image('WSClean', 'wsclean', 'wsclean-{rel_channel:04}-{stokes}-image.fits', 'wsclean-{rel_channel:04}-{stokes}-dirty.fits',
+        Image('WSClean', 'wsclean',
+              'wsclean-{rel_channel:04}-{stokes}-image.fits',
+              'wsclean-{rel_channel:04}-{stokes}-dirty.fits',
               [['wsclean', '-mgain', '0.85', '-niter', '1000', '-threshold', '0.01',
                 '-weight', 'natural',
                 '-size', '{}'.format(pixels), '{}'.format(pixels),
@@ -254,12 +264,17 @@ def main():
                   lwimager_common + ['operation=csclean', 'fits=${output_dir}/lwimager.fits']
               ],
               clean_globs=['*-channel*.img*']),
-        Image('katsdpimager (GPU)', 'katsdpimager-gpu', 'image-gpu-{channel}.fits', 'dirty-gpu-{channel}.fits',
-              [katsdpimager_common + ['--write-dirty=${output_dir}/dirty-gpu-%d.fits', '${output_dir}/image-gpu-%d.fits']]),
-        Image('katsdpimager (CPU)', 'katsdpimager-cpu', 'image-cpu-{channel}.fits', 'dirty-cpu-{channel}.fits',
-              [katsdpimager_common + ['--host', '--write-dirty=${output_dir}/dirty-cpu-%d.fits', '${output_dir}/image-cpu-%d.fits']])
+        Image('katsdpimager (GPU)', 'katsdpimager-gpu',
+              'image-gpu-{channel}.fits', 'dirty-gpu-{channel}.fits',
+              [katsdpimager_common + ['--write-dirty=${output_dir}/dirty-gpu-%d.fits',
+                                      '${output_dir}/image-gpu-%d.fits']]),
+        Image('katsdpimager (CPU)', 'katsdpimager-cpu',
+              'image-cpu-{channel}.fits', 'dirty-cpu-{channel}.fits',
+              [katsdpimager_common + ['--host', '--write-dirty=${output_dir}/dirty-cpu-%d.fits',
+                                      '${output_dir}/image-cpu-%d.fits']])
     ]
     return run(args, images, MODES)
+
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)

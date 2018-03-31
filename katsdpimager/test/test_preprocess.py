@@ -7,7 +7,7 @@ import tempfile
 import logging
 import os
 from contextlib import closing
-from nose.tools import *
+from nose.tools import assert_equal, assert_true, assert_false
 import katsdpimager.parameters as parameters
 import katsdpimager.polarization as polarization
 import katsdpimager.preprocess as preprocess
@@ -73,7 +73,7 @@ class BaseTestVisibilityCollector(object):
             [-3.4, 7.6, 2.5],
             [-5.2, -10.6, 7.2],
             [12.102, 2.299, 4.6],   # Should merge with the first visibility in first channel
-            ], dtype=np.float32) * units.m
+        ], dtype=np.float32) * units.m
         weights = np.array([
             [
                 [1.3, 0.6, 1.2, 0.0],
@@ -91,7 +91,7 @@ class BaseTestVisibilityCollector(object):
             -1,    # Auto-correlation: should be removed
             1,
             0,
-            ], dtype=np.int16)
+        ], dtype=np.int16)
         vis = np.array([
             [
                 [0.5 - 2.3j, 0.1 + 4.2j, 0.0 - 3j, 1.5 + 0j],
@@ -131,7 +131,7 @@ class BaseTestVisibilityCollector(object):
                  [19.04 + 31.36j, 46.8 + 6.24j, 26.88 + 37.44j, 5.28 + 14.96j],
                  [4.8 + 3.2j, 2.8 - 5.6j, 2.64 + 6.48j, 3.0 + 2.6j]],
                 [64, 64, 65]], dtype=collector.store_dtype)]
-            ])
+        ])
 
     def test_simple(self):
         self._test_impl(False)

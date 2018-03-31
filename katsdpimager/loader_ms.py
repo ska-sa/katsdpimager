@@ -163,8 +163,8 @@ def _getcolslice(table, name, blc, trc, inc=[], start=0, count=-1,
 
 
 def _getcolchannels(table, name, start_channel, stop_channel, start=0, count=-1,
-                   casacore_units=None, astropy_units=None,
-                   measinfo_type=None, measinfo_ref=None):
+                    casacore_units=None, astropy_units=None,
+                    measinfo_type=None, measinfo_ref=None):
     """Convenience wrapper around :func:`_getcolslice` for columns where the
     shape is channels by polarizations, and a range of channels is desired.
     """
@@ -214,19 +214,26 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         parser = argparse.ArgumentParser(
             prog='Measurement set options',
             usage='Measurement set options: [-i data=COLUMN] [-i field=FIELD] ...')
-        parser.add_argument('--data', type=str, metavar='COLUMN', default='DATA', help='Column containing visibilities to image [%(default)s]')
-        parser.add_argument('--data-desc', type=int, default=0, help='Data description ID to image [%(default)s]')
-        parser.add_argument('--field', type=int, default=0, help='Field to image [%(default)s]')
-        parser.add_argument('--pol-frame', choices=['sky', 'feed'], help='Reference frame for polarization [%(default)s]')
-        parser.add_argument('--uvw', choices=['casa', 'strict'], default='casa', help='UVW sign convention [%(default)s]')
+        parser.add_argument('--data', type=str, metavar='COLUMN', default='DATA',
+                            help='Column containing visibilities to image [%(default)s]')
+        parser.add_argument('--data-desc', type=int, default=0,
+                            help='Data description ID to image [%(default)s]')
+        parser.add_argument('--field', type=int, default=0,
+                            help='Field to image [%(default)s]')
+        parser.add_argument('--pol-frame', choices=['sky', 'feed'],
+                            help='Reference frame for polarization [%(default)s]')
+        parser.add_argument('--uvw', choices=['casa', 'strict'], default='casa',
+                            help='UVW sign convention [%(default)s]')
         args = parser.parse_args(options)
         self._strict_uvw = (args.uvw == 'strict')
         self._main = casacore.tables.table(filename, ack=False)
         _fix_cache_size(self._main, 'FLAG')
         self._antenna = casacore.tables.table(self._main.getkeyword('ANTENNA'), ack=False)
-        self._data_description = casacore.tables.table(self._main.getkeyword('DATA_DESCRIPTION'), ack=False)
+        self._data_description = casacore.tables.table(self._main.getkeyword('DATA_DESCRIPTION'),
+                                                       ack=False)
         self._field = casacore.tables.table(self._main.getkeyword('FIELD'), ack=False)
-        self._spectral_window = casacore.tables.table(self._main.getkeyword('SPECTRAL_WINDOW'), ack=False)
+        self._spectral_window = casacore.tables.table(self._main.getkeyword('SPECTRAL_WINDOW'),
+                                                      ack=False)
         self._polarization = casacore.tables.table(self._main.getkeyword('POLARIZATION'), ack=False)
         self._feed = casacore.tables.table(self._main.getkeyword('FEED'), ack=False)
         self._data_col = args.data
@@ -263,7 +270,8 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             for i in range(len(antenna_id)):
                 for angle in receptor_angle[i]:
                     if (antenna_angle[antenna_id[i]] is not None
-                            and not np.allclose(antenna_angle[antenna_id[i]], angle, atol=1e-8 * units.rad)):
+                            and not np.allclose(antenna_angle[antenna_id[i]],
+                                                angle, atol=1e-8 * units.rad)):
                         raise ValueError('Multiple feed angles for one antenna is not supported')
                     antenna_angle[antenna_id[i]] = angle
             self._antenna_angle = units.Quantity(antenna_angle)
@@ -335,7 +343,8 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             feed_angle1 = None
             feed_angle2 = None
             if self._feed_angle_correction:
-                time_full = _getcol(self._main, 'TIME_CENTROID', start, nrows, 's', None, 'epoch', 'UTC')[valid, ...]
+                time_full = _getcol(self._main, 'TIME_CENTROID', start, nrows, 's', None,
+                                    'epoch', 'UTC')[valid, ...]
                 # Each time will be repeated per baseline, but we do not need to repeat all the
                 # calculations for each time. Extract just the unique times.
                 time, inverse = np.unique(time_full, return_inverse=True)

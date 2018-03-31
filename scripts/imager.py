@@ -56,56 +56,102 @@ def parse_stokes(str_value):
 
 def get_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('input_file', type=str, metavar='INPUT', help='Input measurement set')
-    parser.add_argument('output_file', type=str, metavar='OUTPUT', help='Output FITS file')
-    parser.add_argument('--log-level', type=str, default='INFO', metavar='LEVEL', help='Logging level [%(default)s]')
+    parser.add_argument('input_file', type=str, metavar='INPUT',
+                        help='Input measurement set')
+    parser.add_argument('output_file', type=str, metavar='OUTPUT',
+                        help='Output FITS file')
+    parser.add_argument('--log-level', type=str, default='INFO', metavar='LEVEL',
+                        help='Logging level [%(default)s]')
     group = parser.add_argument_group('Input selection')
-    group.add_argument('--input-option', '-i', action='append', default=[], metavar='KEY=VALUE', help='Backend-specific input parsing option')
-    group.add_argument('--start-channel', '-c', type=int, default=0, help='Index of first channel to process [%(default)s]')
-    group.add_argument('--stop-channel', '-C', type=int, help='Index past last channel to process [#channels]')
+    group.add_argument('--input-option', '-i', action='append', default=[], metavar='KEY=VALUE',
+                       help='Backend-specific input parsing option')
+    group.add_argument('--start-channel', '-c', type=int, default=0,
+                       help='Index of first channel to process [%(default)s]')
+    group.add_argument('--stop-channel', '-C', type=int,
+                       help='Index past last channel to process [#channels]')
     group = parser.add_argument_group('Image options')
-    group.add_argument('--q-fov', type=float, default=1.0, help='Field of view to image, relative to main lobe of beam [%(default)s]')
-    group.add_argument('--image-oversample', type=float, default=5, help='Pixels per beam [%(default)s]')
-    group.add_argument('--pixel-size', type=parse_quantity, help='Size of each image pixel [computed from array]')
-    group.add_argument('--pixels', type=int, help='Number of pixels in image [computed from array]')
-    group.add_argument('--stokes', type=parse_stokes, default='I', help='Stokes parameters to image e.g. IQUV for full-Stokes [%(default)s]')
-    group.add_argument('--precision', choices=['single', 'double'], default='single', help='Internal floating-point precision [%(default)s]')
+    group.add_argument('--q-fov', type=float, default=1.0,
+                       help='Field of view to image, relative to main lobe of beam [%(default)s]')
+    group.add_argument('--image-oversample', type=float, default=5,
+                       help='Pixels per beam [%(default)s]')
+    group.add_argument('--pixel-size', type=parse_quantity,
+                       help='Size of each image pixel [computed from array]')
+    group.add_argument('--pixels', type=int,
+                       help='Number of pixels in image [computed from array]')
+    group.add_argument('--stokes', type=parse_stokes, default='I',
+                       help='Stokes parameters to image e.g. IQUV for full-Stokes [%(default)s]')
+    group.add_argument('--precision', choices=['single', 'double'], default='single',
+                       help='Internal floating-point precision [%(default)s]')
     group = parser.add_argument_group('Weighting options')
-    group.add_argument('--weight-type', choices=['natural', 'uniform', 'robust'], default='natural', help='Imaging density weights [%(default)s]')
-    group.add_argument('--robustness', type=float, default=0.0, help='Robustness parameter for --weight-type=robust [%(default)s]')
+    group.add_argument('--weight-type', choices=['natural', 'uniform', 'robust'],
+                       default='natural',
+                       help='Imaging density weights [%(default)s]')
+    group.add_argument('--robustness', type=float, default=0.0,
+                       help='Robustness parameter for --weight-type=robust [%(default)s]')
     group = parser.add_argument_group('Gridding options')
-    group.add_argument('--grid-oversample', type=int, default=8, help='Oversampling factor for convolution kernels [%(default)s]')
-    group.add_argument('--kernel-image-oversample', type=int, default=4, help='Oversampling factor for kernel generation [%(default)s]')
-    group.add_argument('--w-slices', type=int, help='Number of W slices [computed from --kernel-width]')
-    group.add_argument('--w-step', type=parse_quantity, default='1.0', help='Separation between W planes, in subgrid cells or a distance [%(default)s]'),
-    group.add_argument('--max-w', type=parse_quantity, help='Largest w, as either distance or wavelengths [longest baseline]')
-    group.add_argument('--aa-width', type=float, default=7, help='Support of anti-aliasing kernel [%(default)s]')
-    group.add_argument('--kernel-width', type=int, default=60, help='Support of combined anti-aliasing + w kernel [computed]')
-    group.add_argument('--eps-w', type=float, default=0.01, help='Level at which to truncate W kernel [%(default)s]')
+    group.add_argument('--grid-oversample', type=int, default=8,
+                       help='Oversampling factor for convolution kernels [%(default)s]')
+    group.add_argument('--kernel-image-oversample', type=int, default=4,
+                       help='Oversampling factor for kernel generation [%(default)s]')
+    group.add_argument('--w-slices', type=int,
+                       help='Number of W slices [computed from --kernel-width]')
+    group.add_argument('--w-step', type=parse_quantity, default='1.0',
+                       help='Separation between W planes, in subgrid cells or a distance '
+                            '[%(default)s]'),
+    group.add_argument('--max-w', type=parse_quantity,
+                       help='Largest w, as either distance or wavelengths [longest baseline]')
+    group.add_argument('--aa-width', type=float, default=7,
+                       help='Support of anti-aliasing kernel [%(default)s]')
+    group.add_argument('--kernel-width', type=int, default=60,
+                       help='Support of combined anti-aliasing + w kernel [computed]')
+    group.add_argument('--eps-w', type=float, default=0.01,
+                       help='Level at which to truncate W kernel [%(default)s]')
     group = parser.add_argument_group('Cleaning options')
-    group.add_argument('--psf-cutoff', type=float, default=0.05, help='fraction of PSF peak at which to truncate PSF [%(default)s]')
-    group.add_argument('--loop-gain', type=float, default=0.1, help='Loop gain for cleaning [%(default)s]')
-    group.add_argument('--major-gain', type=float, default=0.85, help='Fraction of peak to clean in each major cycle [%(default)s]')
-    group.add_argument('--threshold', type=float, default=5.0, help='CLEAN threshold in sigma [%(default)s]')
-    group.add_argument('--major', type=int, default=1, help='Major cycles [%(default)s]')
-    group.add_argument('--minor', type=int, default=10000, help='Max minor cycles per major cycle [%(default)s]')
-    group.add_argument('--border', type=float, default=0.02, help='CLEAN border as a fraction of image size [%(default)s]')
-    group.add_argument('--clean-mode', choices=['I', 'IQUV'], default='IQUV', help='Stokes parameters to consider for peak-finding [%(default)s]')
+    group.add_argument('--psf-cutoff', type=float, default=0.05,
+                       help='fraction of PSF peak at which to truncate PSF [%(default)s]')
+    group.add_argument('--loop-gain', type=float, default=0.1,
+                       help='Loop gain for cleaning [%(default)s]')
+    group.add_argument('--major-gain', type=float, default=0.85,
+                       help='Fraction of peak to clean in each major cycle [%(default)s]')
+    group.add_argument('--threshold', type=float, default=5.0,
+                       help='CLEAN threshold in sigma [%(default)s]')
+    group.add_argument('--major', type=int, default=1,
+                       help='Major cycles [%(default)s]')
+    group.add_argument('--minor', type=int, default=10000,
+                       help='Max minor cycles per major cycle [%(default)s]')
+    group.add_argument('--border', type=float, default=0.02,
+                       help='CLEAN border as a fraction of image size [%(default)s]')
+    group.add_argument('--clean-mode', choices=['I', 'IQUV'], default='IQUV',
+                       help='Stokes parameters to consider for peak-finding [%(default)s]')
     group = parser.add_argument_group('Performance tuning options')
-    group.add_argument('--vis-block', type=int, default=1048576, help='Number of visibilities to load and grid at a time [%(default)s]')
-    group.add_argument('--vis-load', type=int, default=32 * 1048576, help='Number of visibilities to load from file at a time [%(default)s]')
-    group.add_argument('--channel-batch', type=int, default=16, help='Number of channels to fully process before starting next batch [%(default)s]')
-    group.add_argument('--no-tmp-file', dest='tmp_file', action='store_false', default=True, help='Keep preprocessed visibilities in memory')
-    group.add_argument('--max-cache-size', type=int, default=None, help='Limit HDF5 cache size for preprocessing')
+    group.add_argument('--vis-block', type=int, default=1048576,
+                       help='Number of visibilities to load and grid at a time [%(default)s]')
+    group.add_argument('--vis-load', type=int, default=32 * 1048576,
+                       help='Number of visibilities to load from file at a time [%(default)s]')
+    group.add_argument('--channel-batch', type=int, default=16,
+                       help='Number of channels to fully process before starting next batch '
+                            '[%(default)s]')
+    group.add_argument('--no-tmp-file', dest='tmp_file', action='store_false', default=True,
+                       help='Keep preprocessed visibilities in memory')
+    group.add_argument('--max-cache-size', type=int, default=None,
+                       help='Limit HDF5 cache size for preprocessing')
     group = parser.add_argument_group('Debugging options')
-    group.add_argument('--host', action='store_true', help='Perform operations on the CPU')
-    group.add_argument('--write-weights', metavar='FILE', help='Write imaging weights to FITS file')
-    group.add_argument('--write-psf', metavar='FILE', help='Write image of PSF to FITS file')
-    group.add_argument('--write-grid', metavar='FILE', help='Write UV grid to FITS file')
-    group.add_argument('--write-dirty', metavar='FILE', help='Write dirty image to FITS file')
-    group.add_argument('--write-model', metavar='FILE', help='Write model image to FITS file')
-    group.add_argument('--write-residuals', metavar='FILE', help='Write image residuals to FITS file')
-    group.add_argument('--vis-limit', type=int, metavar='N', help='Use only the first N visibilities')
+    group.add_argument('--host', action='store_true',
+                       help='Perform operations on the CPU')
+    group.add_argument('--write-weights', metavar='FILE',
+                       help='Write imaging weights to FITS file')
+    group.add_argument('--write-psf', metavar='FILE',
+                       help='Write image of PSF to FITS file')
+    group.add_argument('--write-grid', metavar='FILE',
+                       help='Write UV grid to FITS file')
+    group.add_argument('--write-dirty', metavar='FILE',
+                       help='Write dirty image to FITS file')
+    group.add_argument('--write-model', metavar='FILE',
+                       help='Write model image to FITS file')
+    group.add_argument('--write-residuals', metavar='FILE',
+                       help='Write image residuals to FITS file')
+    group.add_argument('--vis-limit', type=int, metavar='N',
+                       help='Use only the first N visibilities')
     return parser
 
 
@@ -323,7 +369,6 @@ class ChannelParameters(object):
             dataset.frequency(channel), array_p, args.stokes,
             (np.float32 if args.precision == 'single' else np.float64),
             args.pixel_size, args.pixels)
-        weight_p = parameters.WeightParameters(WEIGHT_TYPES[args.weight_type], args.robustness)
         if args.max_w is None:
             max_w = array_p.longest_baseline
         elif args.max_w.unit.physical_type == 'dimensionless':
@@ -331,7 +376,8 @@ class ChannelParameters(object):
         else:
             max_w = args.max_w
         if args.w_slices is None:
-            w_slices = parameters.w_slices(self.image_p, max_w, args.eps_w, args.kernel_width, args.aa_width)
+            w_slices = parameters.w_slices(self.image_p, max_w, args.eps_w,
+                                           args.kernel_width, args.aa_width)
         else:
             w_slices = args.w_slices
         if args.w_step.unit.physical_type == 'length':
@@ -370,7 +416,7 @@ def process_channel(dataset, args, start_channel,
     grid_p = channel_p.grid_p
     clean_p = channel_p.clean_p
     logger.info('Processing channel {}'.format(channel))
-    #### Create data and operation instances ####
+    # Create data and operation instances
     if args.host:
         imager = imaging.ImagingHost(image_p, weight_p, grid_p, clean_p)
     else:
@@ -384,7 +430,7 @@ def process_channel(dataset, args, start_channel,
     model = imager.buffer('model')
     grid_data = imager.buffer('grid')
 
-    #### Compute imaging weights ####
+    # Compute imaging weights
     make_weights(queue, reader, rel_channel,
                  imager, weight_p.weight_type, args.vis_block)
     if args.write_weights is not None:
@@ -392,7 +438,7 @@ def process_channel(dataset, args, start_channel,
             io.write_fits_image(dataset, imager.buffer('weights_grid'), image_p,
                                 args.write_weights, channel, image_p.wavelength, bunit=None)
 
-    #### Create PSF ####
+    # Create PSF
     slice_w_step = float(grid_p.max_w / image_p.wavelength / (grid_p.w_slices - 0.5))
     mid_w = np.arange(grid_p.w_slices) * slice_w_step
     make_dirty(queue, reader, rel_channel,
@@ -415,7 +461,7 @@ def process_channel(dataset, args, start_channel,
             io.write_fits_image(dataset, psf, image_p, args.write_psf,
                                 channel, image_p.wavelength, restoring_beam)
 
-    #### Imaging ####
+    # Imaging
     imager.clear_model()
     for i in range(args.major):
         logger.info("Starting major cycle %d/%d", i + 1, args.major)
@@ -435,7 +481,7 @@ def process_channel(dataset, args, start_channel,
                 io.write_fits_image(dataset, dirty, image_p, args.write_dirty,
                                     channel, image_p.wavelength, restoring_beam)
 
-        #### Deconvolution ####
+        # Deconvolution
         noise = imager.noise_est()
         imager.clean_reset()
         peak_value = imager.clean_cycle(psf_patch)
@@ -514,12 +560,14 @@ def main():
     # not active. We make it active for the rest of the execution to avoid
     # this.
     with context, closing(loader.load(args.input_file, args.input_option)) as dataset:
-        #### Determine parameters ####
+        # Determine parameters
         input_polarizations = dataset.polarizations()
         if dataset.has_feed_angles():
-            polarization_matrices = polarization.polarization_matrices(args.stokes, input_polarizations)
+            polarization_matrices = \
+                polarization.polarization_matrices(args.stokes, input_polarizations)
         else:
-            polarization_matrices = (polarization.polarization_matrix(args.stokes, input_polarizations), None)
+            polarization_matrices = (
+                polarization.polarization_matrix(args.stokes, input_polarizations), None)
         array_p = dataset.array_parameters()
         if args.stop_channel is None:
             args.stop_channel = dataset.num_channels()
@@ -540,14 +588,14 @@ def main():
             stop_channel = min(args.stop_channel, start_channel + args.channel_batch)
             channels = range(start_channel, stop_channel)
             params = [ChannelParameters(args, dataset, channel, array_p) for channel in channels]
-            #### Preprocess visibilities ####
+            # Preprocess visibilities
             image_ps = [channel_p.image_p for channel_p in params]
             grid_ps = [channel_p.grid_p for channel_p in params]
             collector = preprocess_visibilities(dataset, args, start_channel, stop_channel,
                                                 image_ps, grid_ps, polarization_matrices)
             reader = collector.reader()
 
-            #### Do the work ####
+            # Do the work
             for channel_p in params:
                 process_channel(dataset, args, start_channel, context, queue,
                                 reader, channel_p, array_p, weight_p)

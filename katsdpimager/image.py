@@ -1,5 +1,9 @@
-"""Kernels for image-domain processing, and conversion between visibility and
-image planes."""
+"""Kernels for image-domain processing
+
+It also handles conversion between visibility and image planes.
+
+.. include:: macros.rst
+"""
 
 from __future__ import division, print_function, absolute_import
 import numpy as np
@@ -62,7 +66,7 @@ class _LayerImageTemplate(object):
 
     Parameters
     ----------
-    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+    context : |Context|
         Context for which kernels will be compiled
     real_dtype : {`np.float32`, `np.float64`}
         Image type
@@ -101,7 +105,7 @@ class _LayerImage(accel.Operation):
     ----------
     template : :class:`_LayerImageTemplate`
         Operation template
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+    command_queue : |CommandQueue|
         Command queue for the operation
     shape : tuple of int
         Shape of the image data (polarizations, height, width) - must be square
@@ -119,7 +123,8 @@ class _LayerImage(accel.Operation):
     ValueError
         if the last two elements of shape are not equal and even
     """
-    def __init__(self, template, command_queue, shape, lm_scale, lm_bias, kernel_name, allocator=None):
+    def __init__(self, template, command_queue, shape, lm_scale, lm_bias, kernel_name,
+                 allocator=None):
         if len(shape) != 3 or shape[-1] != shape[-2]:
             raise ValueError('shape must be square, not {}'.format(shape))
         if shape[-1] % 2 != 0:
@@ -181,7 +186,7 @@ class LayerToImageTemplate(_LayerImageTemplate):
 
     Parameters
     ----------
-    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+    context : |Context|
         Context for which kernels will be compiled
     real_dtype : {`np.float32`, `np.float64`}
         Image type
@@ -204,7 +209,7 @@ class LayerToImage(_LayerImage):
     ----------
     template : :class:`LayerToImageTemplate`
         Operation template
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+    command_queue : |CommandQueue|
         Command queue for the operation
     shape : tuple of int
         Shape of the data (must be square)
@@ -230,7 +235,7 @@ class ImageToLayerTemplate(_LayerImageTemplate):
 
     Parameters
     ----------
-    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+    context : |Context|
         Context for which kernels will be compiled
     real_dtype : {`np.float32`, `np.float64`}
         Image type
@@ -253,7 +258,7 @@ class ImageToLayer(_LayerImage):
     ----------
     template : :class:`ImageToLayerTemplate`
         Operation template
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+    command_queue : |CommandQueue|
         Command queue for the operation
     shape : tuple of int
         Shape of the image as (polarizations, height, width) - must be square
@@ -279,7 +284,7 @@ class ScaleTemplate(object):
 
     Parameters
     ----------
-    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+    context : |Context|
         Context for which kernels will be compiled
     dtype : {`np.float32`, `np.float64`}
         Image precision
@@ -322,7 +327,7 @@ class Scale(accel.Operation):
     ----------
     template : :class:`ScaleTemplate`
         Operation template
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+    command_queue : |CommandQueue|
         Command queue for the operation
     shape : tuple of int
         Shape of the data.

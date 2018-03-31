@@ -113,6 +113,8 @@ devices, and even then may limit the block size.
    gridding radio-telescope data on GPUs. In *Proceedings of the 26th ACM International
    Conference on Supercomputing (ICS '12)*, 321-330.
    http://www.astron.nl/~romein/papers/ICS-12/gridding.pdf
+
+.. include:: macros.rst
 """
 
 from __future__ import division, print_function, absolute_import
@@ -340,15 +342,15 @@ class ConvolutionKernel(object):
     """
     def __init__(self, image_parameters, grid_parameters, data=None):
         self.grid_parameters = grid_parameters
+        shape = (grid_parameters.w_planes, grid_parameters.oversample, grid_parameters.kernel_width)
         if data is None:
-            self.data = np.empty(
-                (grid_parameters.w_planes, grid_parameters.oversample, grid_parameters.kernel_width),
-                np.complex64)
+            self.data = np.empty(shape, np.complex64)
         else:
             self.data = data
         cell_wavelengths = float(image_parameters.cell_size / image_parameters.wavelength)
         # Separation in w between slices
-        w_slice_wavelengths = float(grid_parameters.max_w / (grid_parameters.w_slices * image_parameters.wavelength))
+        w_slice_wavelengths = float(grid_parameters.max_w
+                                    / (grid_parameters.w_slices * image_parameters.wavelength))
         # Separation in w between planes
         w_plane_wavelengths = w_slice_wavelengths / grid_parameters.w_planes
         # Puts the first null of the taper function at the edge of the image
@@ -361,7 +363,8 @@ class ConvolutionKernel(object):
         # TODO: can halve work and memory by exploiting conjugate symmetry
         # Find w for the midpoint of the final plane
         max_w_wavelengths = (w_slice_wavelengths - w_plane_wavelengths) * 0.5
-        for i, w in enumerate(np.linspace(-max_w_wavelengths, max_w_wavelengths, grid_parameters.w_planes)):
+        ws = np.linspace(-max_w_wavelengths, max_w_wavelengths, grid_parameters.w_planes)
+        for i, w in enumerate(ws):
             antialias_w_kernel(
                 cell_wavelengths, w, grid_parameters.kernel_width,
                 grid_parameters.oversample,
@@ -485,7 +488,7 @@ def _autotune_arrays(command_queue, oversample, real_dtype, num_polarizations, b
 
     Parameters
     ----------
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+    command_queue : |CommandQueue|
         Command queue for zeroing the arrays
     oversample : int
         Grid oversampling
@@ -573,7 +576,7 @@ class GridderTemplate(object):
         bin_size = 32
         pad = 3
         grid, weights_grid, uv, w_plane, vis, convolve_kernel = _autotune_arrays(
-                queue, oversample, real_dtype, num_polarizations, bin_size, pad)
+            queue, oversample, real_dtype, num_polarizations, bin_size, pad)
         num_vis = uv.shape[0]
 
         def generate(multi_x, multi_y, wgs_x, wgs_y):
@@ -622,11 +625,11 @@ class GridderTemplate(object):
             return tune.make_measure(queue, fn)
 
         return tune.autotune(
-                generate,
-                multi_x=[1, 2, 4],
-                multi_y=[1, 2, 4],
-                wgs_x=[4, 8, 16],
-                wgs_y=[4, 8, 16])
+            generate,
+            multi_x=[1, 2, 4],
+            multi_y=[1, 2, 4],
+            wgs_x=[4, 8, 16],
+            wgs_y=[4, 8, 16])
 
     def instantiate(self, *args, **kwargs):
         return Gridder(self, *args, **kwargs)
@@ -648,7 +651,7 @@ class GridDegrid(accel.Operation):
     **w_plane** : array of int16
         W plane index per visibility, clamped to the range of allocated w planes
     **weights** : array of float32 × pols
-        Statistical weights for visibilities. 
+        Statistical weights for visibilities.
     **vis** : array of complex64 × pols
         Visibilities, which are pre-multiplied by statistical weights. For
         gridding this are inputs.  For degridding these are visibilities on
@@ -658,7 +661,7 @@ class GridDegrid(accel.Operation):
     ----------
     template : :class:`GridderTemplate` or :class:`DegridderTemplate`
         Operation template
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+    command_queue : |CommandQueue|
         Command queue for the operation
     array_parameters : :class:`~katsdpimager.parameters.ArrayParameters`
         Array parameters
@@ -682,7 +685,8 @@ class GridDegrid(accel.Operation):
         # case I've made an off-by-one error in the maths.
         grid_pixels = 2 * (int(max_uv_src) + convolve_kernel_size // 2 + 1)
         if grid_pixels > template.image_parameters.pixels:
-            raise ValueError('image_oversample is too small to capture all visibilities in the UV plane')
+            raise ValueError('image_oversample is too small '
+                             'to capture all visibilities in the UV plane')
         self.template = template
         self.max_vis = max_vis
         num_polarizations = len(template.image_parameters.polarizations)
@@ -757,7 +761,7 @@ class Gridder(GridDegrid):
 
         Parameters
         ----------
-        command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+        command_queue : |CommandQueue|
             Command queue for the operation
         kernel : :class:`katsdpsigproc.cuda.Kernel` or :class:`katsdpsigproc.opencl.Kernel`
             Compiled kernel to run
@@ -767,7 +771,8 @@ class Gridder(GridDegrid):
             Number of visibilities to grid
         uv_bias : int
             Bias for UV coordinates to center the kernel
-        grid,weights_grid,uv,w_plane,vis,convolve_kernel : :class:`~katsdpsigproc.accel.DeviceArray`-like
+        grid,weights_grid,uv,w_plane,vis,convolve_kernel : \
+                :class:`~katsdpsigproc.accel.DeviceArray`-like
             Data passed to the kernel
         """
         if num_vis == 0:
@@ -875,7 +880,7 @@ class DegridderTemplate(object):
         queue = context.create_tuning_command_queue()
         bin_size = 32
         grid, weights_grid, uv, w_plane, vis, convolve_kernel = _autotune_arrays(
-                queue, oversample, real_dtype, num_polarizations, bin_size, 3)
+            queue, oversample, real_dtype, num_polarizations, bin_size, 3)
         weights = accel.DeviceArray(context, vis.shape, np.complex64)
         num_vis = uv.shape[0]
 
@@ -918,18 +923,18 @@ class DegridderTemplate(object):
 
             def fn():
                 Degridder.static_run(
-                        queue, kernel, wgs_x, wgs_y, wgs_z, bin_size,
-                        num_vis, uv_bias,
-                        grid, uv, w_plane, weights, vis, convolve_kernel)
+                    queue, kernel, wgs_x, wgs_y, wgs_z, bin_size,
+                    num_vis, uv_bias,
+                    grid, uv, w_plane, weights, vis, convolve_kernel)
             return tune.make_measure(queue, fn)
 
         return tune.autotune(
-                generate,
-                multi_x=[1, 2, 4],
-                multi_y=[1, 2, 4],
-                wgs_x=[4, 8],
-                wgs_y=[4, 8],
-                wgs_z=[1, 2, 4, 8])
+            generate,
+            multi_x=[1, 2, 4],
+            multi_y=[1, 2, 4],
+            wgs_x=[4, 8],
+            wgs_y=[4, 8],
+            wgs_z=[1, 2, 4, 8])
 
     def instantiate(self, *args, **kwargs):
         return Degridder(self, *args, **kwargs)

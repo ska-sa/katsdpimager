@@ -41,6 +41,8 @@ different beam shapes for the different polarizations.
 .. [Bri95] Briggs, D. S. 1995. High fidelity deconvolution of moderately
    resolved sources. PhD Thesis, The New Mexico Institute of Mining and Technology.
    http://www.aoc.nrao.edu/dissertations/dbriggs/
+
+.. include:: macros.rst
 """
 
 from __future__ import division, print_function, absolute_import
@@ -60,7 +62,7 @@ class GridWeightsTemplate(object):
 
     Parameters
     ----------
-    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+    context : |Context|
         Context for which kernels will be compiled
     num_polarizations : int
         Number of polarizations to grid
@@ -105,7 +107,7 @@ class GridWeights(accel.Operation):
     ----------
     template : :class:`GridWeightsTemplate`
         Operation template
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+    command_queue : |CommandQueue|
         Command queue for the operation
     grid_shape : tuple of ints
         Shape for the grid, (polarizations, height, width)
@@ -184,7 +186,7 @@ class DensityWeightsTemplate(object):
 
     Parameters
     ----------
-    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+    context : |Context|
         Context for which kernels will be compiled
     num_polarizations : int
         Number of polarizations to grid
@@ -230,7 +232,7 @@ class DensityWeights(accel.Operation):
     ----------
     template : :class:`DensityWeightsTemplate`
         Operation template
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+    command_queue : |CommandQueue|
         Command queue for the operation
     grid_shape : tuple of ints
         Shape for the grid, (polarizations, height, width)
@@ -294,7 +296,7 @@ class MeanWeightTemplate(object):
 
     Parameters
     ----------
-    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+    context : |Context|
         Context for which kernels will be compiled
     tuning : dict, optional
         Tuning parameters (unused)
@@ -328,7 +330,7 @@ class MeanWeight(accel.Operation):
     ----------
     template : :class:`MeanWeightTemplate`
         Operation template
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+    command_queue : |CommandQueue|
         Command queue for the operation
     grid_shape : tuple of ints
         Shape for the grid, (polarizations, height, width)
@@ -375,7 +377,7 @@ class WeightsTemplate(object):
 
     Parameters
     ----------
-    context : :class:`katsdpsigproc.cuda.Context` or :class:`katsdpsigproc.opencl.Context`
+    context : |Context|
         Context for which kernels will be compiled
     weight_type : {:const:`NATURAL`, :const:`UNIFORM`, :const:`ROBUST`}
         Weighting method
@@ -396,12 +398,14 @@ class WeightsTemplate(object):
             self.density_weights = None
             self.fill = fill.FillTemplate(context, np.float32, 'float')
         else:
-            self.grid_weights = GridWeightsTemplate(context, num_polarizations, tuning=grid_weights_tuning)
+            self.grid_weights = GridWeightsTemplate(context, num_polarizations,
+                                                    tuning=grid_weights_tuning)
             if weight_type == ROBUST:
                 self.mean_weight = MeanWeightTemplate(context, tuning=mean_weight_tuning)
             else:
                 self.mean_weight = None
-            self.density_weights = DensityWeightsTemplate(context, num_polarizations, tuning=density_weights_tuning)
+            self.density_weights = DensityWeightsTemplate(context, num_polarizations,
+                                                          tuning=density_weights_tuning)
             self.fill = None
 
     def instantiate(self, *args, **kwargs):
@@ -433,7 +437,7 @@ class Weights(accel.OperationSequence):
 
     Parameters
     ----------
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue` or :class:`katsdpsigproc.opencl.CommandQueue`
+    command_queue : |CommandQueue|
         Command queue for the operation
     grid_shape : tuple of ints
         Shape for the grid, (polarizations, height, width)
@@ -454,7 +458,7 @@ class Weights(accel.OperationSequence):
 
         if template.grid_weights is not None:
             self._grid_weights = template.grid_weights.instantiate(
-                    command_queue, grid_shape, max_vis, allocator)
+                command_queue, grid_shape, max_vis, allocator)
             operations.append(('grid_weights', self._grid_weights))
             compounds['grid'].append('grid_weights:grid')
             compounds['uv'] = ['grid_weights:uv']
@@ -464,7 +468,7 @@ class Weights(accel.OperationSequence):
 
         if template.fill is not None:
             self._fill = template.fill.instantiate(
-                    command_queue, grid_shape, allocator)
+                command_queue, grid_shape, allocator)
             self._fill.set_value(1)
             operations.append(('fill', self._fill))
             compounds['grid'].append('fill:data')
@@ -473,7 +477,7 @@ class Weights(accel.OperationSequence):
 
         if template.mean_weight is not None:
             self._mean_weight = template.mean_weight.instantiate(
-                    command_queue, grid_shape, allocator)
+                command_queue, grid_shape, allocator)
             operations.append(('mean_weight', self._mean_weight))
             compounds['grid'].append(('mean_weight:grid'))
             self.robustness = 0.0
@@ -483,7 +487,7 @@ class Weights(accel.OperationSequence):
 
         if template.density_weights is not None:
             self._density_weights = template.density_weights.instantiate(
-                    command_queue, grid_shape, allocator)
+                command_queue, grid_shape, allocator)
             operations.append(('density_weights', self._density_weights))
             compounds['grid'].append(('density_weights:grid'))
         else:

@@ -134,11 +134,11 @@ def make_compressed_vis(args, n_time):
     uvw, weights, baselines, vis = make_vis(args, n_time)
     if args.write:
         collector = preprocess.VisibilityCollectorHDF5(
-                args.write,
-                [args.image_parameters], [args.grid_parameters], vis.shape[1])
+            args.write,
+            [args.image_parameters], [args.grid_parameters], vis.shape[1])
     else:
         collector = preprocess.VisibilityCollectorMem(
-                [args.image_parameters], [args.grid_parameters], vis.shape[1])
+            [args.image_parameters], [args.grid_parameters], vis.shape[1])
     mueller = np.identity(args.polarizations, np.complex64)
     collector.add(uvw, weights, baselines, vis, None, None, mueller, None)
     collector.close()
@@ -153,7 +153,7 @@ def benchmark_preprocess(args):
     n_vis = vis.shape[0] * vis.shape[1]
     start = timeit.default_timer()
     collector = preprocess.VisibilityCollectorMem(
-            [args.image_parameters], [args.grid_parameters], n_vis)
+        [args.image_parameters], [args.grid_parameters], n_vis)
     mueller = np.identity(args.polarizations, np.complex64)
     collector.add(uvw, weights, baselines, vis, None, None, mueller, None)
     collector.close()
@@ -171,7 +171,8 @@ def benchmark_grid_degrid(args):
 
     context = accel.create_some_context()
     queue = context.create_tuning_command_queue()
-    gridder_template = args.template_class(context, args.image_parameters, args.grid_parameters, tuning=args.tuning)
+    gridder_template = args.template_class(context, args.image_parameters,
+                                           args.grid_parameters, tuning=args.tuning)
     gridder = gridder_template.instantiate(queue, args.array_parameters, N)
     gridder.ensure_all_bound()
     elapsed = 0.0
@@ -201,8 +202,8 @@ def benchmark_grid_degrid(args):
             elapsed += queue.stop_tuning()
             queue.finish()
     gaps = N_compressed * args.grid_parameters.kernel_width**2 * args.polarizations / elapsed
-    print('Processed {} ({}) visibilities in {:.6f}s with kernel size {} and {} polarizations'.format(
-        N_compressed, N, elapsed, args.grid_parameters.kernel_width, args.polarizations))
+    print('Processed {} ({}) visibilities in {:.6f}s with kernel size {} and {} polarizations'
+          .format(N_compressed, N, elapsed, args.grid_parameters.kernel_width, args.polarizations))
     print('{:.3f} GGAPS uncompressed'.format(gaps * N / N_compressed / 1e9))
     print('{:.3f} GGAPS compressed'.format(gaps / 1e9))
 
@@ -230,13 +231,22 @@ def benchmark_fft(args):
 
 def add_arguments(subparser, arguments):
     arg_map = {
-        '--polarizations': lambda: subparser.add_argument('--polarizations', type=int, default=4, choices=[1, 2, 3, 4], help='Number of polarizations'),
-        '--frequency': lambda: subparser.add_argument('--frequency', type=float, default=1412000000.0, help='Observation frequency (Hz)'),
-        '--int-time': lambda: subparser.add_argument('--int-time', type=float, default=2.0, help='Integration time (seconds)'),
-        '--kernel-width': lambda: subparser.add_argument('--kernel-width', type=int, default=60, help='Convolutional kernel size in pixels'),
-        '--pixels': lambda: subparser.add_argument('--pixels', type=int, default=4608, help='Grid/image dimensions'),
-        '--tuning': lambda: subparser.add_argument('--tuning', type=json.loads, help='Tuning arguments (JSON)'),
-        '--write': lambda: subparser.add_argument('--write', type=str, help='Write compressed visibilities to HDF5 file')
+        '--polarizations': lambda: subparser.add_argument(
+            '--polarizations', type=int, default=4, choices=[1, 2, 3, 4],
+            help='Number of polarizations'),
+        '--frequency': lambda: subparser.add_argument(
+            '--frequency', type=float, default=1412000000.0,
+            help='Observation frequency (Hz)'),
+        '--int-time': lambda: subparser.add_argument(
+            '--int-time', type=float, default=2.0, help='Integration time (seconds)'),
+        '--kernel-width': lambda: subparser.add_argument(
+            '--kernel-width', type=int, default=60, help='Convolutional kernel size in pixels'),
+        '--pixels': lambda: subparser.add_argument(
+            '--pixels', type=int, default=4608, help='Grid/image dimensions'),
+        '--tuning': lambda: subparser.add_argument(
+            '--tuning', type=json.loads, help='Tuning arguments (JSON)'),
+        '--write': lambda: subparser.add_argument(
+            '--write', type=str, help='Write compressed visibilities to HDF5 file')
     }
     for arg_name in arguments:
         arg_map[arg_name]()

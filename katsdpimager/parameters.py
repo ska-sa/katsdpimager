@@ -67,7 +67,8 @@ class ImageParameters(object):
         # Compute pixel size
         if pixel_size is None:
             if image_oversample < 3.0:
-                raise ValueError('image_oversample is too small to capture all visibilities in the UV plane')
+                raise ValueError('image_oversample is too small '
+                                 'to capture all visibilities in the UV plane')
             # Size of the UV image plane
             uv_size = (2.0 / 3.0 * image_oversample) * array.longest_baseline
             self.pixel_size = (self.wavelength / uv_size).decompose()
@@ -179,7 +180,7 @@ class WeightParameters(object):
         Image weighting scheme
     robustness : float, optional
         Robustness parameter for robust weighting
-    """
+    """   # noqa: E501
     def __init__(self, weight_type, robustness=0.0):
         self.weight_type = weight_type
         self.robustness = robustness

@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 from setuptools import setup, find_packages, Extension
-import ctypes.util
-import sys
 import glob
 import importlib
 try:
@@ -12,9 +10,9 @@ except ImportError:
 
 tests_require = ['nose', 'mock', 'scipy']
 
+
 class get_include(object):
-    """Helper class to defer importing a module until build time for fetching
-    the include directory.
+    """Helper class to defer importing a module until build time for fetching the include directory.
     """
     def __init__(self, module, *args, **kwargs):
         self.module = module
@@ -24,6 +22,7 @@ class get_include(object):
     def __str__(self):
         module = importlib.import_module(self.module)
         return getattr(module, 'get_include')(*self.args, **self.kwargs)
+
 
 extensions = [
     Extension(

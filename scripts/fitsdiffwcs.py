@@ -18,6 +18,7 @@ import scipy.interpolate
 import astropy.io.fits as fits
 import astropy.wcs as wcs
 
+
 class FitsFile(object):
     def __init__(self, filename):
         self.hdulist = fits.open(filename)
@@ -73,6 +74,7 @@ def main():
     header['ORIGIN'] = 'fitsdiffwcs'
     hdu = fits.PrimaryHDU(delta, header)
     hdu.writeto(args.file[2], overwrite=True)
+
 
 if __name__ == '__main__':
     main()

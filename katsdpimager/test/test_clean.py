@@ -5,12 +5,12 @@ import numpy as np
 import scipy.signal
 from .. import clean
 from katsdpsigproc.test.test_accel import device_test
-from nose.tools import *
+from nose.tools import assert_equal, assert_greater_equal
 from six.moves import range
 
 
 class _TestPsfPatchBase(object):
-    """Tests for :class:`~katsdpimager.clean.PsfPatch` and :class:`~katsdpimager.clean.psf_patch_host."""
+    """Tests for :class:`~katsdpimager.clean.PsfPatch` and :class:`~katsdpimager.clean.psf_patch_host."""   # noqa: E501
     def test_peak_only(self):
         assert_equal((4, 1, 1), self._test())
 
@@ -147,7 +147,8 @@ class TestClean(object):
         psf = rs.standard_normal(psf_patch).astype(np.float32)
         expected = dirty.copy()
         peak_pixel = dirty[:, pos[0], pos[1]]
-        expected[:, 134:200, 0:124] -= loop_gain * peak_pixel[:, np.newaxis, np.newaxis] * psf[:, :66, 6:]
+        expected[:, 134:200, 0:124] -= \
+            loop_gain * peak_pixel[:, np.newaxis, np.newaxis] * psf[:, :66, 6:]
         psf_full = np.ones(image_shape, np.float32)
         psf_full[:, 64:136, 107:237] = psf
 

@@ -2,7 +2,7 @@
 
 from __future__ import division, print_function, absolute_import
 import numpy as np
-from nose.tools import *
+from nose.tools import assert_raises
 import katsdpimager.polarization as polarization
 
 

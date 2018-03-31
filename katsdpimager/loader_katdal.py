@@ -19,8 +19,6 @@ import katpoint
 import scipy.interpolate
 import numpy as np
 import astropy.units as units
-import astropy.time
-import astropy.coordinates
 from . import polarization
 from six.moves import range
 
@@ -143,7 +141,6 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
             raise CalibrationReadError('Could not read {}: inconsistent values'.format(key))
         return value[0]
 
-
     def _load_cal_antlist(self):
         """Load antenna list used for calibration.
 
@@ -244,11 +241,17 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
         parser = argparse.ArgumentParser(
             prog='katdal options',
             usage='katdal options: [-i subarray=N] [-i spw=M] ...')
-        parser.add_argument('--subarray', type=int, default=0, help='Subarray index within file [%(default)s]')
-        parser.add_argument('--spw', type=int, default=0, help='Spectral window index within file [%(default)s]')
-        parser.add_argument('--target', type=str, help='Target to image (index or name) [auto]')
-        parser.add_argument('--ref-ant', type=str, default='', help='Reference antenna for identifying scans [first in file]')
-        parser.add_argument('--apply-cal', type=str, default='all', help='Calibration solutions to pre-apply, from K, B, G, or "all" or "none" [%(default)s]')
+        parser.add_argument('--subarray', type=int, default=0,
+                            help='Subarray index within file [%(default)s]')
+        parser.add_argument('--spw', type=int, default=0,
+                            help='Spectral window index within file [%(default)s]')
+        parser.add_argument('--target', type=str,
+                            help='Target to image (index or name) [auto]')
+        parser.add_argument('--ref-ant', type=str, default='',
+                            help='Reference antenna for identifying scans [first in file]')
+        parser.add_argument('--apply-cal', type=str, default='all',
+                            help='Calibration solutions to pre-apply, from K, B, G, or '
+                                 '"all" or "none" [%(default)s]')
         args = parser.parse_args(options)
         if args.apply_cal == 'all':
             args.apply_cal = 'KBG'
