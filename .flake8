@@ -4,6 +4,8 @@ max-line-length = 100
 ignore =
     # whitespace before ':' - flake8 doesn't handle slices properly
     E203,
+    # ambiguous variable name 'l' - useful for l/m coordinates
+    E741,
     # The rest are a subset of flake8 defaults
     # missing whitespace around arithmetic operator - sometimes useful for inner ops
     E226,
