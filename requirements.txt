@@ -47,7 +47,7 @@ traceback2
 trollius
 unittest2
 
-git+ssh://git@github.com/ska-sa/katdal#egg=katdal
+git+ssh://git@github.com/ska-sa/katdal#egg=katdal; python_version<'3'
 git+ssh://git@github.com/ska-sa/katpoint#egg=katpoint
 git+ssh://git@github.com/ska-sa/katsdpsigproc#egg=katsdpsigproc
 git+ssh://git@github.com/ska-sa/katsdptelstate#egg=katsdptelstate
