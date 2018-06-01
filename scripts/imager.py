@@ -11,7 +11,8 @@ import atexit
 import os
 import katsdpsigproc.accel as accel
 from katsdpimager import \
-    loader, parameters, polarization, preprocess, io, clean, weight, imaging, progress, beam, numba
+    loader, parameters, polarization, preprocess, io, clean, weight, sky_model, \
+    imaging, progress, beam, numba
 from contextlib import closing, contextmanager
 from six.moves import range
 
@@ -62,6 +63,7 @@ def get_parser():
                         help='Output FITS file')
     parser.add_argument('--log-level', type=str, default='INFO', metavar='LEVEL',
                         help='Logging level [%(default)s]')
+
     group = parser.add_argument_group('Input selection')
     group.add_argument('--input-option', '-i', action='append', default=[], metavar='KEY=VALUE',
                        help='Backend-specific input parsing option')
@@ -69,6 +71,9 @@ def get_parser():
                        help='Index of first channel to process [%(default)s]')
     group.add_argument('--stop-channel', '-C', type=int,
                        help='Index past last channel to process [#channels]')
+    group.add_argument('--subtract', action='append', default=[], metavar='TYPE:FILENAME',
+                       help='File with sources to subtract at the start')
+
     group = parser.add_argument_group('Image options')
     group.add_argument('--q-fov', type=float, default=1.0,
                        help='Field of view to image, relative to main lobe of beam [%(default)s]')
@@ -82,12 +87,14 @@ def get_parser():
                        help='Stokes parameters to image e.g. IQUV for full-Stokes [%(default)s]')
     group.add_argument('--precision', choices=['single', 'double'], default='single',
                        help='Internal floating-point precision [%(default)s]')
+
     group = parser.add_argument_group('Weighting options')
     group.add_argument('--weight-type', choices=['natural', 'uniform', 'robust'],
                        default='natural',
                        help='Imaging density weights [%(default)s]')
     group.add_argument('--robustness', type=float, default=0.0,
                        help='Robustness parameter for --weight-type=robust [%(default)s]')
+
     group = parser.add_argument_group('Gridding options')
     group.add_argument('--grid-oversample', type=int, default=8,
                        help='Oversampling factor for convolution kernels [%(default)s]')
@@ -106,6 +113,7 @@ def get_parser():
                        help='Support of combined anti-aliasing + w kernel [computed]')
     group.add_argument('--eps-w', type=float, default=0.01,
                        help='Level at which to truncate W kernel [%(default)s]')
+
     group = parser.add_argument_group('Cleaning options')
     group.add_argument('--psf-cutoff', type=float, default=0.05,
                        help='fraction of PSF peak at which to truncate PSF [%(default)s]')
@@ -123,6 +131,7 @@ def get_parser():
                        help='CLEAN border as a fraction of image size [%(default)s]')
     group.add_argument('--clean-mode', choices=['I', 'IQUV'], default='IQUV',
                        help='Stokes parameters to consider for peak-finding [%(default)s]')
+
     group = parser.add_argument_group('Performance tuning options')
     group.add_argument('--vis-block', type=int, default=1048576,
                        help='Number of visibilities to load and grid at a time [%(default)s]')
@@ -135,6 +144,7 @@ def get_parser():
                        help='Keep preprocessed visibilities in memory')
     group.add_argument('--max-cache-size', type=int, default=None,
                        help='Limit HDF5 cache size for preprocessing')
+
     group = parser.add_argument_group('Debugging options')
     group.add_argument('--host', action='store_true',
                        help='Perform operations on the CPU')
@@ -150,6 +160,8 @@ def get_parser():
                        help='Write model image to FITS file')
     group.add_argument('--write-residuals', metavar='FILE',
                        help='Write image residuals to FITS file')
+    group.add_argument('--write-subtract', metavar='FILE',
+                       help='Write image of model given by --subtract')
     group.add_argument('--vis-limit', type=int, metavar='N',
                        help='Use only the first N visibilities')
     return parser
@@ -408,7 +420,8 @@ class ChannelParameters(object):
 
 
 def process_channel(dataset, args, start_channel,
-                    context, queue, reader, channel_p, array_p, weight_p):
+                    context, queue, reader, channel_p, array_p, weight_p,
+                    subtract_models):
     channel = channel_p.channel
     rel_channel = channel - start_channel
     image_p = channel_p.image_p
@@ -428,6 +441,7 @@ def process_channel(dataset, args, start_channel,
     dirty = imager.buffer('dirty')
     model = imager.buffer('model')
     grid_data = imager.buffer('grid')
+    imager.clear_model()
 
     # Compute imaging weights
     make_weights(queue, reader, rel_channel,
@@ -461,11 +475,17 @@ def process_channel(dataset, args, start_channel,
                                 channel, image_p.wavelength, restoring_beam)
 
     # Imaging
-    imager.clear_model()
+    if subtract_models:
+        with progress.step('Subtract sky model'):
+            imager.add_sky_models(subtract_models, dataset.phase_centre())
+        if args.write_subtract is not None:
+            with progress.step('Write subtraction model'):
+                io.write_fits_image(dataset, model, image_p, args.write_subtract,
+                                    channel, image_p.wavelength, restoring_beam)
     for i in range(args.major):
         logger.info("Starting major cycle %d/%d", i + 1, args.major)
         make_dirty(queue, reader, rel_channel,
-                   'image', 'vis', imager, mid_w, args.vis_block, i != 0)
+                   'image', 'vis', imager, mid_w, args.vis_block, i != 0 or bool(subtract_models))
         imager.scale_dirty(scale)
         queue.finish()
         if i == 0 and args.write_grid is not None:
@@ -503,6 +523,9 @@ def process_channel(dataset, args, start_channel,
                     break
         queue.finish()
 
+    if subtract_models:
+        with progress.step('Subtract sky model'):
+            imager.add_sky_models(subtract_models, dataset.phase_centre(), -1.0)
     if args.write_model is not None:
         with progress.step('Write model'):
             io.write_fits_image(dataset, model, image_p, args.write_model,
@@ -583,6 +606,8 @@ def main():
             ChannelParameters(args, dataset, args.start_channel, array_p).log_parameters()
         log_parameters("Weight parameters", weight_p)
 
+        subtract_models = [sky_model.SkyModel.open(name) for name in args.subtract]
+
         for start_channel in range(args.start_channel, args.stop_channel, args.channel_batch):
             stop_channel = min(args.stop_channel, start_channel + args.channel_batch)
             channels = range(start_channel, stop_channel)
@@ -597,7 +622,7 @@ def main():
             # Do the work
             for channel_p in params:
                 process_channel(dataset, args, start_channel, context, queue,
-                                reader, channel_p, array_p, weight_p)
+                                reader, channel_p, array_p, weight_p, subtract_models)
 
 
 if __name__ == '__main__':

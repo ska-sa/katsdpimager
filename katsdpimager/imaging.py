@@ -154,6 +154,12 @@ class Imaging(accel.OperationSequence):
         self.ensure_all_bound()
         self.buffer('model').zero(self.command_queue)
 
+    def add_sky_models(self, sky_models, phase_centre, scale=1.0):
+        self.ensure_all_bound()
+        for sky_model in sky_models:
+            sky_model.add_to_image(self.buffer('model'), self.template.image_parameters,
+                                   phase_centre, scale)
+
     def set_coordinates(self, *args, **kwargs):
         self.ensure_all_bound()
         # The gridder and degridder share their coordinates, so we can use
@@ -223,6 +229,7 @@ class ImagingHost(object):
         lm_scale = float(image_parameters.pixel_size)
         lm_bias = -0.5 * image_parameters.pixels * lm_scale
         self._clean_parameters = clean_parameters
+        self._image_parameters = image_parameters
         self._gridder = grid.GridderHost(image_parameters, grid_parameters)
         self._degridder = grid.DegridderHost(image_parameters, grid_parameters)
         self._grid = self._gridder.values
@@ -280,6 +287,10 @@ class ImagingHost(object):
 
     def clear_model(self):
         self._model.fill(0)
+
+    def add_sky_models(self, sky_models, phase_centre):
+        for sky_model in sky_models:
+            sky_model.add_to_image(self._model, self._image_parameters, phase_centre)
 
     def set_coordinates(self, *args, **kwargs):
         self._gridder.set_coordinates(*args, **kwargs)
