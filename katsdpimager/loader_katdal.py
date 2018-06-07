@@ -20,7 +20,7 @@ import scipy.interpolate
 import numpy as np
 import astropy.units as units
 from . import polarization
-from six.moves import range
+from six.moves import range, urllib
 
 
 _logger = logging.getLogger(__name__)
@@ -343,7 +343,16 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
 
     @classmethod
     def match(cls, filename):
-        return filename.lower().endswith('.h5')
+        if filename.lower().endswith('.h5') or filename.lower().endswith('.rdb'):
+            return True
+        # katdal also supports URLs with query parameters, in which case the
+        # URL string won't end with .rdb.
+        try:
+            url = urllib.parse.urlsplit(filename)
+            return url.path.endswith('.rdb')
+        except ValueError:
+            # Invalid URL, but could still be valid for another loader
+            return False
 
     def antenna_diameters(self):
         diameters = [ant.diameter for ant in self._file.ants]

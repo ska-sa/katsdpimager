@@ -68,7 +68,8 @@ channels, but a separate FITS file is written for each channel.
 .. _FITS: http://fits.gsfc.nasa.gov/fits_documentation.html
 
 The input file format is detected by extension, so a Measurement Set *must*
-have the suffix ``.ms`` and a katdal file must have the suffix ``.h5``.
+have the suffix ``.ms`` and a katdal file must have the suffix ``.h5`` or
+``.rdb``.
 
 Each file format has additional Python package dependencies. Use ``pip install
 .[ms]`` to ensure support for Measurement Sets and ``pip install .[katdal]`` to
