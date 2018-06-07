@@ -946,7 +946,7 @@ class Degridder(GridDegrid):
 
     .. rubric:: Slots
 
-    In addition to this documented in :class:`GridDegrid`:
+    In addition to those documented in :class:`GridDegrid`:
 
     **weights** : array of float32 × pols
         Gridding weights
