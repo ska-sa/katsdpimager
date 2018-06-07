@@ -384,16 +384,16 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
     def has_feed_angles(self):
         return True
 
-    def data_iter(self, start_channel, stop_channel, max_chunk_vis=None, max_load_vis=None):
+    def data_iter(self, start_channel, stop_channel, max_chunk_vis=None):
         n_file_times, n_file_chans, n_file_cp = self._file.shape
         assert 0 <= start_channel < stop_channel <= n_file_chans
         n_chans = stop_channel - start_channel
         n_pols = len(self._polarizations)
         n_ants = len(self._file.ants)
-        if max_load_vis is None:
+        if max_chunk_vis is None:
             load_times = n_file_times
         else:
-            load_times = max(1, max_load_vis // (n_chans * n_file_cp))
+            load_times = max(1, max_chunk_vis // (n_chans * n_file_cp))
         # timestamps is a property, so ensure it's only evaluated once
         timestamps = self._file.timestamps
         antenna_uvw = [None] * n_ants

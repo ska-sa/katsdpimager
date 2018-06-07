@@ -161,8 +161,7 @@ def data_iter(dataset, args, start_channel, stop_channel):
     command line.
     """
     N = args.vis_limit
-    for chunk in dataset.data_iter(start_channel, stop_channel,
-                                   args.vis_block, args.vis_load):
+    for chunk in dataset.data_iter(start_channel, stop_channel, args.vis_load):
         if N is not None:
             if N < len(chunk['uvw']):
                 for key in ['uvw', 'weights', 'baselines', 'vis']:

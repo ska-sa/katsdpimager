@@ -106,7 +106,7 @@ class LoaderBase(object):
         """
         raise NotImplementedError('Abstract base class')
 
-    def data_iter(self, start_channel, stop_channel, max_chunk_vis=None, max_load_vis=None):
+    def data_iter(self, start_channel, stop_channel, max_chunk_vis=None):
         """Return an iterator that yields the data in chunks. Each chunk is a
         dictionary containing numpy arrays with the following keys:
 
@@ -139,10 +139,11 @@ class LoaderBase(object):
 
            .. _CASA: http://casa.nrao.edu/Memos/CoordConvention.pdf
 
-        The arrays are indexed first by a 1D time/baseline coordinate. The second
-        index is x/y/z for 'uvw' and polarization product for 'vis' and 'weights'.
-        Flags are not explicitly returned: they are either omitted entirely
-        (if all pols are flagged) or indicated with a zero weight.
+        The arrays are indexed first by channel (where applicable) then by a 1D
+        time/baseline coordinate. The second index is x/y/z for 'uvw' and
+        polarization product for 'vis' and 'weights'.  Flags are not explicitly
+        returned: they are either omitted entirely (if all pols are flagged) or
+        indicated with a zero weight.
 
         If :meth:`has_feed_angles` returns ``False``, then `feed_angle1` and
         `feed_angle2` will be absent.
@@ -152,13 +153,10 @@ class LoaderBase(object):
         start_channel,stop_channel : int
             Half-open range of channels for which to return data
         max_chunk_vis : int, optional
-            Maximum number of full-pol visibilities to return in each chunk, per
-            channel. If not specified, there is no bound.
-        max_load_vis : int, optional
-            Maximum number of full-pol visibilities to read into memory at a
-            time. This must be at least as large as the number of channels.
-            This setting may cause chunks to be smaller, particularly if the
-            file format requires transposition.
+            Maximum number of full-pol visibilities to return in each chunk.
+            If not specified, there is no bound. This is a soft limit that
+            may be exceeded if the natural unit of the storage format (e.g. row
+            in a measurement set) exceeds this size.
         """
         raise NotImplementedError('Abstract base class')
 

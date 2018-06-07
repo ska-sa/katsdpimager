@@ -309,12 +309,13 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
     def has_feed_angles(self):
         return self._feed_angle_correction
 
-    def data_iter(self, start_channel, stop_channel, max_chunk_vis=None, max_load_vis=None):
+    def data_iter(self, start_channel, stop_channel, max_chunk_vis=None):
         if max_chunk_vis is None:
             max_chunk_vis = self._main.nrows()
         num_channels = stop_channel - start_channel
-        if max_load_vis is not None:
-            max_chunk_vis = max(1, min(max_chunk_vis, max_load_vis // num_channels))
+        max_chunk_rows = self._main.nrows()
+        if max_chunk_vis is not None:
+            max_chunk_rows = max(1, max_chunk_vis // num_channels)
         # PHASE_DIR is used as an approximation to the antenna pointing
         # direction, for the purposes of parallactic angle correction. This
         # probably doesn't generalise well beyond dishes with single-pixel
@@ -324,8 +325,8 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         pos = self.antenna_positions()
         pos = astropy.coordinates.EarthLocation.from_geocentric(pos[:, 0], pos[:, 1], pos[:, 2])
         pole = astropy.coordinates.SkyCoord(ra=0 * units.deg, dec=90 * units.deg, frame='fk5')
-        for start in range(0, self._main.nrows(), max_chunk_vis):
-            end = min(self._main.nrows(), start + max_chunk_vis)
+        for start in range(0, self._main.nrows(), max_chunk_rows):
+            end = min(self._main.nrows(), start + max_chunk_rows)
             nrows = end - start
             flag_row = _getcol(self._main, 'FLAG_ROW', start, nrows)
             field_id = _getcol(self._main, 'FIELD_ID', start, nrows)
