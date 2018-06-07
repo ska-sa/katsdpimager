@@ -4,7 +4,7 @@ objects together."""
 from __future__ import division, print_function, absolute_import
 import numpy as np
 from katsdpsigproc import accel
-from . import grid, weight, image, clean
+from . import grid, predict, weight, image, clean
 
 
 class ImagingTemplate(object):
@@ -19,7 +19,8 @@ class ImagingTemplate(object):
         self.grid_parameters = grid_parameters
         self.clean_parameters = clean_parameters
         context = command_queue.context
-        image_shape = (len(image_parameters.polarizations),
+        num_polarizations = len(image_parameters.polarizations)
+        image_shape = (num_polarizations,
                        image_parameters.pixels,
                        image_parameters.pixels)
         # Currently none of the kernels accessing the layer need any padding.
@@ -27,19 +28,21 @@ class ImagingTemplate(object):
         # by deferring creation of the FFT plan until instantiation.
         padded_layer_shape = layer_shape = image_shape[1:]
         self.weights = weight.WeightsTemplate(
-            context, weight_parameters.weight_type, len(image_parameters.polarizations))
+            context, weight_parameters.weight_type, num_polarizations)
         self.gridder = grid.GridderTemplate(context, image_parameters, grid_parameters)
         self.degridder = grid.DegridderTemplate(context, image_parameters, grid_parameters)
+        self.predict = predict.PredictTemplate(
+            context, image_parameters.real_dtype, num_polarizations)
         self.grid_image = image.GridImageTemplate(
             command_queue, layer_shape, padded_layer_shape, image_parameters.real_dtype)
         self.psf_patch = clean.PsfPatchTemplate(
-            context, image_parameters.real_dtype, image_shape[0])
+            context, image_parameters.real_dtype, num_polarizations)
         self.noise_est = clean.NoiseEstTemplate(
-            context, image_parameters.real_dtype, image_shape[0], clean_parameters.mode)
+            context, image_parameters.real_dtype, num_polarizations, clean_parameters.mode)
         self.clean = clean.CleanTemplate(
-            context, clean_parameters, image_parameters.real_dtype, image_shape[0])
+            context, clean_parameters, image_parameters.real_dtype, num_polarizations)
         self.scale = image.ScaleTemplate(
-            context, image_parameters.real_dtype, image_shape[0])
+            context, image_parameters.real_dtype, num_polarizations)
         self.taper1d = accel.SVMArray(
             context, (image_parameters.pixels,), image_parameters.real_dtype)
         self.gridder.convolve_kernel.taper(image_parameters.pixels, self.taper1d)
@@ -52,7 +55,7 @@ class ImagingTemplate(object):
 
 
 class Imaging(accel.OperationSequence):
-    def __init__(self, template, max_vis, allocator=None):
+    def __init__(self, template, max_vis, max_sources, allocator=None):
         self.template = template
         lm_scale = float(template.image_parameters.pixel_size)
         lm_bias = -0.5 * template.image_parameters.pixels * lm_scale
@@ -63,6 +66,9 @@ class Imaging(accel.OperationSequence):
             template.command_queue, template.array_parameters, max_vis, allocator)
         self._degridder = template.degridder.instantiate(
             template.command_queue, template.array_parameters, max_vis, allocator)
+        self._predict = template.predict.instantiate(
+            template.command_queue, template.image_parameters, template.grid_parameters,
+            max_vis, max_sources, allocator)
         grid_shape = self._gridder.slots['grid'].shape
         degrid_shape = self._degridder.slots['grid'].shape
         self._weights = template.weights.instantiate(
@@ -86,6 +92,7 @@ class Imaging(accel.OperationSequence):
             ('weights', self._weights),
             ('gridder', self._gridder),
             ('degridder', self._degridder),
+            ('predict', self._predict),
             ('grid_to_image', self._grid_to_image),
             ('image_to_grid', self._image_to_grid),
             ('psf_patch', self._psf_patch),
@@ -94,11 +101,12 @@ class Imaging(accel.OperationSequence):
             ('scale', self._scale)
         ]
         compounds = {
-            'uv': ['weights:uv', 'gridder:uv', 'degridder:uv'],
             'weights': ['weights:weights'],
             'weights_grid': ['weights:grid', 'gridder:weights_grid'],
-            'w_plane': ['gridder:w_plane', 'degridder:w_plane'],
-            'vis': ['gridder:vis', 'degridder:vis'],
+            'uv': ['weights:uv', 'gridder:uv', 'degridder:uv', 'predict:uv'],
+            'w_plane': ['gridder:w_plane', 'degridder:w_plane', 'predict:w_plane'],
+            'vis': ['gridder:vis', 'degridder:vis', 'predict:vis'],
+            'predict_weights': ['degridder:weights', 'predict:weights'],
             'grid': ['gridder:grid', 'grid_to_image:grid'],
             'degrid': ['degridder:grid', 'image_to_grid:grid'],
             'layer': ['grid_to_image:layer', 'image_to_grid:layer'],
@@ -129,6 +137,7 @@ class Imaging(accel.OperationSequence):
     def num_vis(self, value):
         self._gridder.num_vis = value
         self._degridder.num_vis = value
+        self._predict.num_vis = value
 
     def clear_weights(self):
         self.ensure_all_bound()
@@ -172,8 +181,8 @@ class Imaging(accel.OperationSequence):
         # either here.
         self._gridder.set_vis(*args, **kwargs)
 
-    def set_degridder_weights(self, *args, **kwargs):
-        """Set statistical weights for degridding"""
+    def set_weights(self, *args, **kwargs):
+        """Set statistical weights for prediction"""
         self.ensure_all_bound()
         self._degridder.set_weights(*args, **kwargs)
 
@@ -184,6 +193,15 @@ class Imaging(accel.OperationSequence):
     def degrid(self):
         self.ensure_all_bound()
         self._degridder()
+
+    def predict(self, w):
+        self.ensure_all_bound()
+        self._predict.set_w(w)
+        self._predict()
+
+    def set_sky_model(self, sky_model, phase_centre):
+        self.ensure_all_bound()
+        self._predict.set_sky_model(sky_model, phase_centre)
 
     def grid_to_image(self, w):
         self.ensure_all_bound()
@@ -300,7 +318,7 @@ class ImagingHost(object):
         self._gridder.set_vis(*args, **kwargs)
         self._degridder.set_vis(*args, **kwargs)
 
-    def set_degridder_weights(self, *args, **kwargs):
+    def set_weights(self, *args, **kwargs):
         self._degridder.set_weights(*args, **kwargs)
 
     def grid(self):

@@ -71,7 +71,7 @@ def get_parser():
                        help='Index of first channel to process [%(default)s]')
     group.add_argument('--stop-channel', '-C', type=int,
                        help='Index past last channel to process [#channels]')
-    group.add_argument('--subtract', action='append', default=[], metavar='TYPE:FILENAME',
+    group.add_argument('--subtract', metavar='TYPE:FILENAME',
                        help='File with sources to subtract at the start')
 
     group = parser.add_argument_group('Image options')
@@ -160,8 +160,6 @@ def get_parser():
                        help='Write model image to FITS file')
     group.add_argument('--write-residuals', metavar='FILE',
                        help='Write image residuals to FITS file')
-    group.add_argument('--write-subtract', metavar='FILE',
-                       help='Write image of model given by --subtract')
     group.add_argument('--vis-limit', type=int, metavar='N',
                        help='Use only the first N visibilities')
     return parser
@@ -250,7 +248,8 @@ def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block):
     logger.info('Normalized thermal RMS: %g', normalized_rms)
 
 
-def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block, full_cycle=False):
+def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block,
+               full_cycle=False, subtract_model=None):
     imager.clear_dirty()
     queue.finish()
     for w_slice in range(reader.num_w_slices(rel_channel)):
@@ -270,8 +269,11 @@ def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block
                 imager.num_vis = len(chunk.uv)
                 imager.set_coordinates(chunk.uv, chunk.sub_uv, chunk.w_plane)
                 imager.set_vis(chunk[field])
+                if full_cycle or subtract_model:
+                    imager.set_weights(chunk.weights)
+                if subtract_model:
+                    imager.predict(mid_w[w_slice])
                 if full_cycle:
-                    imager.set_degridder_weights(chunk.weights)
                     imager.degrid()
                 imager.grid()
                 # Need to serialise calls to grid, since otherwise the next
@@ -421,7 +423,7 @@ class ChannelParameters(object):
 
 def process_channel(dataset, args, start_channel,
                     context, queue, reader, channel_p, array_p, weight_p,
-                    subtract_models):
+                    subtract_model):
     channel = channel_p.channel
     rel_channel = channel - start_channel
     image_p = channel_p.image_p
@@ -435,7 +437,8 @@ def process_channel(dataset, args, start_channel,
         allocator = accel.SVMAllocator(context)
         imager_template = imaging.ImagingTemplate(
             queue, array_p, image_p, weight_p, grid_p, clean_p)
-        imager = imager_template.instantiate(args.vis_block, allocator)
+        n_sources = len(subtract_model) if subtract_model else 0
+        imager = imager_template.instantiate(args.vis_block, n_sources, allocator)
         imager.ensure_all_bound()
     psf = imager.buffer('psf')
     dirty = imager.buffer('dirty')
@@ -475,17 +478,12 @@ def process_channel(dataset, args, start_channel,
                                 channel, image_p.wavelength, restoring_beam)
 
     # Imaging
-    if subtract_models:
-        with progress.step('Subtract sky model'):
-            imager.add_sky_models(subtract_models, dataset.phase_centre())
-        if args.write_subtract is not None:
-            with progress.step('Write subtraction model'):
-                io.write_fits_image(dataset, model, image_p, args.write_subtract,
-                                    channel, image_p.wavelength, restoring_beam)
+    if subtract_model:
+        imager.set_sky_model(subtract_model, dataset.phase_centre())
     for i in range(args.major):
         logger.info("Starting major cycle %d/%d", i + 1, args.major)
         make_dirty(queue, reader, rel_channel,
-                   'image', 'vis', imager, mid_w, args.vis_block, i != 0 or bool(subtract_models))
+                   'image', 'vis', imager, mid_w, args.vis_block, i != 0, subtract_model)
         imager.scale_dirty(scale)
         queue.finish()
         if i == 0 and args.write_grid is not None:
@@ -523,9 +521,6 @@ def process_channel(dataset, args, start_channel,
                     break
         queue.finish()
 
-    if subtract_models:
-        with progress.step('Subtract sky model'):
-            imager.add_sky_models(subtract_models, dataset.phase_centre(), -1.0)
     if args.write_model is not None:
         with progress.step('Write model'):
             io.write_fits_image(dataset, model, image_p, args.write_model,
@@ -606,7 +601,10 @@ def main():
             ChannelParameters(args, dataset, args.start_channel, array_p).log_parameters()
         log_parameters("Weight parameters", weight_p)
 
-        subtract_models = [sky_model.SkyModel.open(name) for name in args.subtract]
+        if args.subtract is not None:
+            subtract_model = sky_model.SkyModel.open(args.subtract)
+        else:
+            subtract_model = False
 
         for start_channel in range(args.start_channel, args.stop_channel, args.channel_batch):
             stop_channel = min(args.stop_channel, start_channel + args.channel_batch)
@@ -622,7 +620,7 @@ def main():
             # Do the work
             for channel_p in params:
                 process_channel(dataset, args, start_channel, context, queue,
-                                reader, channel_p, array_p, weight_p, subtract_models)
+                                reader, channel_p, array_p, weight_p, subtract_model)
 
 
 if __name__ == '__main__':

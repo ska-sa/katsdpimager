@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Load a local sky model from file and transfer it to a model image
 
 At present the only file format supported is a katpoint catalogue file, but
@@ -67,6 +68,47 @@ class SkyModel(object):
         for i, source in enumerate(self._catalogue):
             positions[i] = units.Quantity(source.astrometric_radec(), unit=units.rad)
         self._positions = positions
+
+    def __len__(self):
+        """Get number of sources in catalogue"""
+        return len(self._catalogue)
+
+    @units.quantity_input(phase_centre=units.rad)
+    def lmn(self, phase_centre):
+        """Get direction cosine coordinates of the sources
+
+        Parameters
+        ----------
+        phase_centre : Quantity
+            RA and DEC of phase centre
+
+        Returns
+        -------
+        array
+            The l/m/n coordinates, shape N×3
+        """
+        phase_centre = phase_centre.to(units.rad).value
+        phase_centre = katpoint.construct_radec_target(phase_centre[0], phase_centre[1])
+        return np.array([phase_centre.lmn(*source.astrometric_radec())
+                         for source in self._catalogue])
+
+    @units.quantity_input(wavelength=units.m, equivalencies=units.spectral())
+    def flux_density(self, wavelength):
+        """Get flux densities for the sources at the given wavelength/frequency.
+
+        Parameters
+        ----------
+        wavelength : Quantity
+            Wavelength or frequency
+
+        Returns
+        -------
+        array
+            Flux densities in Jy, shape N×4 for Stokes IQUV
+        """
+        freq_MHz = wavelength.to(units.MHz, equivalencies=units.spectral()).value
+        out = np.stack(source.flux_density_stokes(freq_MHz) for source in self._catalogue)
+        return np.nan_to_num(out, copy=False)
 
     def add_to_image(self, image, image_p, phase_centre, scale=1.0):
         """Add the source fluxes to an image.
