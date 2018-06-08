@@ -14,7 +14,7 @@ void predict(
     const GLOBAL short * RESTRICT w_plane,
     const GLOBAL float * RESTRICT weights,
     const GLOBAL float * RESTRICT lmn,
-    const GLOBAL Real * RESTRICT flux,
+    const GLOBAL float * RESTRICT flux,
     int n_vis,
     int n_sources,
     int oversample, float uv_scale,

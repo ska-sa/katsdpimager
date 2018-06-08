@@ -1,14 +1,18 @@
-"""Predict visibilities from a sky model by directly evaluating the RIME"""
+"""Predict visibilities from a sky model by directly evaluating the RIME
+
+.. include:: macros.rst
+"""
 
 from __future__ import division, print_function, absolute_import
 import logging
 
 import numpy as np
 import pkg_resources
+from astropy import units
 
-import katsdpsigproc.accel as accel
+from katsdpsigproc import accel, tune
 
-from . import polarization, types, grid
+from . import polarization, types, grid, parameters
 
 
 logger = logging.getLogger(__name__)
@@ -17,9 +21,26 @@ logger = logging.getLogger(__name__)
 class PredictTemplate(object):
     autotune_version = 0
 
-    """Predict visibilities from a sky model by directly evaluating the RIME."""
+    """Predict visibilities from a sky model by directly evaluating the RIME.
+
+    Parameters
+    ----------
+    context : |Context|
+        Context for which kernels will be compiled
+    real_dtype : {np.float32, np.float64}
+        Data type for internal accumulation of values. This does not affect
+        the buffer sizes.
+    num_polarizations : int
+        Number of polarizations
+    tuning : dict, optional
+        Kernel tuning parameters. The keys are:
+
+        wgs
+            Work group size
+    """
     def __init__(self, context, real_dtype, num_polarizations, tuning=None):
         if tuning is None:
+            tuning = self.autotune(context, real_dtype, num_polarizations)
             tuning = {'wgs': 128}   # TODO autotune
         self.wgs = tuning['wgs']
         self.real_dtype = real_dtype
@@ -32,6 +53,38 @@ class PredictTemplate(object):
         self.program = accel.build(
             context, 'imager_kernels/predict.mako', parameters,
             extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+
+    @classmethod
+    @tune.autotuner(test={'wgs': 128})
+    def autotune(cls, context, real_dtype, num_polarizations):
+        queue = context.create_tuning_command_queue()
+        num_vis = 1000000
+        num_sources = 128
+        vis = accel.SVMArray(context, (num_vis, num_polarizations), dtype=np.complex64)
+        uv = accel.SVMArray(context, (num_vis, 4), dtype=np.int16)
+        w_plane = accel.SVMArray(context, (num_vis,), dtype=np.int16)
+        weights = accel.SVMArray(context, (num_vis, num_polarizations), dtype=np.float32)
+        lmn = accel.SVMArray(context, (num_sources, 3), dtype=np.float32)
+        flux = accel.SVMArray(context, (num_sources, num_polarizations), dtype=np.float32)
+
+        # The values don't make any difference to auto-tuning; they just affect
+        # scale factors
+        image_parameters = parameters.ImageParameters(
+            1, 3, 0.21 * units.m, None, polarization.STOKES_IQUV[:num_polarizations],
+            real_dtype, 1 * units.arcsec, 4096)
+        grid_parameters = parameters.GridParameters(
+            7.0, 8, 5, 5, 5, 1 * units.m, 64)
+
+        def generate(wgs):
+            template = cls(context, real_dtype, num_polarizations, {'wgs': wgs})
+            fn = template.instantiate(queue, image_parameters, grid_parameters,
+                                      num_vis, num_sources)
+            fn.bind(vis=vis, uv=uv, w_plane=w_plane, weights=weights, lmn=lmn, flux=flux)
+            fn.num_vis = num_vis
+            fn._num_sources = num_sources   # Skip actually creating a sky model
+            return tune.make_measure(queue, fn)
+
+        return tune.autotune(generate, wgs=[64, 128, 256, 512, 1024])
 
     def instantiate(self, *args, **kwargs):
         return Predict(self, *args, **kwargs)
@@ -48,7 +101,7 @@ class Predict(grid.VisOperation):
         pol_dim = accel.Dimension(template.num_polarizations, exact=True)
         sources_dim = max(1, max_sources)   # Cannot allocate 0-byte buffer
         self.slots['lmn'] = accel.IOSlot((sources_dim, accel.Dimension(3, exact=True)), np.float32)
-        self.slots['flux'] = accel.IOSlot((sources_dim, pol_dim), template.real_dtype)
+        self.slots['flux'] = accel.IOSlot((sources_dim, pol_dim), np.float32)
         self.slots['weights'] = accel.IOSlot(
             (max_vis, accel.Dimension(template.num_polarizations, exact=True)), np.float32)
         self._kernel = self.template.program.get_kernel('predict')
