@@ -47,7 +47,6 @@ class Predict(grid.VisOperation):
         self.template = template
         pol_dim = accel.Dimension(template.num_polarizations, exact=True)
         sources_dim = max(1, max_sources)   # Cannot allocate 0-byte buffer
-        complex_dtype = types.real_to_complex(template.real_dtype)
         self.slots['lmn'] = accel.IOSlot((sources_dim, accel.Dimension(3, exact=True)), np.float32)
         self.slots['flux'] = accel.IOSlot((sources_dim, pol_dim), template.real_dtype)
         self.slots['weights'] = accel.IOSlot(
