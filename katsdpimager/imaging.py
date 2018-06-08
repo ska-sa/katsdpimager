@@ -163,27 +163,23 @@ class Imaging(accel.OperationSequence):
         self.ensure_all_bound()
         self.buffer('model').zero(self.command_queue)
 
-    def add_sky_models(self, sky_models, phase_centre, scale=1.0):
-        self.ensure_all_bound()
-        for sky_model in sky_models:
-            sky_model.add_to_image(self.buffer('model'), self.template.image_parameters,
-                                   phase_centre, scale)
-
     def set_coordinates(self, *args, **kwargs):
         self.ensure_all_bound()
-        # The gridder and degridder share their coordinates, so we can use
-        # either here.
+        # The gridder, degridder and predict share their coordinates, so we can
+        # use any here.
         self._gridder.set_coordinates(*args, **kwargs)
 
     def set_vis(self, *args, **kwargs):
         self.ensure_all_bound()
-        # The gridder and degridder share their visibilities, so we can use
-        # either here.
+        # The gridder, degridder and predict share their visibilities, so we
+        # can use any here.
         self._gridder.set_vis(*args, **kwargs)
 
     def set_weights(self, *args, **kwargs):
         """Set statistical weights for prediction"""
         self.ensure_all_bound()
+        # The degridder and predict share their weights, so we can use
+        # either here.
         self._degridder.set_weights(*args, **kwargs)
 
     def grid(self):
@@ -252,6 +248,7 @@ class ImagingHost(object):
         self._degridder = grid.DegridderHost(image_parameters, grid_parameters)
         self._grid = self._gridder.values
         self._degrid = self._degridder.values
+        self._predict = predict.PredictHost(image_parameters, grid_parameters)
         self._weights_grid = self._gridder.weights_grid
         self._weights = weight.WeightsHost(weight_parameters.weight_type, self._weights_grid)
         self._weights.robustness = weight_parameters.robustness
@@ -287,6 +284,7 @@ class ImagingHost(object):
     def num_vis(self, value):
         self._gridder.num_vis = value
         self._degridder.num_vis = value
+        self._predict.num_vis = value
 
     def clear_weights(self):
         self._weights_grid.fill(0)
@@ -306,26 +304,33 @@ class ImagingHost(object):
     def clear_model(self):
         self._model.fill(0)
 
-    def add_sky_models(self, sky_models, phase_centre):
-        for sky_model in sky_models:
-            sky_model.add_to_image(self._model, self._image_parameters, phase_centre)
+    def set_sky_model(self, sky_model, phase_centre):
+        self._predict.set_sky_model(sky_model, phase_centre)
 
     def set_coordinates(self, *args, **kwargs):
         self._gridder.set_coordinates(*args, **kwargs)
         self._degridder.set_coordinates(*args, **kwargs)
+        self._predict.set_coordinates(*args, **kwargs)
 
     def set_vis(self, *args, **kwargs):
         self._gridder.set_vis(*args, **kwargs)
         self._degridder.set_vis(*args, **kwargs)
+        self._predict.set_vis(*args, **kwargs)
 
     def set_weights(self, *args, **kwargs):
         self._degridder.set_weights(*args, **kwargs)
+        self._predict.set_weights(*args, **kwargs)
+        self._predict.set_weights(*args, **kwargs)
 
     def grid(self):
         self._gridder()
 
     def degrid(self):
         self._degridder()
+
+    def predict(self, w):
+        self._predict.set_w(w)
+        self._predict()
 
     def grid_to_image(self, w):
         self._grid_to_image.set_w(w)

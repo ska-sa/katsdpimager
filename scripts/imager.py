@@ -174,9 +174,12 @@ def data_iter(dataset, args, start_channel, stop_channel):
     for chunk in dataset.data_iter(start_channel, stop_channel, args.vis_load):
         if N is not None:
             if N < len(chunk['uvw']):
-                for key in ['uvw', 'weights', 'baselines', 'vis']:
+                for key in ['uvw', 'baselines']:
                     if key in chunk:
                         chunk[key] = chunk[key][:N]
+                for key in ['weights', 'vis']:
+                    if key in chunk:
+                        chunk[key] = chunk[key][:, :N]
                 chunk['progress'] = chunk['total']
         yield chunk
         if N is not None:

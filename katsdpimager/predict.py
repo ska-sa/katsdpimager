@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Predict visibilities from a sky model by directly evaluating the RIME
 
 .. include:: macros.rst
@@ -12,10 +13,81 @@ from astropy import units
 
 from katsdpsigproc import accel, tune
 
-from . import polarization, types, grid, parameters
+from . import polarization, types, grid, parameters, numba
 
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_sky_model(image_parameters, grid_parameters, model, phase_centre):
+    """Extract lmn coordinates and fluxes from a sky model
+
+    Parameters
+    ----------
+    image_parameters : :class:`~.ImageParameters`
+        Image parameters
+    grid_parameters : :class:`~.GridParameters`
+        Grid parameters for the corresponding UVW coordinates, for aliasing correction.
+    model : class:`~.SkyModel`
+        The input sky model
+
+    Returns
+    -------
+    lmn : array
+        Array of shape N×3, containing l, m, n-1
+    flux : array
+        Array of shape N×P, containing the Stokes parameters specified by
+        `image_parameters` for each source.
+    """
+    ip = image_parameters
+    lmn = model.lmn(phase_centre)
+    lmn[:, 2] -= 1    # n -> n-1
+    flux = model.flux_density(ip.wavelength)
+    # When we convert the subtracted visibilities back to a dirty image,
+    # we compensate for the UV coordinate quantisation. However, in this case
+    # we're already predicting with the quantised coordinates, so we need to
+    # reverse that taper.
+    #
+    # I'm not sure that this is mathematically defensible, but the results
+    # look good.
+    taper = np.sinc(lmn[:, 0:2] / (ip.image_size * grid_parameters.oversample))
+    flux *= np.product(taper, axis=1, keepdims=True)
+
+    # For each image polarization, find the corresponding index in IQUV
+    # for advanced indexing.
+    pol_index = [polarization.STOKES_IQUV.index(pol) for pol in ip.polarizations]
+    flux = flux[:, pol_index]
+    return lmn, flux
+
+
+def _uvw_scale_bias(image_parameters, grid_parameters):
+    r"""Compute scale and bias values to turn UVW indices back into coordinates.
+
+    The :mod:`preprocess` module quantises UVW coordinates; the values computed
+    by this function can be used to convert them back to coordinates in
+    wavelengths. Given quantised UV with grid cell :math:`g` and subpixel `s`,
+    and W plane of :math:`w_p` in a W slice with centre :math:`w_0` wavelengths,
+    the coordinates in wavelengths are
+
+    .. math::
+
+       uv &= uv_{scale}(oversample\cdot g + s + 0.5)\\
+       w &= w_0 + w_{scale}w_p + w_bias
+    """
+    ip = image_parameters
+    gp = grid_parameters
+
+    # uv is first computed in subpixels, hence need to / by oversample
+    uv_scale = ip.cell_size / gp.oversample
+    w_scale = gp.max_w / ((gp.w_slices - 0.5) * gp.w_planes)
+
+    # The above give uvw in length, but we want it in wavelengths. We then
+    # convert the (unitless, but possibly not scale-free) Quantity to a
+    # plain float.
+    uv_scale = float(uv_scale / ip.wavelength)
+    w_scale = float(w_scale / ip.wavelength)
+    w_bias = (0.5 - 0.5 * gp.w_planes) * w_scale
+    return uv_scale, w_scale, w_bias
 
 
 class PredictTemplate(object):
@@ -119,31 +191,14 @@ class Predict(grid.VisOperation):
 
         TODO: could use some optimisation
         """
-        ip = self.image_parameters
-        lmn = model.lmn(phase_centre)
-        # Actually want n-1, not n
-        flux = model.flux_density(ip.wavelength)
-        # When we convert the subtracted visibilities back to a dirty image,
-        # we compensate for the UV coordinate quantisation. However, in this case
-        # we're already predicting with the quantised coordinates, so we need to
-        # reverse that taper.
-        #
-        # I'm not sure that this is mathematically defensible, but the results
-        # look good.
-        taper = np.sinc(lmn[:, 0:2] / (ip.image_size * self.grid_parameters.oversample))
-        flux *= np.product(taper, axis=1, keepdims=True)
-
-        N = lmn.shape[0]
+        N = len(model)
         if N > self.max_sources:
             raise ValueError('too many sources ({} > {})'.format(N, self.max_sources))
-        # For each image polarization, find the corresponding index in IQUV
-        # for advanced indexing.
-        pol_index = [polarization.STOKES_IQUV.index(pol)
-                     for pol in self.image_parameters.polarizations]
-        self._num_sources = N
-        lmn[:, 2] -= 1
+        lmn, flux = _extract_sky_model(self.image_parameters, self.grid_parameters,
+                                       model, phase_centre)
         self.buffer('lmn')[:N] = lmn
-        self.buffer('flux')[:N] = flux[:, pol_index]
+        self.buffer('flux')[:N] = flux
+        self._num_sources = N
 
     @property
     def num_sources(self):
@@ -172,19 +227,8 @@ class Predict(grid.VisOperation):
         vis = self.buffer('vis')
         weights = self.buffer('weights')
 
-        # Compute scale factors to reverse the effects of preprocess.cpp
-        gp = self.grid_parameters
-        # uv is first computed in subpixels, hence need to / by oversample
-        uv_scale = self.image_parameters.cell_size / gp.oversample
-        w_scale = gp.max_w / ((gp.w_slices - 0.5) * gp.w_planes)
-        w_bias = (0.5 - 0.5 * gp.w_planes) * w_scale
-
-        # The above give uvw in length, but we want it in wavelengths. We then
-        # convert the (unitless, but possibly not scale-free) Quantity to a
-        # plain float.
-        uv_scale = float(uv_scale / self.image_parameters.wavelength)
-        w_scale = float(w_scale / self.image_parameters.wavelength)
-        w_bias = self._w + float(w_bias / self.image_parameters.wavelength)
+        uv_scale, w_scale, w_bias = _uvw_scale_bias(self.image_parameters, self.grid_parameters)
+        w_bias += self._w
 
         self.command_queue.enqueue_kernel(
             self._kernel,
@@ -197,9 +241,72 @@ class Predict(grid.VisOperation):
                 flux.buffer,
                 np.int32(self.num_vis),
                 np.int32(self.num_sources),
-                np.int32(gp.oversample), np.float32(uv_scale),
+                np.int32(self.grid_parameters.oversample), np.float32(uv_scale),
                 np.float32(w_scale), np.float32(w_bias)
             ],
             global_size=(accel.roundup(self.num_vis, self.template.wgs),),
             local_size=(self.template.wgs,)
         )
+
+
+@numba.jit(nopython=True)
+def _predict_host(vis, uv, sub_uv, w_plane, weights, lmn, flux,
+                  oversample, uv_scale, w_scale, w_bias, accum):
+    N = vis.shape[0]
+    S = lmn.shape[0]
+    P = vis.shape[1]
+    for i in range(N):
+        u = (uv[i, 0] * oversample + sub_uv[i, 0] + 0.5) * uv_scale
+        v = (uv[i, 1] * oversample + sub_uv[i, 1] + 0.5) * uv_scale
+        w = w_plane[i] * w_scale + w_bias
+        accum[:] = 0
+        for j in range(S):
+            phase = lmn[j, 0] * u + lmn[j, 1] * v + lmn[j, 2] * w
+            rot = np.exp(-2j * np.pi * phase)
+            for p in range(P):
+                accum[p] += rot * flux[j, p]
+        accum *= weights[i]
+        vis[i] -= accum
+
+
+class PredictHost(grid.VisOperationHost):
+    def __init__(self, image_parameters, grid_parameters):
+        self.image_parameters = image_parameters
+        self.grid_parameters = grid_parameters
+        self.lmn = None
+        self.flux = None
+        self._w = 0
+
+    @grid.VisOperationHost.num_vis.setter
+    def num_vis(self, value):
+        grid.VisOperationHost.num_vis.fset(self, value)
+        self.weights = None
+
+    def set_weights(self, weights):
+        """Set statistical weights"""
+        if len(weights) != self.num_vis:
+            raise ValueError('Lengths do not match')
+        self.weights = weights
+
+    def set_w(self, w):
+        self._w = w
+
+    def set_sky_model(self, model, phase_centre):
+        """Set the sky model.
+
+        This copies data, so if `model` is altered, a subsequent
+        call is needed to update the internal structures.
+        """
+        self.lmn, self.flux = _extract_sky_model(self.image_parameters,
+                                                 self.grid_parameters,
+                                                 model, phase_centre)
+
+    def __call__(self):
+        """Subtract predicted visibilities from existing values"""
+        uv_scale, w_scale, w_bias = _uvw_scale_bias(self.image_parameters, self.grid_parameters)
+        w_bias += self._w
+        _predict_host(self.vis, self.uv, self.sub_uv, self.w_plane, self.weights,
+                      self.lmn, self.flux,
+                      self.grid_parameters.oversample, uv_scale, w_scale, w_bias,
+                      np.zeros(len(self.image_parameters.polarizations),
+                               self.image_parameters.complex_dtype))

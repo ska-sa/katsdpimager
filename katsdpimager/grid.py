@@ -1058,15 +1058,9 @@ def _grid(kernel, grid, weights_grid, uv, sub_uv, w_plane, vis, sample):
                     grid[pol, int(v0 + j), int(u0 + k)] += sample[pol] * weight
 
 
-class GridDegridHost(object):
-    """Common code shared by :class:`GridderHost` and :class:`DegridderHost`."""
-    def __init__(self, image_parameters, grid_parameters):
-        self.image_parameters = image_parameters
-        self.grid_parameters = grid_parameters
-        self.kernel = ConvolutionKernel(image_parameters, grid_parameters)
-        pixels = image_parameters.pixels
-        shape = (len(image_parameters.polarizations), pixels, pixels)
-        self.values = np.empty(shape, image_parameters.complex_dtype)
+class VisOperationHost(object):
+    """Equivalent to :class:`VisOperation` on the host."""
+    def __init__(self):
         self._num_vis = 0
         self.uv = None
         self.sub_uv = None
@@ -1116,6 +1110,18 @@ class GridDegridHost(object):
         self.vis = vis
 
 
+class GridDegridHost(VisOperationHost):
+    """Common code shared by :class:`GridderHost` and :class:`DegridderHost`."""
+    def __init__(self, image_parameters, grid_parameters):
+        super(GridDegridHost, self).__init__()
+        self.image_parameters = image_parameters
+        self.grid_parameters = grid_parameters
+        self.kernel = ConvolutionKernel(image_parameters, grid_parameters)
+        pixels = image_parameters.pixels
+        shape = (len(image_parameters.polarizations), pixels, pixels)
+        self.values = np.empty(shape, image_parameters.complex_dtype)
+
+
 class GridderHost(GridDegridHost):
     def __init__(self, image_parameters, grid_parameters):
         super(GridderHost, self).__init__(image_parameters, grid_parameters)
@@ -1159,9 +1165,9 @@ class DegridderHost(GridDegridHost):
         super(DegridderHost, self).__init__(image_parameters, grid_parameters)
         self.weights = None
 
-    @GridDegridHost.num_vis.setter
+    @VisOperationHost.num_vis.setter
     def num_vis(self, value):
-        GridDegridHost.num_vis.fset(self, value)
+        VisOperationHost.num_vis.fset(self, value)
         self.weights = None
 
     def set_weights(self, weights):
