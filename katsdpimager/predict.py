@@ -66,9 +66,20 @@ class Predict(grid.VisOperation):
 
         TODO: could use some optimisation
         """
+        ip = self.image_parameters
         lmn = model.lmn(phase_centre)
         # Actually want n-1, not n
-        flux = model.flux_density(self.image_parameters.wavelength)
+        flux = model.flux_density(ip.wavelength)
+        # When we convert the subtracted visibilities back to a dirty image,
+        # we compensate for the UV coordinate quantisation. However, in this case
+        # we're already predicting with the quantised coordinates, so we need to
+        # reverse that taper.
+        #
+        # I'm not sure that this is mathematically defensible, but the results
+        # look good.
+        taper = np.sinc(lmn[:, 0:2] / (ip.image_size * self.grid_parameters.oversample))
+        flux *= np.product(taper, axis=1, keepdims=True)
+
         N = lmn.shape[0]
         if N > self.max_sources:
             raise ValueError('too many sources ({} > {})'.format(N, self.max_sources))
