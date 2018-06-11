@@ -50,7 +50,7 @@ setup(
     ext_modules=extensions,
     setup_requires=['pkgconfig', 'pybind11>=2.2.0'],
     install_requires=[
-        'numpy>=1.10.0', 'katsdpsigproc', 'astropy>=1.3', 'progress',
+        'numpy>=1.10.0', 'katsdpsigproc', 'katpoint', 'astropy>=1.3', 'progress',
         'pycuda', 'scikit-cuda', 'h5py', 'ansicolors', 'six'
     ],
     tests_require=tests_require,
@@ -60,7 +60,7 @@ setup(
         'cpu': ['numba'],
         'report': ['aplpy', 'matplotlib', 'mako'],
         'ms': ['python-casacore'],
-        'katdal': ['katdal', 'katpoint', 'scipy>=0.17'],
+        'katdal': ['katdal', 'scipy>=0.17'],
         'benchmark': ['katpoint']
     }
 )
