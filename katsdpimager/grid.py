@@ -4,7 +4,7 @@ r"""Convolutional gridding with W projection.
 
 Gridding
 --------
-The GPU approach is based on [Rom12_]. Each workgroup (thread block) handles a
+The GPU approach is based on [Rom12]_. Each workgroup (thread block) handles a
 contiguous range of visibilities, with the threads cooperating to grid each
 visibility.  The grid is divided into *bins*. The size of a bin is the size of
 the convolution kernel, plus some padding. These bins are further divided into
@@ -86,7 +86,7 @@ Weights
 There are two sources of weighting: statistical weights and imaging weights
 (the latter combining density and taper weights) [Bri95]_. The statistical
 weights are pre-multiplied into the visibilities before gridding (see
-:py:mod`preprocess`), and are handled outside this module for degridding. The
+:py:mod:`.preprocess`), and are handled outside this module for degridding. The
 imaging weights are stored in a grid and multiplied by the visibilities as
 they are loaded, and have no effect on degridding.
 
