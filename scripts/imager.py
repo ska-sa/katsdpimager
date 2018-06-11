@@ -111,11 +111,11 @@ def get_parser():
                        help='Support of anti-aliasing kernel [%(default)s]')
     group.add_argument('--kernel-width', type=int, default=60,
                        help='Support of combined anti-aliasing + w kernel [computed]')
-    group.add_argument('--eps-w', type=float, default=0.01,
+    group.add_argument('--eps-w', type=float, default=0.001,
                        help='Level at which to truncate W kernel [%(default)s]')
 
     group = parser.add_argument_group('Cleaning options')
-    group.add_argument('--psf-cutoff', type=float, default=0.05,
+    group.add_argument('--psf-cutoff', type=float, default=0.01,
                        help='fraction of PSF peak at which to truncate PSF [%(default)s]')
     group.add_argument('--loop-gain', type=float, default=0.1,
                        help='Loop gain for cleaning [%(default)s]')
