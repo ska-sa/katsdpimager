@@ -1,5 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Predict visibilities from a sky model by directly evaluating the RIME
+"""Predict visibilities from a sky model by directly evaluating the RIME.
+
+It uses a sky model to predict visibilities and subtract them from previous
+values. No effects are modelled other than geometric delay (K Jones).
+Direction-independent antenna effects (G Jones) should be already incorporated
+into the visibilities which are being subtracted from, and time- and
+antenna-independent DDEs should be included in the sky model. General DDEs are
+not supported at all.
+
+The visibilities are assumed to have already been passed through the
+:mod:`preprocess` module, and hence UVW coordinates will be quantised.
 
 .. include:: macros.rst
 """
@@ -20,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 def _extract_sky_model(image_parameters, grid_parameters, model, phase_centre):
-    """Extract lmn coordinates and fluxes from a sky model
+    """Extract lmn coordinates and fluxes from a sky model.
 
     Parameters
     ----------
@@ -28,7 +38,7 @@ def _extract_sky_model(image_parameters, grid_parameters, model, phase_centre):
         Image parameters
     grid_parameters : :class:`~.GridParameters`
         Grid parameters for the corresponding UVW coordinates, for aliasing correction.
-    model : class:`~.SkyModel`
+    model : :class:`~.SkyModel`
         The input sky model
 
     Returns
@@ -57,7 +67,7 @@ def _extract_sky_model(image_parameters, grid_parameters, model, phase_centre):
     # for advanced indexing.
     pol_index = [polarization.STOKES_IQUV.index(pol) for pol in ip.polarizations]
     flux = flux[:, pol_index]
-    return lmn, flux
+    return lmn.astype(np.float32), flux.astype(np.float32)
 
 
 def _uvw_scale_bias(image_parameters, grid_parameters):
@@ -91,8 +101,6 @@ def _uvw_scale_bias(image_parameters, grid_parameters):
 
 
 class PredictTemplate(object):
-    autotune_version = 0
-
     """Predict visibilities from a sky model by directly evaluating the RIME.
 
     Parameters
@@ -110,10 +118,12 @@ class PredictTemplate(object):
         wgs
             Work group size
     """
+
+    autotune_version = 0
+
     def __init__(self, context, real_dtype, num_polarizations, tuning=None):
         if tuning is None:
             tuning = self.autotune(context, real_dtype, num_polarizations)
-            tuning = {'wgs': 128}   # TODO autotune
         self.wgs = tuning['wgs']
         self.real_dtype = real_dtype
         self.num_polarizations = num_polarizations
@@ -131,7 +141,9 @@ class PredictTemplate(object):
     def autotune(cls, context, real_dtype, num_polarizations):
         queue = context.create_tuning_command_queue()
         num_vis = 1000000
-        num_sources = 128
+        # Need at least as many sources as the workgroup size to achieve full
+        # throughput.
+        num_sources = 1024
         vis = accel.SVMArray(context, (num_vis, num_polarizations), dtype=np.complex64)
         uv = accel.SVMArray(context, (num_vis, 4), dtype=np.int16)
         w_plane = accel.SVMArray(context, (num_vis,), dtype=np.int16)
@@ -140,7 +152,7 @@ class PredictTemplate(object):
         flux = accel.SVMArray(context, (num_sources, num_polarizations), dtype=np.float32)
 
         # The values don't make any difference to auto-tuning; they just affect
-        # scale factors
+        # scale factors that have no impact on control flow.
         image_parameters = parameters.ImageParameters(
             1, 3, 0.21 * units.m, None, polarization.STOKES_IQUV[:num_polarizations],
             real_dtype, 1 * units.arcsec, 4096)
@@ -163,6 +175,46 @@ class PredictTemplate(object):
 
 
 class Predict(grid.VisOperation):
+    """Instantiation of :class:`PredictTemplate`.
+
+    Before using a constructed instance, it's necessary to first
+
+    1. Configure the visibilities, by setting :attr:`num_vis` and
+       calling :meth:`set_coordinates`, :meth:`set_vis` and :meth:`set_w`.
+    2. Configure the sources, by calling :meth:`set_sky_model`.
+
+    .. rubric:: Slots
+
+    In addition to those specified in :class:`~.grid.VisOperation`:
+
+    **lmn** : S×3, float32
+        For each source, coordinates l, m, n-1
+    **flux** : S×P, float32
+        For each source, the perceived flux density (in Jy) per polarisation
+    **weights** : N×P, float32
+        The statistical weights associated with the visibilities. The input
+        visibilities are assumed to be pre-weighted, and the predicted
+        visibility is scaled by the weight before subtraction.
+
+    These slots must all be backed by SVM-allocated memory.
+
+    Parameters
+    ----------
+    template : :class:`PredictTemplate`
+        The template for the operation
+    command_queue : |CommandQueue|
+        The command queue for the operation
+    image_parameters : :class:`~.ImageParameters`
+        Parameters that determine the UVW quantisation
+    grid_parameters : :class:`~.GridParameters`
+        Parameters that determine the UVW quantisation
+    max_vis : int
+        Maximum number of visibilities this instance can support
+    max_sources : int
+        Maximum number of sources this instance can support
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
+    """
     def __init__(self, template, command_queue, image_parameters, grid_parameters,
                  max_vis, max_sources, allocator=None):
         if len(image_parameters.polarizations) != template.num_polarizations:
@@ -215,6 +267,12 @@ class Predict(grid.VisOperation):
         self.buffer('weights')[:N] = weights
 
     def set_w(self, w):
+        """Set the W slice.
+
+        The W plane coordinates set by :meth:`set_coordinates` are taken
+        to lie within a slice centred at `w`, which is specified in
+        wavelengths.
+        """
         self._w = w
 
     def _run(self):
@@ -255,14 +313,16 @@ def _predict_host(vis, uv, sub_uv, w_plane, weights, lmn, flux,
     N = vis.shape[0]
     S = lmn.shape[0]
     P = vis.shape[1]
+    m2pi = np.complex64(-2j * np.pi)
+    uvw = np.empty(3, np.float32)
     for i in range(N):
-        u = (uv[i, 0] * oversample + sub_uv[i, 0] + 0.5) * uv_scale
-        v = (uv[i, 1] * oversample + sub_uv[i, 1] + 0.5) * uv_scale
-        w = w_plane[i] * w_scale + w_bias
+        uvw[0] = (uv[i, 0] * oversample + sub_uv[i, 0] + np.float32(0.5)) * uv_scale
+        uvw[1] = (uv[i, 1] * oversample + sub_uv[i, 1] + np.float32(0.5)) * uv_scale
+        uvw[2] = w_plane[i] * w_scale + w_bias
         accum[:] = 0
         for j in range(S):
-            phase = lmn[j, 0] * u + lmn[j, 1] * v + lmn[j, 2] * w
-            rot = np.exp(-2j * np.pi * phase)
+            phase = np.dot(lmn[j], uvw)
+            rot = np.exp(m2pi * phase)
             for p in range(P):
                 accum[p] += rot * flux[j, p]
         accum *= weights[i]
@@ -307,6 +367,7 @@ class PredictHost(grid.VisOperationHost):
         w_bias += self._w
         _predict_host(self.vis, self.uv, self.sub_uv, self.w_plane, self.weights,
                       self.lmn, self.flux,
-                      self.grid_parameters.oversample, uv_scale, w_scale, w_bias,
+                      np.float32(self.grid_parameters.oversample),
+                      np.float32(uv_scale), np.float32(w_scale), np.float32(w_bias),
                       np.zeros(len(self.image_parameters.polarizations),
                                self.image_parameters.complex_dtype))

@@ -1,15 +1,16 @@
 """Tests for :mod:`katsdpimager.grid`."""
 
 from __future__ import division, print_function, absolute_import
+
 import numpy as np
-import katsdpimager.parameters as parameters
-import katsdpimager.polarization as polarization
-import katsdpimager.grid as grid
 import astropy.units as units
 import katsdpsigproc.accel as accel
 from katsdpsigproc.test.test_accel import device_test, force_autotune
 import mock
 from six.moves import range, zip
+
+from .. import parameters, polarization, grid
+from .utils import RandomState
 
 
 def _middle(array, shape):
@@ -88,9 +89,8 @@ class BaseTest(object):
     def do_grid(self, callback):
         max_vis = 1280
         n_vis = len(self.w_plane)
-        rs = np.random.RandomState(seed=2)
-        vis = (rs.uniform(-1, 1, size=(n_vis, 4)) +
-               1j * rs.uniform(-1, 1, size=(n_vis, 4))).astype(np.complex128)
+        rs = RandomState(seed=2)
+        vis = rs.complex_uniform(-1, 1, size=(n_vis, 4)).astype(np.complex128)
         actual = callback(max_vis, vis)
         expected = np.zeros_like(actual)
         pixels = actual.shape[-1]
@@ -114,11 +114,9 @@ class BaseTest(object):
         n_vis = len(self.w_plane)
         pixels = self.image_parameters.pixels
         shape = (4, pixels, pixels)
-        rs = np.random.RandomState(seed=2)
-        grid_data = (rs.uniform(-1, 1, size=shape)
-                     + 1j * rs.uniform(-1, 1, size=shape)).astype(np.complex128)
-        vis = (rs.uniform(-1, 1, size=(n_vis, 4)) +
-               1j * rs.uniform(-1, 1, size=(n_vis, 4))).astype(np.complex128)
+        rs = RandomState(seed=2)
+        grid_data = rs.complex_uniform(-1, 1, size=shape).astype(np.complex128)
+        vis = rs.complex_uniform(-1, 1, size=(n_vis, 4)).astype(np.complex128)
         weights = rs.uniform(0.5, 1.5, size=(n_vis, 4)).astype(np.float64)
         expected = np.zeros_like(vis.copy())
         uv_bias = (self.convolve_kernel.data.shape[-1] - 1) // 2 - pixels // 2

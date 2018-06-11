@@ -1,10 +1,13 @@
 """Tests for :mod:`katsdpimager.image`"""
 
 from __future__ import division, print_function, absolute_import
-import numpy as np
 import math
-import katsdpimager.image as image
+
+import numpy as np
 from katsdpsigproc.test.test_accel import device_test
+
+from .. import image
+from .utils import RandomState
 
 
 class TestLayerToImage(object):
@@ -22,9 +25,8 @@ class TestLayerToImage(object):
         fn.set_polarization(1)
         fn.ensure_all_bound()
         # Create random input data
-        rs = np.random.RandomState(1)
-        src = (rs.uniform(10.0, 100.0, shape[1:]) +
-               1j * rs.uniform(10.0, 100.0, shape[1:])).astype(np.complex64)
+        rs = RandomState(1)
+        src = rs.complex_uniform(10.0, 100.0, shape[1:]).astype(np.complex64)
         kernel1d = rs.uniform(1.0, 2.0, size).astype(np.float32)
         fn.buffer('kernel1d').set(command_queue, kernel1d)
         fn.buffer('layer').set(command_queue, src)

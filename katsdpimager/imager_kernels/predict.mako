@@ -22,9 +22,6 @@ void predict(
     )
 {
     int gid = get_global_id(0);
-    if (gid >= n_vis)
-        return;
-
     int lid = get_local_id(0);
     short4 local_uv = uv[gid];
     float u = (local_uv.x * oversample + local_uv.z + 0.5f) * uv_scale;
@@ -59,16 +56,19 @@ void predict(
         }
         BARRIER();
 
-        for (int i = 0; i < batch; i++)
+        if (gid < n_vis)
         {
-            float scaled_phase = l[i] * u + m[i] * v + n[i] * w;
-            float2 K;
-            sincospif(scaled_phase, &K.y, &K.x);
-            for (int j = 0; j < POLS; j++)
+            for (int i = 0; i < batch; i++)
             {
-                Real pb = b[j][i];
-                ans[j].x += K.x * pb;
-                ans[j].y += K.y * pb;
+                float scaled_phase = l[i] * u + m[i] * v + n[i] * w;
+                float2 K;
+                sincospif(scaled_phase, &K.y, &K.x);
+                for (int j = 0; j < POLS; j++)
+                {
+                    Real pb = b[j][i];
+                    ans[j].x += K.x * pb;
+                    ans[j].y += K.y * pb;
+                }
             }
         }
         BARRIER();
