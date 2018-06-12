@@ -43,9 +43,9 @@ def _extract_sky_model(image_parameters, grid_parameters, model, phase_centre):
 
     Returns
     -------
-    lmn : array
+    lmn : array of float32
         Array of shape N×3, containing l, m, n-1
-    flux : array
+    flux : array of float32
         Array of shape N×P, containing the Stokes parameters specified by
         `image_parameters` for each source.
     """

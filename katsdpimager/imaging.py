@@ -320,7 +320,6 @@ class ImagingHost(object):
     def set_weights(self, *args, **kwargs):
         self._degridder.set_weights(*args, **kwargs)
         self._predict.set_weights(*args, **kwargs)
-        self._predict.set_weights(*args, **kwargs)
 
     def grid(self):
         self._gridder()
