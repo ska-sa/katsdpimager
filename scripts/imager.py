@@ -463,7 +463,11 @@ def process_channel(dataset, args, start_channel,
     make_dirty(queue, reader, rel_channel,
                'PSF', 'weights', imager, mid_w, args.vis_block)
     # Normalization
-    scale = np.reciprocal(dirty[..., dirty.shape[1] // 2, dirty.shape[2] // 2])
+    psf_peak = dirty[..., dirty.shape[1] // 2, dirty.shape[2] // 2]
+    if not np.all(psf_peak != 0):
+        logger.info('Skipping channel %d which has no usable data', channel)
+        return
+    scale = np.reciprocal(psf_peak)
     imager.scale_dirty(scale)
     queue.finish()
     imager.dirty_to_psf()
