@@ -607,7 +607,7 @@ def main():
         if args.subtract is not None:
             subtract_model = sky_model.SkyModel.open(args.subtract)
         else:
-            subtract_model = False
+            subtract_model = None
 
         for start_channel in range(args.start_channel, args.stop_channel, args.channel_batch):
             stop_channel = min(args.stop_channel, start_channel + args.channel_batch)
