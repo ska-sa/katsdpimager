@@ -369,7 +369,7 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
                     feed_angle[:, i] = pa + self._antenna_angle[i]
                 feed_angle1 = feed_angle[inverse, antenna1]
                 feed_angle2 = feed_angle[inverse, antenna2]
-            uvw = _getcol(self._main, 'UVW', start, nrows, 'm', units.m, 'uvw', 'ITRF')[valid, ...]
+            uvw = _getcol(self._main, 'UVW', start, nrows, 'm', units.m, 'uvw')[valid, ...]
             if not self._strict_uvw:
                 uvw = -uvw
             if self._has_weight_spectrum:
