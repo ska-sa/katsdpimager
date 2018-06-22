@@ -659,7 +659,7 @@ class VisOperation(accel.Operation):
     command_queue : |CommandQueue|
         Command queue for the operation
     num_polarizations : int
-        Size of vis buffer on polarization dimnsion
+        Size of vis buffer on polarization dimension
     max_vis : int
         Number of visibilities that can be supported per kernel invocation
     allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional

@@ -12,9 +12,9 @@ import logging
 import itertools
 import math
 import re
-import six.moves.cPickle as pickle
 import katsdpimager.loader_core
 import katdal
+from katdal.categorical import ComparableArrayWrapper
 import katpoint
 import scipy.interpolate
 import numpy as np
@@ -129,17 +129,21 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
             does not unpickle correctly, inconsistent values etc)
         """
         try:
-            value = self._file.file['TelescopeState/{}'.format(key)]['value']
-            if len(value) == 0:
-                raise ValueError('empty sensor')
-            value = [pickle.loads(x) for x in value]
-        except (NameError, SyntaxError):
+            try:
+                value = self._file.source.metadata.attrs[key]
+                return value
+            except KeyError:
+                value = self._file.source.metadata.sensors[key]['value']
+                if len(value) == 0:
+                    raise ValueError('empty sensor')
+                if not all(np.array_equal(value[0], x) for x in value):
+                    raise CalibrationReadError(
+                        'Could not read {}: inconsistent values'.format(key))
+                return ComparableArrayWrapper.unwrap(value[0])
+        except (NameError, SyntaxError, CalibrationReadError):
             raise
         except Exception as e:
             raise CalibrationReadError('Could not read {}: {}'.format(key, e))
-        if not all(np.array_equal(value[0], x) for x in value):
-            raise CalibrationReadError('Could not read {}: inconsistent values'.format(key))
-        return value[0]
 
     def _load_cal_antlist(self):
         """Load antenna list used for calibration.
@@ -169,16 +173,43 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
             raise
         except Exception as e:
             raise CalibrationReadError(str(e))
-        if cal_pol_ordering.shape != (4, 2):
-            raise CalibrationReadError('cal_pol_ordering does not have expected shape')
-        if cal_pol_ordering[0, 0] != cal_pol_ordering[0, 1]:
-            raise CalibrationReadError('cal_pol_ordering[0] is not consistent')
-        if cal_pol_ordering[1, 0] != cal_pol_ordering[1, 1]:
-            raise CalibrationReadError('cal_pol_ordering[1] is not consistent')
-        order = [cal_pol_ordering[0, 0], cal_pol_ordering[1, 0]]
+        if cal_pol_ordering.shape == (2,):
+            order = cal_pol_ordering
+        else:
+            if cal_pol_ordering.shape != (4, 2):
+                raise CalibrationReadError('cal_pol_ordering does not have expected shape')
+            if cal_pol_ordering[0, 0] != cal_pol_ordering[0, 1]:
+                raise CalibrationReadError('cal_pol_ordering[0] is not consistent')
+            if cal_pol_ordering[1, 0] != cal_pol_ordering[1, 1]:
+                raise CalibrationReadError('cal_pol_ordering[1] is not consistent')
+            order = [cal_pol_ordering[0, 0], cal_pol_ordering[1, 0]]
         if set(order) != set('vh'):
             raise CalibrationReadError('cal_pol_ordering does not contain h and v')
         return {order[0]: 0, order[1]: 1}
+
+    @classmethod
+    def _unwrap_cal_product(cls, sensor):
+        timestamps = sensor['timestamp']
+        values = [ComparableArrayWrapper.unwrap(value) for value in sensor['value']]
+        return timestamps, values
+
+    def _load_cal_product_parts(self, key, parts):
+        by_ts = []
+        timestamps0 = None
+        for i in range(parts):
+            ds = self._file.source.metadata.sensors[key + str(i)]
+            timestamps, values = self._unwrap_cal_product(ds)
+            if i == 0:
+                timestamps0 = timestamps
+            by_ts.append(dict(zip(timestamps, values)))
+        # Find timestamps that appear in every partition
+        timestamps = []
+        values = []
+        for ts in timestamps0:
+            if all(ts in part for part in by_ts):
+                timestamps.append(ts)
+                values.append(np.concatenate([part[ts] for part in by_ts]))
+        return timestamps, values
 
     def _load_cal_product(self, key, start_channel=None, stop_channel=None, **kwargs):
         """Loads calibration solutions from a katdal file.
@@ -203,12 +234,17 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
             size 1.
         """
         try:
-            ds = self._file.file['TelescopeState/' + key]
-            timestamps = ds['timestamp']
-            values = []
+            try:
+                parts = int(self._file.source.metadata.attrs[key + '_parts'])
+            except (KeyError, TypeError):
+                ds = self._file.source.metadata.sensors[key]
+                timestamps, values = self._unwrap_cal_product(ds)
+            else:
+                timestamps, values = self._load_cal_product_parts(key, parts)
+
             good_timestamps = []
-            for i, ts in enumerate(timestamps):
-                solution = pickle.loads(ds['value'][i])
+            good_values = []
+            for ts, solution in zip(timestamps, values):
                 if solution.ndim == 2:
                     # Insert a channel axis
                     solution = solution[np.newaxis, ...]
@@ -216,25 +252,27 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
                     solution = solution[start_channel:stop_channel, ...]
                 else:
                     raise ValueError('wrong number of dimensions')
-                if np.all(np.isfinite(solution)):
+                if np.any(np.isfinite(solution)):
                     good_timestamps.append(ts)
-                    values.append(solution)
+                    good_values.append(solution)
             if not good_timestamps:
                 raise ValueError('no finite solutions')
-            values = np.array(values)
+            good_values = np.array(good_values)
             kind = kwargs.get('kind', 'linear')
             if np.iscomplexobj(values) and kind not in ['zero', 'nearest']:
                 interp = ComplexInterpolate1D
             else:
                 interp = scipy.interpolate.interp1d
             return interp(
-                good_timestamps, values, axis=0, fill_value='extrapolate',
+                good_timestamps, good_values, axis=0, fill_value='extrapolate',
                 assume_sorted=True, **kwargs)
         except (NameError, SyntaxError):
             raise
+        except KeyError:
+            _logger.warning('Could not load %s: sensor not found', key)
         except Exception as e:
-            _logger.warn('Could not load %s: %s', key, e)
-            return None
+            _logger.warning('Could not load %s: %s', key, e, exc_info=True)
+        return None
 
     def __init__(self, filename, options):
         super(LoaderKatdal, self).__init__(filename, options)

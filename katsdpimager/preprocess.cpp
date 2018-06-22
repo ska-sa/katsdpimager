@@ -461,7 +461,15 @@ void visibility_collector<P>::add_impl2(
             for (int p = 0; p < P; p++)
             {
                 float weight = xweights(p);
-                out.vis[p] = xvis(p) * weight;
+                std::complex<float> vis = xvis(p) * weight;
+                if (!std::isfinite(vis.real()) || !std::isfinite(vis.imag()))
+                {
+                    // Squash visibilities with NaNs, which could come from
+                    // calibration failures in katsdpcal
+                    vis = 0.0f;
+                    weight = 0.0f;
+                }
+                out.vis[p] = vis;
                 out.weights[p] = weight;
             }
             u = u * uv_scale;
