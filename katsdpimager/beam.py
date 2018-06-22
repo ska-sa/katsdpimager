@@ -88,13 +88,13 @@ class Beam(object):
         return "Beam({0.major!r}, {0.minor!r}, {0.theta!r})".format(self)
 
 
-def fit_beam(psf, step=1.0, threshold=0.05):
+def fit_beam(psf, step=1.0, threshold=0.01, init_threshold=0.5):
     """Fit a 2D Gaussian to the point spread function. The function is not
     truncated to the central region: the caller should do this.
 
-    Values far from the origin are troublesome because they have an overly
-    large impact on the initial estimate, and may also be negative. We restrict
-    the match to values that exceed `threshold`.
+    Values far from the origin are troublesome because they are not even
+    vaguely Gaussian. We restrict the match to values that exceed
+    `threshold`.
 
     Parameters
     ----------
@@ -105,6 +105,8 @@ def fit_beam(psf, step=1.0, threshold=0.05):
         values will be in the same units.
     threshold : float
         Minimum PSF value to be used in the fit.
+    init_threshold : float
+        Minimum PSF value used to compute the initial estimate.
 
     Returns
     -------
@@ -117,24 +119,38 @@ def fit_beam(psf, step=1.0, threshold=0.05):
         major axis of the ellipse, in the direction of positive axis 1 of the
         PSF.
     """
+    def extract(psf, threshold):
+        """Get coordinates and values that are > threshold"""
+        mask = psf > threshold
+        indices = list(np.nonzero(mask))
+        indices[0] = (indices[0] - psf.shape[0] // 2) * step
+        indices[1] = (indices[1] - psf.shape[1] // 2) * step
+        picked = psf[mask]
+        return picked, indices
 
-    # Initial guess: compute the second moment about the origin.
-    mask = psf > threshold
-    indices = list(np.nonzero(mask))
-    indices[0] = (indices[0] - psf.shape[0] // 2) * step
-    indices[1] = (indices[1] - psf.shape[1] // 2) * step
-    picked = psf[mask]
+    # Initial guess: compute the second moment about the origin, but keeping
+    # only the values above a (fairly high) threshold.
+    picked, indices = extract(psf, init_threshold)
     cov = np.empty((2, 2))
     total = np.sum(picked)
     cov[0, 0] = np.sum(picked * indices[0]**2) / total
     cov[0, 1] = np.sum(picked * indices[0] * indices[1]) / total
     cov[1, 0] = cov[0, 1]
     cov[1, 1] = np.sum(picked * indices[1]**2) / total
+    # Because we truncated at init_threshold, we will have an underestimate
+    # of the radius. We can correct for this with Mathematics (tm). The
+    # variance of a standard 2D Gaussian truncated at radius R is
+    # 1 - (1 + R^2/2) * exp(-R*2 / 2).
+    R2 = -2 * np.log(init_threshold)
+    scale = 1 - (1 + 0.5 * R2) * np.exp(-0.5 * R2)
+    cov /= scale
     init = models.Gaussian2D(
         amplitude=1.0,
         cov_matrix=cov,
         fixed={'x_mean': True, 'y_mean': True, 'amplitude': True})
-    # Compute a more accurate model by fitting to the data
+
+    # Compute a more accurate model by fitting to more of the data
+    picked, indices = extract(psf, threshold)
     fit = fitting.LevMarLSQFitter()
     model = fit(init, indices[0], indices[1], picked)
     return Beam(model)
