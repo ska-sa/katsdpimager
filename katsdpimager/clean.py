@@ -100,23 +100,37 @@ class PsfPatch(accel.Operation):
         if shape[0] != template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
         super(PsfPatch, self).__init__(command_queue, allocator)
-        wg_x = accel.divup(shape[2], template.wgsx)
-        wg_y = accel.divup(shape[1], template.wgsy)
+        max_wg_x = accel.divup(shape[2], template.wgsx)
+        max_wg_y = accel.divup(shape[1], template.wgsy)
         polarizations = accel.Dimension(template.num_polarizations, exact=True)
         self.slots['psf'] = accel.IOSlot([polarizations, shape[1], shape[2]], template.dtype)
         self.slots['bound'] = accel.IOSlot([
-            accel.Dimension(wg_y, exact=True),
-            accel.Dimension(wg_x, exact=True),
+            accel.Dimension(max_wg_y * max_wg_x),
             accel.Dimension(2, exact=True)], np.int32)
-        self._bound_host = accel.HostArray((wg_y, wg_x, 2), np.int32, context=command_queue.context)
+        self._bound_host = accel.HostArray((max_wg_y * max_wg_x, 2), np.int32,
+                                           context=command_queue.context)
         self.template = template
         self.kernel = template.program.get_kernel('psf_patch')
 
-    def __call__(self, threshold, **kwargs):
+    def __call__(self, threshold, limit=None, **kwargs):
         self.bind(**kwargs)
         self.ensure_all_bound()
         psf = self.buffer('psf')
         bound = self.buffer('bound')
+        min_x = 0
+        min_y = 0
+        max_x = psf.shape[2] - 1
+        max_y = psf.shape[1] - 1
+        mid_x = psf.shape[2] // 2
+        mid_y = psf.shape[1] // 2
+        if limit is not None:
+            hlimit = (limit - 1) // 2
+            min_x = max(min_x, mid_x - hlimit)
+            min_y = max(min_y, mid_y - hlimit)
+            max_x = min(max_x, mid_x + hlimit)
+            max_y = min(max_y, mid_y + hlimit)
+        wg_x = accel.divup(max_x - min_x + 1, self.template.wgsx)
+        wg_y = accel.divup(max_y - min_y + 1, self.template.wgsy)
         self.command_queue.enqueue_kernel(
             self.kernel,
             [
@@ -124,20 +138,19 @@ class PsfPatch(accel.Operation):
                 np.int32(psf.padded_shape[2]),
                 np.int32(psf.padded_shape[1] * psf.padded_shape[2]),
                 bound.buffer,
-                np.int32(psf.shape[2] - 1),
-                np.int32(psf.shape[1] - 1),
-                np.int32(psf.shape[2] // 2),
-                np.int32(psf.shape[1] // 2),
+                np.int32(min_x), np.int32(min_y),
+                np.int32(max_x), np.int32(max_y),
+                np.int32(mid_x), np.int32(mid_y),
                 np.float32(threshold)
             ],
-            global_size=(bound.shape[1] * self.template.wgsx, bound.shape[0] * self.template.wgsy),
+            global_size=(wg_x * self.template.wgsx, wg_y * self.template.wgsy),
             local_size=(self.template.wgsx, self.template.wgsy)
         )
         if isinstance(bound, accel.SVMArray):
             self.command_queue.finish()
         bound.get(self.command_queue, self._bound_host)
         # Turn distances from the centre into a symmetric bounding box size.
-        box = 2 * np.max(self._bound_host, axis=(0, 1)) + 1
+        box = 2 * np.max(self._bound_host[: wg_x * wg_y], axis=0) + 1
         return (self.template.num_polarizations,
                 int(min(box[1], psf.shape[1])),
                 int(min(box[0], psf.shape[2])))
@@ -831,7 +844,7 @@ class Clean(accel.OperationSequence):
         return peak_value[0]
 
 
-def psf_patch_host(psf, threshold):
+def psf_patch_host(psf, threshold, limit=None):
     """Compute the size of the bounding box of the PSF required to contain all
     values above `threshold`.
 
@@ -843,6 +856,9 @@ def psf_patch_host(psf, threshold):
         Point spread function, with shape (polarizations, height, width)
     threshold : float
         Minimum value that must be included inside the box
+    limit : float, optional
+        Upper bound on the return value. Pixels outside this range are not
+        examined.
 
     Returns
     -------
@@ -850,6 +866,16 @@ def psf_patch_host(psf, threshold):
         Shape of the central part of `psf` to retain, with the same
         dimensions. The size is always even.
     """
+    if limit is not None:
+        hlimit = (limit - 1) // 2
+        mid_x = psf.shape[2] // 2
+        mid_y = psf.shape[1] // 2
+        min_x = max(0, mid_x - limit)
+        min_y = max(0, mid_y - limit)
+        max_x = min(psf.shape[2] - 1, mid_x + limit)
+        max_y = min(psf.shape[1] - 1, mid_y + limit)
+        psf = psf[:, min_y : max_y + 1, min_x : max_x + 1]
+
     nz = np.nonzero(np.abs(psf) >= threshold)
     if len(nz[0]) == 0:
         # No values above threshold at all. This should never happen, because

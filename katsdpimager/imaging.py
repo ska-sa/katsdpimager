@@ -221,7 +221,8 @@ class Imaging(accel.OperationSequence):
 
     def psf_patch(self):
         self.ensure_all_bound()
-        return self._psf_patch(self.template.clean_parameters.psf_cutoff)
+        return self._psf_patch(self.template.clean_parameters.psf_cutoff,
+                               self.template.clean_parameters.psf_limit)
 
     def noise_est(self):
         self.ensure_all_bound()
@@ -346,7 +347,9 @@ class ImagingHost(object):
         self._psf[:] = self._dirty
 
     def psf_patch(self):
-        return clean.psf_patch_host(self._psf, self._clean_parameters.psf_cutoff)
+        return clean.psf_patch_host(self._psf,
+                                    self._clean_parameters.psf_cutoff,
+                                    self._clean_parameters.psf_limit)
 
     def noise_est(self):
         return clean.noise_est_host(self._dirty, self._clean_parameters.border,

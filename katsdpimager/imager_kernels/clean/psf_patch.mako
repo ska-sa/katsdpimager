@@ -24,7 +24,8 @@ ${wg_reduce.define_function('int2', wgsx * wgsy, 'reduce_max_int2', 'reduce_scra
  * @param psf_row_stride   Stride between rows of @a psf
  * @param psf_pol_stride   Stride between slices of @a psf
  * @param[out] bound       Maximum x, y distances, shape (height, width), packed
- * @param max_x,max_y      Width and height of @a psf, minus 1
+ * @param min_x, min_y     Minimum coordinates to examine in PSF (used as offsets)
+ * @param max_x, max_y     Maximum coordinates to examine in PSF
  * @param mid_x, mid_y     Centre of the PSF
  * @param threshold        Cutoff value above which we wish to find the bounding box
  */
@@ -34,6 +35,8 @@ void psf_patch(
     int psf_row_stride,
     int psf_pol_stride,
     GLOBAL int2 * RESTRICT bound,
+    int min_x,
+    int min_y,
     int max_x,
     int max_y,
     int mid_x,
@@ -42,8 +45,8 @@ void psf_patch(
 {
     LOCAL_DECL reduce_scratch scratch;
 
-    int x = min(get_global_id(0), max_x);
-    int y = min(get_global_id(1), max_y);
+    int x = min(get_global_id(0) + min_x, max_x);
+    int y = min(get_global_id(1) + min_y, max_y);
     int wg_x = get_group_id(0);
     int wg_y = get_group_id(1);
     int addr = y * psf_row_stride + x;

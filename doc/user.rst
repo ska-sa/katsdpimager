@@ -228,6 +228,12 @@ Quality options
    value will reduce the cost of each CLEAN cycle, but too large a value may
    prevent CLEAN from converging.
 
+.. option:: --psf-limit <VALUE>
+
+   Maximum fraction of image to use for PSF. This restricts the size of the
+   PSF to a certain fraction of the image, if not already further constrained
+   by :option:`--psf-cutoff`.
+
 .. option:: --major-gain <VALUE>
 
    Fraction of the peak at the start of a major cycle that will be cleaned in

@@ -117,6 +117,8 @@ def get_parser():
     group = parser.add_argument_group('Cleaning options')
     group.add_argument('--psf-cutoff', type=float, default=0.01,
                        help='fraction of PSF peak at which to truncate PSF [%(default)s]')
+    group.add_argument('--psf-limit', type=float, default=0.5,
+                       help='maximum fraction of image to use for PSF [%(default)s]')
     group.add_argument('--loop-gain', type=float, default=0.1,
                        help='Loop gain for cleaning [%(default)s]')
     group.add_argument('--major-gain', type=float, default=0.85,
@@ -414,9 +416,10 @@ class ChannelParameters(object):
         else:
             raise ValueError('Unhandled --clean-mode {}'.format(args.clean_mode))
         border = int(round(self.image_p.pixels * args.border))
+        limit = int(round(self.image_p.pixels * args.psf_limit))
         self.clean_p = parameters.CleanParameters(
             args.minor, args.loop_gain, args.major_gain, args.threshold,
-            clean_mode, args.psf_cutoff, border)
+            clean_mode, args.psf_cutoff, limit, border)
 
     def log_parameters(self, suffix=''):
         log_parameters("Image parameters" + suffix, self.image_p)

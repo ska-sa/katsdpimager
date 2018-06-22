@@ -31,6 +31,12 @@ class _TestPsfPatchBase(object):
         assert_equal(0, sum(target[:-hw] >= threshold))
         assert_greater_equal(target[-hw], threshold)
 
+    def test_limit(self):
+        self.psf_host[0, 0, 0] = 0.4
+        self.psf_host[3, 205, 303] = 0.3
+        self.psf_host[1, 110, 150] = 0.2
+        assert_equal((4, 15, 5), self._test(limit=50))
+
 
 class TestPsfPatch(_TestPsfPatchBase):
     @device_test
@@ -43,18 +49,18 @@ class TestPsfPatch(_TestPsfPatchBase):
         self.psf_host.fill(0.0)
         self.psf_host[:, 103, 152] = 1.0    # Set central peak
 
-    def _test(self, threshold=0.01):
+    def _test(self, threshold=0.01, limit=None):
         """Run the function using psf_host, returning the resulting patch size."""
         self.psf.set(self.fn.command_queue, self.psf_host)
-        return self.fn(threshold)
+        return self.fn(threshold, limit)
 
 
 class TestPsfPatchHost(_TestPsfPatchBase):
     def setup(self):
         self.psf_host = np.zeros((4, 206, 304), np.float32)
 
-    def _test(self, threshold=0.01):
-        return clean.psf_patch_host(self.psf_host, threshold)
+    def _test(self, threshold=0.01, limit=None):
+        return clean.psf_patch_host(self.psf_host, threshold, limit)
 
 
 class TestClean(object):
