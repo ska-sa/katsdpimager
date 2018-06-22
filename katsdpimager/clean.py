@@ -870,10 +870,10 @@ def psf_patch_host(psf, threshold, limit=None):
         hlimit = (limit - 1) // 2
         mid_x = psf.shape[2] // 2
         mid_y = psf.shape[1] // 2
-        min_x = max(0, mid_x - limit)
-        min_y = max(0, mid_y - limit)
-        max_x = min(psf.shape[2] - 1, mid_x + limit)
-        max_y = min(psf.shape[1] - 1, mid_y + limit)
+        min_x = max(0, mid_x - hlimit)
+        min_y = max(0, mid_y - hlimit)
+        max_x = min(psf.shape[2] - 1, mid_x + hlimit)
+        max_y = min(psf.shape[1] - 1, mid_y + hlimit)
         psf = psf[:, min_y : max_y + 1, min_x : max_x + 1]
 
     nz = np.nonzero(np.abs(psf) >= threshold)
