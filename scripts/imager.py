@@ -464,7 +464,7 @@ def process_channel(dataset, args, start_channel,
                'PSF', 'weights', imager, mid_w, args.vis_block)
     # Normalization
     psf_peak = dirty[..., dirty.shape[1] // 2, dirty.shape[2] // 2]
-    if not np.all(psf_peak != 0):
+    if np.any(psf_peak == 0):
         logger.info('Skipping channel %d which has no usable data', channel)
         return
     scale = np.reciprocal(psf_peak)
@@ -611,7 +611,7 @@ def main():
         if args.subtract is not None:
             subtract_model = sky_model.SkyModel.open(args.subtract)
         else:
-            subtract_model = False
+            subtract_model = None
 
         for start_channel in range(args.start_channel, args.stop_channel, args.channel_batch):
             stop_channel = min(args.stop_channel, start_channel + args.channel_batch)
