@@ -45,6 +45,10 @@ catchError {
                                  reportDir: "$testdir/report",
                                  reportFiles: 'index.html',
                                  keepAll: true])
+            /* The working directly tends to get rather big - clean it out to
+             * prevent bloating the container.
+             */
+            deleteDir()
         }
     }
 }
