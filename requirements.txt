@@ -21,6 +21,7 @@ llvmlite
 Mako
 MarkupSafe
 mock
+msgpack
 netifaces
 nose
 numba
