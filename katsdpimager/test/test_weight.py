@@ -33,7 +33,7 @@ class TestGridWeights(object):
         rs = np.random.RandomState(1)
         host = buffer.empty_like()
         host[:] = rs.uniform(size=host.shape)
-        sub_rect = [np.s_[0 : x] for x in data.shape]
+        sub_rect = tuple([np.s_[0 : x] for x in data.shape])
         host[sub_rect] = data
         buffer.set(command_queue, host)
 

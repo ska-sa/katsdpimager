@@ -21,7 +21,7 @@ def _middle(array, shape):
         assert (a - s) % 2 == 0
         pad = (a - s) // 2
         index.append(np.s_[pad : a - pad])
-    return array[index]
+    return array[tuple(index)]
 
 
 class BaseTest(object):
