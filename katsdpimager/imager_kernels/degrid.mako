@@ -29,9 +29,10 @@ DEVICE_FN float2 complex_mul(float2 a, float2 b)
 /// Computes a * b + c
 DEVICE_FN Complex Complex_mad(float2 a, Complex b, Complex c)
 {
+    Complex a_ = make_Complex(a.x, a.y);
     Complex out;
-    out.x = fma(a.x, b.x, fma(a.y, -b.y, c.x));
-    out.y = fma(a.x, b.y, fma(a.y, b.x, c.y));
+    out.x = fma(a_.x, b.x, fma(a_.y, -b.y, c.x));
+    out.y = fma(a_.x, b.y, fma(a_.y, b.x, c.y));
     return out;
 }
 
