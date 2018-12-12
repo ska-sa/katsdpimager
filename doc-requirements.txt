@@ -16,7 +16,7 @@ six
 snowballstemmer
 sphinx-rtd-theme
 sphinx
-sphinxcontrib-tikz==0.4.1
+sphinxcontrib-tikz==0.4.6
 sphinxcontrib-websupport
 typing
 urllib3
