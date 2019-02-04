@@ -1,4 +1,4 @@
-FROM sdp-docker-registry.kat.ac.za:5000/docker-base-gpu-build:18.04 as build
+FROM sdp-docker-registry.kat.ac.za:5000/docker-base-gpu-build as build
 
 # Enable Python 2 ve
 ENV PATH="$PATH_PYTHON2" VIRTUAL_ENV="$VIRTUAL_ENV_PYTHON2"
