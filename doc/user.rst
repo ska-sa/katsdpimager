@@ -154,9 +154,10 @@ Input selection options
      the katdal documentation for details.
    apply-cal=<TYPES>
      1GC calibration solutions to apply. This does not do any calibration
-     itself, but uses solutions stored in the dataset. The argument can contain
-     any subset of K, B and G to select delay, bandpass and gain solutions. It
-     can also be ``all`` or ``none``.
+     itself, but uses solutions stored in the dataset. This can be a
+     comma-separated list or ``all`` (the default) to apply all available
+     calibration solutions. Refer to the katdal documentation for more
+     information.
 
    To provide multiple key-value pairs, specify :option:`-i` multiple times.
 
