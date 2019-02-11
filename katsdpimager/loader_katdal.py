@@ -11,12 +11,9 @@ import argparse
 import logging
 import itertools
 import math
-import re
 import katsdpimager.loader_core
 import katdal
-from katdal.categorical import ComparableArrayWrapper
 import katpoint
-import scipy.interpolate
 import numpy as np
 import astropy.units as units
 from . import polarization
