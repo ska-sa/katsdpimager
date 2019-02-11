@@ -13,7 +13,6 @@ import itertools
 import math
 import katsdpimager.loader_core
 import katdal
-import katpoint
 import numpy as np
 import astropy.units as units
 from . import polarization
