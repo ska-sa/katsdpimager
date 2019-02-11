@@ -96,7 +96,7 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
         parser.add_argument('--target', type=str,
                             help='Target to image (index or name) [auto]')
         parser.add_argument('--ref-ant', type=str, default='',
-                            help='Reference antenna for identifying scans [first in file]')
+                            help='Override reference antenna for identifying scans [array]')
         parser.add_argument('--apply-cal', type=str, default='all',
                             help='Comma-separated calibration solutions to pre-apply [%(default)s]')
         args = parser.parse_args(options)
@@ -154,7 +154,7 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
         # Set up a reference antenna for the array centre. katdal's reference
         # antenna is the first antenna in the file, which is not as useful.
         # This determines the reference frame for UVW coordinates.
-        self._ref_ant = katpoint.Antenna('', *self._file.ants[0].ref_position_wgs84)
+        self._ref_ant = self._file.sensor.get('Antennas/array/antenna')[0]
 
     @classmethod
     def match(cls, filename):

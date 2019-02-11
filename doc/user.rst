@@ -151,7 +151,8 @@ Input selection options
      the first without a ``bpcal`` or ``gaincal`` tag.
    ref-ant=<NAME>
      Name of antenna to use as the reference for identifying scans. Refer to
-     the katdal documentation for details.
+     the katdal documentation for details. If not specified, the virtual
+     "array" antenna is used.
    apply-cal=<TYPES>
      1GC calibration solutions to apply. This does not do any calibration
      itself, but uses solutions stored in the dataset. This can be a
