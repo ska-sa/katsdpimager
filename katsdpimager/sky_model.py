@@ -107,7 +107,7 @@ class SkyModel(object):
             Flux densities in Jy, shape N×4 for Stokes IQUV
         """
         freq_MHz = wavelength.to(units.MHz, equivalencies=units.spectral()).value
-        out = np.stack(source.flux_density_stokes(freq_MHz) for source in self._catalogue)
+        out = np.stack([source.flux_density_stokes(freq_MHz) for source in self._catalogue])
         return np.nan_to_num(out, copy=False)
 
     def add_to_image(self, image, image_p, phase_centre, scale=1.0):
