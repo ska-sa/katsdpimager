@@ -2,11 +2,13 @@ ansicolors
 appdirs
 argparse
 astropy==1.3
+botocore
 chardet
 certifi
 dask
 decorator
 defusedxml
+docutils
 enum34
 fakeredis
 funcsigs
@@ -15,6 +17,7 @@ futures
 h5py
 idna
 ipaddress
+jmespath
 katversion
 linecache2
 llvmlite
