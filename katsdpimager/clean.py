@@ -285,13 +285,15 @@ class NoiseEst(accel.Operation):
         rank_host = rank.empty_like()
         median_rank = (dirty.shape[1] - 2 * self.border) * (dirty.shape[2] - 2 * self.border) // 2
         # We don't need a super-accurate estimate down to the last bit.
-        # The check against tiny is to prevent an infinite loop if all
-        # the values are zero.
         while high > np.finfo(dtype).tiny and high > low * 1.0001:
             # Average the integer bit representations, which will effectively
             # binary search the exponent.
             ilow = low.view(itype)
             ihigh = high.view(itype)
+            if ihigh - ilow == itype(1):
+                # This can happen in some corner cases despite the ratio chunk
+                # e.g. if low is zero or high is inf
+                break
             imid = ilow + (ihigh - ilow) // itype(2)
             mid = imid.view(dtype)
             self.command_queue.enqueue_kernel(
