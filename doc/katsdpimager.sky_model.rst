@@ -1,7 +1,7 @@
-katsdpimager.loader\_ms module
+katsdpimager.sky\_model module
 ==============================
 
-.. automodule:: katsdpimager.loader_ms
+.. automodule:: katsdpimager.sky_model
     :members:
     :undoc-members:
     :show-inheritance:

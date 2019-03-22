@@ -1,7 +1,7 @@
-katsdpimager.test.test\_fft module
+katsdpimager.loader\_katdal module
 ==================================
 
-.. automodule:: katsdpimager.test.test_fft
+.. automodule:: katsdpimager.loader_katdal
     :members:
     :undoc-members:
     :show-inheritance:

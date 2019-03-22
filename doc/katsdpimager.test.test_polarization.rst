@@ -1,5 +1,5 @@
-katsdpimager.test.test_polarization module
-==========================================
+katsdpimager.test.test\_polarization module
+===========================================
 
 .. automodule:: katsdpimager.test.test_polarization
     :members:

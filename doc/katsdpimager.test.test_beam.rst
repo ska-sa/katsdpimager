@@ -1,5 +1,5 @@
-katsdpimager.test.test_beam module
-==================================
+katsdpimager.test.test\_beam module
+===================================
 
 .. automodule:: katsdpimager.test.test_beam
     :members:

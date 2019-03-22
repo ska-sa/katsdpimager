@@ -52,7 +52,7 @@ clean:
 	rm -rf $(BUILDDIR)/*
 
 apidoc:
-	cd .. && sphinx-apidoc -f -o doc katsdpimager -e ../setup.py
+	cd .. && sphinx-apidoc -e -f -o doc katsdpimager ../setup.py
 
 html:
 	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(BUILDDIR)/html

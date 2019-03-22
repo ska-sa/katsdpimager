@@ -1,5 +1,5 @@
-katsdpimager.test.test_image module
-===================================
+katsdpimager.test.test\_image module
+====================================
 
 .. automodule:: katsdpimager.test.test_image
     :members:

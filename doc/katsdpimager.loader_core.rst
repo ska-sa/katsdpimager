@@ -1,5 +1,5 @@
-katsdpimager.loader_core module
-===============================
+katsdpimager.loader\_core module
+================================
 
 .. automodule:: katsdpimager.loader_core
     :members:

@@ -1,7 +1,7 @@
-katsdpimager.loader\_ms module
+katsdpimager.test.utils module
 ==============================
 
-.. automodule:: katsdpimager.loader_ms
+.. automodule:: katsdpimager.test.utils
     :members:
     :undoc-members:
     :show-inheritance:

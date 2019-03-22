@@ -22,12 +22,15 @@ Submodules
    katsdpimager.io
    katsdpimager.loader
    katsdpimager.loader_core
+   katsdpimager.loader_katdal
    katsdpimager.loader_ms
    katsdpimager.numba
    katsdpimager.parameters
    katsdpimager.polarization
+   katsdpimager.predict
    katsdpimager.preprocess
    katsdpimager.progress
+   katsdpimager.sky_model
    katsdpimager.types
    katsdpimager.weight
 

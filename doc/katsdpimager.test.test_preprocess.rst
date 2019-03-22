@@ -1,5 +1,5 @@
-katsdpimager.test.test_preprocess module
-========================================
+katsdpimager.test.test\_preprocess module
+=========================================
 
 .. automodule:: katsdpimager.test.test_preprocess
     :members:
