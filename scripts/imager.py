@@ -612,7 +612,7 @@ def main():
         log_parameters("Weight parameters", weight_p)
 
         if args.subtract is not None:
-            subtract_model = sky_model.SkyModel.open(args.subtract)
+            subtract_model = sky_model.open_sky_model(args.subtract, 'katpoint')
         else:
             subtract_model = None
 

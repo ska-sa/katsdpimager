@@ -1,7 +1,6 @@
 """Tests for :mod:`katsdpimager.predict`"""
 
 from __future__ import division, print_function, absolute_import
-import io
 
 import numpy as np
 import katpoint
@@ -40,12 +39,12 @@ class TestPredict(object):
             w_planes=w_planes,
             max_w=5 * units.m,
             kernel_width=7)
-        catalogue = u"""
-            dummy0, radec, 19:39:25.03, -63:42:45.7, (200.0 12000.0 -11.11 7.777 -1.231 0 0 0 1 0.1 0 0)
-            dummy1, radec, 19:39:20.38, -63:42:09.1, (800.0 8400.0 -3.708 3.807 -0.7202 0 0 0 1 0.2 0.2 0.2)
-            dummy2, radec, 19:39:08.29, -63:42:33.0, (800.0 43200.0 0.956 0.584 -0.1644 0 0 0 1 0.1 0 1)
-        """   # noqa: E501
-        model = sky_model.SkyModel(io.StringIO(catalogue), 'katpoint')
+        catalogue = katpoint.Catalogue([
+            "dummy0, radec, 19:39:25.03, -63:42:45.7, (200.0 12000.0 -11.11 7.777 -1.231 0 0 0 1 0.1 0 0)",       # noqa: E501
+            "dummy1, radec, 19:39:20.38, -63:42:09.1, (800.0 8400.0 -3.708 3.807 -0.7202 0 0 0 1 0.2 0.2 0.2)",   # noqa: E501
+            "dummy2, radec, 19:39:08.29, -63:42:33.0, (800.0 43200.0 0.956 0.584 -0.1644 0 0 0 1 0.1 0 1)"        # noqa: E501
+        ])
+        model = sky_model.KatpointSkyModel(catalogue)
         phase_centre = katpoint.construct_radec_target('19:39:30', '-63:42:30').astrometric_radec()
         phase_centre = phase_centre * units.rad
         rs = RandomState(seed=1)

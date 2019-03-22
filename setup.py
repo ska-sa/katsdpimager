@@ -8,7 +8,7 @@ try:
 except ImportError:
     eigen3 = {'include_dirs': set()}
 
-tests_require = ['nose', 'mock', 'scipy']
+tests_require = ['nose', 'mock', 'scipy', 'fakeredis']
 
 
 class get_include(object):
