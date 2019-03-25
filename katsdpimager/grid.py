@@ -843,8 +843,8 @@ class Gridder(GridDegrid):
 
     def _run(self):
         kernel_width = self.template.grid_parameters.kernel_width
-        uv_bias = ((kernel_width - 1) // 2 + self.template.convolve_kernel.pad -
-                   self.slots['grid'].shape[-1] // 2)
+        uv_bias = ((kernel_width - 1) // 2 + self.template.convolve_kernel.pad
+                   - self.slots['grid'].shape[-1] // 2)
         self.static_run(
             self.command_queue, self._kernel,
             self.template.wgs_x, self.template.wgs_y,
@@ -1019,8 +1019,8 @@ class Degridder(GridDegrid):
 
     def _run(self):
         kernel_width = self.template.grid_parameters.kernel_width
-        uv_bias = ((kernel_width - 1) // 2 + self.template.convolve_kernel.pad -
-                   self.slots['grid'].shape[-1] // 2)
+        uv_bias = ((kernel_width - 1) // 2 + self.template.convolve_kernel.pad
+                   - self.slots['grid'].shape[-1] // 2)
         self.static_run(
             self.command_queue, self._kernel,
             self.template.wgs_x, self.template.wgs_y, self.template.wgs_z,

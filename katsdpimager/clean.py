@@ -826,8 +826,8 @@ class Clean(accel.OperationSequence):
         # Copy the peak position and value back to the host
         peak_value_device = self.buffer('peak_value')
         peak_pos_device = self.buffer('peak_pos')
-        if (isinstance(peak_value_device, accel.SVMArray) or
-                isinstance(peak_pos_device, accel.SVMArray)):
+        if (isinstance(peak_value_device, accel.SVMArray)
+                or isinstance(peak_pos_device, accel.SVMArray)):
             self.command_queue.finish()
         peak_value = peak_value_device.get_async(self.command_queue, self._peak_value_host)
         peak_pos = peak_pos_device.get_async(self.command_queue, self._peak_pos_host)

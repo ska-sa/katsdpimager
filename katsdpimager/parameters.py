@@ -141,8 +141,8 @@ def w_kernel_width(image_parameters, w, eps_w, antialias_width=0):
     wl = float(w / image_parameters.wavelength)
     # Squared size of the w part
     wk2 = 4 * fov**2 * (
-        (wl * image_parameters.image_size / 2)**2 +
-        wl**1.5 * fov / (2 * math.pi * eps_w))
+        (wl * image_parameters.image_size / 2)**2
+        + wl**1.5 * fov / (2 * math.pi * eps_w))
     return np.sqrt(wk2 + antialias_width**2)
 
 
