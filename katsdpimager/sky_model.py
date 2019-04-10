@@ -126,26 +126,24 @@ def catalogue_from_telstate(telstate, capture_block_id, continuum, target):
     return katpoint.Catalogue()
 
 
-def open_sky_model(url, model_format):
+def open_sky_model(url):
     """Load a sky model from an external resource.
 
-    Currently the only `format` supported is `katpoint`, creating a
-    :class:`KatpointSkyModel`.
+    The format is encoded in the URL as a `format` query parameter, and
+    defaults to ``katpoint``.
 
     Parameters
     ----------
     url : str
         Either a catalogue file to load (only local files are currently
         supported) or an URL of the form
-        :samp:`redis://{host}:{port}/?capture_block_id={id}&continuum={name}&target={description}`,
+        :samp:`redis://{host}:{port}/?format=katpoint&capture_block_id={id}&continuum={name}&target={description}`,
         which will read clean components written by katsdpcontim.
-    model_format : {'katpoint'}
-        Controls interpretation of the `url`.
 
     Raises
     ------
     ValueError
-        if `model_format` was not recognised, the URL doesn't contain the
+        if `format` was not recognised, the URL doesn't contain the
         expected query parameters, or the URL scheme is not supported
     IOError, OSError
         if there was a low-level error reading a file
@@ -158,10 +156,12 @@ def open_sky_model(url, model_format):
     -------
     SkyModel
     """
-    if model_format != 'katpoint':
-        raise ValueError('model_format "{}" is not recognised'.format(model_format))
-
     parts = urllib.parse.urlparse(url, scheme='file')
+    params = urllib.parse.parse_qs(parts.query)
+    model_format = params.pop('format', ['katpoint'])[0]
+    if model_format != 'katpoint':
+        raise ValueError('format "{}" is not recognised'.format(model_format))
+
     if parts.scheme == 'file':
         with open(parts.path) as f:
             catalogue = katpoint.Catalogue(f)
@@ -169,7 +169,6 @@ def open_sky_model(url, model_format):
     elif parts.scheme == 'redis':
         import redis
         import katsdptelstate.redis
-        params = urllib.parse.parse_qs(parts.query)
         try:
             capture_block_id = params.pop('capture_block_id')[0]
             continuum = params.pop('continuum')[0]

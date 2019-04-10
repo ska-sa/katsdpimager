@@ -94,23 +94,22 @@ class TestCatalogueFromTelstate(object):
 class TestOpenSkyModel(object):
     def test_bad_format(self):
         with assert_raises(ValueError):
-            open_sky_model('file:///does_not_exist', 'sir_not_appearing_in_this_codebase')
+            open_sky_model('file:///does_not_exist?format=sir_not_appearing_in_this_codebase')
 
     def test_bad_scheme(self):
         with assert_raises(ValueError):
-            open_sky_model('ftp://invalid/', 'katpoint')
+            open_sky_model('ftp://invalid/')
 
     def test_missing_params(self):
         with assert_raises(ValueError):
-            open_sky_model('redis://invalid/?capture_block_id=1234567890&continuum=continuum',
-                           'katpoint')
+            open_sky_model('redis://invalid/?capture_block_id=1234567890&continuum=continuum')
 
     def test_file(self):
         orig = katpoint.Catalogue([_TRG_A, _TRG_B, _TRG_C])
         with tempfile.NamedTemporaryFile('w', suffix='.csv') as f:
             orig.save(f.name)
-            test1 = open_sky_model(f.name, 'katpoint')
-            test2 = open_sky_model('file://' + f.name, 'katpoint')
+            test1 = open_sky_model(f.name)
+            test2 = open_sky_model('file://' + f.name + '?format=katpoint')
         assert_equal(orig, test1._catalogue)
         assert_equal(orig, test2._catalogue)
 
@@ -123,9 +122,8 @@ class TestOpenSkyModel(object):
 
         with mock.patch('redis.StrictRedis.from_url', return_value=client) as from_url:
             test = open_sky_model(
-                'redis://invalid:6379/?db=1&capture_block_id=1234567890'
+                'redis://invalid:6379/?format=katpoint&db=1&capture_block_id=1234567890'
                 '&continuum=continuum'
-                '&target=A,+radec,+20:00:00.00,+-60:00:00.0,+(200.0+12000.0+1.0+0.5+0.0)',
-                'katpoint')
+                '&target=A,+radec,+20:00:00.00,+-60:00:00.0,+(200.0+12000.0+1.0+0.5+0.0)')
             from_url.assert_called_with('redis://invalid:6379/?db=1')
             assert_equal(expected, test._catalogue)
