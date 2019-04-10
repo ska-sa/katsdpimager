@@ -5,12 +5,10 @@ At present the only file format supported is a katpoint catalogue file, but
 other formats (e.g. Tigger) may be added later.
 """
 
-from __future__ import print_function, division, absolute_import
-
 import itertools
 import logging
+import urllib
 
-from six.moves import urllib
 import numpy as np
 import astropy.units as units
 import katpoint
@@ -19,7 +17,7 @@ import katpoint
 logger = logging.getLogger(__name__)
 
 
-class SkyModel(object):
+class SkyModel:
     """A sky model which can be used to generate images at specified frequencies.
 
     This is an abstract base class.

@@ -1,24 +1,24 @@
 """Tests for :py:mod:`katsdpimager.preprocess`."""
 
-from __future__ import division, print_function, absolute_import
-import astropy.units as units
-import numpy as np
 import tempfile
 import logging
 import os
 from contextlib import closing
+
+import astropy.units as units
+import numpy as np
 from nose.tools import assert_equal, assert_true, assert_false
+
 import katsdpimager.parameters as parameters
 import katsdpimager.polarization as polarization
 import katsdpimager.preprocess as preprocess
-from six.moves import range
 
 
 def _empty_recarray(dtype):
     return np.rec.array(None, dtype=dtype, shape=(0,))
 
 
-class BaseTestVisibilityCollector(object):
+class BaseTestVisibilityCollector:
     def setup(self):
         self.image_parameters = []
         self.grid_parameters = []
@@ -158,7 +158,7 @@ class TestVisibilityCollectorMem(BaseTestVisibilityCollector):
 
 class TestVisibilityCollectorHDF5(BaseTestVisibilityCollector):
     def setup(self):
-        super(TestVisibilityCollectorHDF5, self).setup()
+        super().setup()
         self._tmpfiles = []
 
     def factory(self, *args, **kwargs):

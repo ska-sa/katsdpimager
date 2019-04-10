@@ -4,7 +4,6 @@
 Creates an HTML page showing the images written by the Jenkins script.
 """
 
-from __future__ import division, print_function, absolute_import
 import argparse
 import os
 import os.path
@@ -16,8 +15,6 @@ import timeit
 import io
 import glob
 from contextlib import closing
-
-from six.moves import range
 
 from mako.template import Template
 import matplotlib
@@ -32,7 +29,7 @@ MODE_DIRTY = 'Dirty'
 MODES = [MODE_CLEAN, MODE_DIRTY]
 
 
-class BuildInfo(object):
+class BuildInfo:
     """Runs a command and stores the output and exit code. The output is also
     echoed to stdout.
     """
@@ -62,7 +59,7 @@ class BuildInfo(object):
         logging.info("Elapsed time %.3f", self.elapsed)
 
 
-class Image(object):
+class Image:
     def __init__(self, name, filebase,
                  clean_fits_pattern, dirty_fits_pattern, cmd_patterns,
                  clean_globs=[]):

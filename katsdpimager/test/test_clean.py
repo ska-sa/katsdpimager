@@ -1,15 +1,14 @@
 """Tests for :py:mod:`katsdpimager.clean`"""
 
-from __future__ import division, print_function, absolute_import
 import numpy as np
 import scipy.signal
-from .. import clean
 from katsdpsigproc.test.test_accel import device_test
 from nose.tools import assert_equal, assert_greater_equal
-from six.moves import range
+
+from .. import clean
 
 
-class _TestPsfPatchBase(object):
+class _TestPsfPatchBase:
     """Tests for :class:`~katsdpimager.clean.PsfPatch` and :class:`~katsdpimager.clean.psf_patch_host."""   # noqa: E501
     def test_peak_only(self):
         assert_equal((4, 1, 1), self._test())
@@ -63,7 +62,7 @@ class TestPsfPatchHost(_TestPsfPatchBase):
         return clean.psf_patch_host(self.psf_host, threshold, limit)
 
 
-class TestClean(object):
+class TestClean:
     @classmethod
     def _make_psf(cls, size):
         """Creates a dummy PSF as a Gaussian plus random noise"""

@@ -45,11 +45,9 @@ different beam shapes for the different polarizations.
 .. include:: macros.rst
 """
 
-from __future__ import division, print_function, absolute_import
 import pkg_resources
 import numpy as np
 from katsdpsigproc import accel, fill
-from six.moves import range
 
 
 NATURAL = 0
@@ -57,7 +55,7 @@ UNIFORM = 1
 ROBUST = 2
 
 
-class GridWeightsTemplate(object):
+class GridWeightsTemplate:
     """Template for accumulating weights onto a grid.
 
     Parameters
@@ -123,7 +121,7 @@ class GridWeights(accel.Operation):
         does not match `template`.
     """
     def __init__(self, template, command_queue, grid_shape, max_vis, allocator=None):
-        super(GridWeights, self).__init__(command_queue, allocator)
+        super().__init__(command_queue, allocator)
         self.template = template
         if grid_shape[0] != self.template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
@@ -181,7 +179,7 @@ class GridWeights(accel.Operation):
         }
 
 
-class DensityWeightsTemplate(object):
+class DensityWeightsTemplate:
     """Template for converting cell sum of statistical weights to density weights.
 
     Parameters
@@ -240,7 +238,7 @@ class DensityWeights(accel.Operation):
         Allocator used to allocate unbound slots
     """
     def __init__(self, template, command_queue, grid_shape, allocator=None):
-        super(DensityWeights, self).__init__(command_queue, allocator)
+        super().__init__(command_queue, allocator)
         self.template = template
         if grid_shape[0] != self.template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
@@ -288,7 +286,7 @@ class DensityWeights(accel.Operation):
         }
 
 
-class MeanWeightTemplate(object):
+class MeanWeightTemplate:
     """Template for computing the "mean weight", as defined by equation 3.17 in
     [Bri95]_. The input is the gridded statistical weights. The kernel outputs the
     sum of squared cell weights and the sum of weights, and the Python code
@@ -338,7 +336,7 @@ class MeanWeight(accel.Operation):
         Allocator used to allocate unbound slots
     """
     def __init__(self, template, command_queue, grid_shape, allocator=None):
-        super(MeanWeight, self).__init__(command_queue, allocator)
+        super().__init__(command_queue, allocator)
         self.template = template
         self.slots['grid'] = accel.IOSlot(
             (grid_shape[0],
@@ -372,7 +370,7 @@ class MeanWeight(accel.Operation):
         return self._sums_host[1] / self._sums_host[0]
 
 
-class WeightsTemplate(object):
+class WeightsTemplate:
     """Compound template for computing imaging weights.
 
     Parameters
@@ -493,7 +491,7 @@ class Weights(accel.OperationSequence):
         else:
             self._density_weights = None
 
-        super(Weights, self).__init__(command_queue, operations, compounds, allocator=allocator)
+        super().__init__(command_queue, operations, compounds, allocator=allocator)
 
     def _run(self):
         raise NotImplementedError('Weights should not be used as a callable')
@@ -531,7 +529,7 @@ class Weights(accel.OperationSequence):
         return normalized_rms
 
 
-class WeightsHost(object):
+class WeightsHost:
     """Equivalent to :class:`Weights` that runs on the host.
 
     Parameters

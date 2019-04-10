@@ -1,20 +1,20 @@
 #!/usr/bin/env python
-from __future__ import division, print_function, absolute_import
 import sys
 import argparse
+import logging
+import os
+import atexit
+from contextlib import closing, contextmanager
+import tempfile
+
 import astropy.units as units
 import numpy as np
-import logging
 import colors
-import tempfile
-import atexit
-import os
 import katsdpsigproc.accel as accel
+
 from katsdpimager import \
     loader, parameters, polarization, preprocess, io, clean, weight, sky_model, \
     imaging, progress, beam, numba
-from contextlib import closing, contextmanager
-from six.moves import range
 
 
 logger = logging.getLogger()
@@ -190,7 +190,7 @@ def data_iter(dataset, args, start_channel, stop_channel):
                 return
 
 
-class DummyCommandQueue(object):
+class DummyCommandQueue:
     """Stub equivalent to CUDA/OpenCL CommandQueue objects, that just provides
     an empty :meth:`finish` method."""
     def finish(self):
@@ -314,10 +314,10 @@ class ColorFormatter(logging.Formatter):
     }
 
     def __init__(self, *args, **kwargs):
-        super(ColorFormatter, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def format(self, record):
-        msg = super(ColorFormatter, self).format(record)
+        msg = super().format(record)
         if record.levelno in self.COLORS:
             msg = self.COLORS[record.levelno](msg)
         return msg
@@ -354,7 +354,7 @@ def dummy_context():
     yield
 
 
-class ChannelParameters(object):
+class ChannelParameters:
     """Collects imaging parameters for a single channel.
 
     Parameters

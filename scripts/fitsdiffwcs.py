@@ -11,15 +11,15 @@ corresponding pixel in the second file, interpolating as necessary, or
 reporting NaN if it falls outside the footprint.
 """
 
-from __future__ import division, print_function, absolute_import
 import argparse
+
 import numpy as np
 import scipy.interpolate
 import astropy.io.fits as fits
 import astropy.wcs as wcs
 
 
-class FitsFile(object):
+class FitsFile:
     def __init__(self, filename):
         self.hdulist = fits.open(filename)
         self.xform = wcs.WCS(self.hdulist[0].header, self.hdulist)

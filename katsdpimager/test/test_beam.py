@@ -1,12 +1,11 @@
 """Tests for :py:mod:`katsdpimager.beam`"""
 
-from __future__ import division, print_function, absolute_import
 import numpy as np
 import scipy.signal
 from astropy.modeling import models
-from katsdpimager import beam
 from katsdpsigproc.test.test_accel import device_test, cuda_test
-from six.moves import range
+
+from katsdpimager import beam
 
 
 def convolve_beam_reference(model, beam):
@@ -29,7 +28,7 @@ def convolve_beam_reference(model, beam):
     return out
 
 
-class TestConvolveBeam(object):
+class TestConvolveBeam:
     """Test both host and device beam convolution functions"""
     def setup(self):
         self.beam = beam.Beam(models.Gaussian2D(amplitude=3.5, x_mean=0.0, y_mean=0.0,

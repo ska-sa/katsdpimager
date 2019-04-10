@@ -1,6 +1,5 @@
 """Tests for :mod:`katsdpimager.image`"""
 
-from __future__ import division, print_function, absolute_import
 import math
 
 import numpy as np
@@ -10,7 +9,7 @@ from .. import image
 from .utils import RandomState
 
 
-class TestLayerToImage(object):
+class TestLayerToImage:
     @device_test
     def test(self, context, command_queue):
         slices = 3
@@ -45,7 +44,7 @@ class TestLayerToImage(object):
         np.testing.assert_allclose(expected, actual, 1e-4)
 
 
-class TestImageToLayer(object):
+class TestImageToLayer:
     @device_test
     def test(self, context, command_queue):
         # Since LayerToImage is tested from first principles, we just check
@@ -88,7 +87,7 @@ class TestImageToLayer(object):
         np.testing.assert_allclose(expected[1], actual[1], 1e-4)
 
 
-class TestScale(object):
+class TestScale:
     @device_test
     def test(self, context, command_queue):
         shape = (4, 123, 234)

@@ -1,13 +1,12 @@
 """Tests for :mod:`katsdpimager.weight`."""
 
-from __future__ import division, print_function, absolute_import
 import numpy as np
 from katsdpsigproc.test.test_accel import device_test
+
 from katsdpimager import weight
-from six.moves import range
 
 
-class TestGridWeights(object):
+class TestGridWeights:
     def setup(self):
         self.grid_shape = (4, 100, 200)
         self.uv = np.array([
@@ -57,7 +56,7 @@ class TestGridWeights(object):
         np.testing.assert_equal(expected, actual)
 
 
-class TestDensityWeights(object):
+class TestDensityWeights:
     def setup(self):
         rs = np.random.RandomState(1)
         self.grid_shape = (4, 50, 107)
@@ -93,7 +92,7 @@ class TestDensityWeights(object):
         np.testing.assert_allclose(self.normalized_rms, normalized_rms, 1e-6)
 
 
-class TestMeanWeight(object):
+class TestMeanWeight:
     def setup(self):
         rs = np.random.RandomState(1)
         self.grid_shape = (4, 50, 107)

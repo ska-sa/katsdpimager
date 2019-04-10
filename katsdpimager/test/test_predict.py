@@ -1,7 +1,5 @@
 """Tests for :mod:`katsdpimager.predict`"""
 
-from __future__ import division, print_function, absolute_import
-
 import numpy as np
 import katpoint
 import katsdpsigproc.accel as accel
@@ -12,7 +10,7 @@ from .. import predict, parameters, polarization, sky_model
 from .utils import RandomState
 
 
-class TestPredict(object):
+class TestPredict:
     """Tests for :class:`.Predict`"""
     def _test_random(self, context, queue, n_vis):
         # Deliberately use a strange subset of polarizations, to test that

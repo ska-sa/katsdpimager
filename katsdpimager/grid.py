@@ -117,18 +117,16 @@ devices, and even then may limit the block size.
 .. include:: macros.rst
 """
 
-from __future__ import division, print_function, absolute_import
 import math
 import logging
 
-from six.moves import range
 import numpy as np
 import pkg_resources
 
 import katsdpsigproc.accel as accel
 import katsdpsigproc.tune as tune
-import katsdpimager.types
 
+import katsdpimager.types
 from . import numba
 
 
@@ -329,7 +327,7 @@ def subpixel_coord(x, oversample):
     return xs // oversample, xs % oversample
 
 
-class ConvolutionKernel(object):
+class ConvolutionKernel:
     """Separable convolution kernel with metadata. The kernel combines anti-aliasing
     with W correction.
 
@@ -425,7 +423,7 @@ class ConvolutionKernelDevice(ConvolutionKernel):
         else:
             host = out.empty_like()
         host.fill(0)
-        super(ConvolutionKernelDevice, self).__init__(
+        super().__init__(
             image_parameters, grid_parameters, host[:, :, pad:grid_parameters.kernel_width + pad])
         if not isinstance(out, accel.SVMArray):
             queue = context.create_command_queue()
@@ -531,7 +529,7 @@ def _autotune_arrays(command_queue, oversample, real_dtype, num_polarizations, b
     return grid, weights_grid, uv, w_plane, vis, convolve_kernel
 
 
-class GridderTemplate(object):
+class GridderTemplate:
     autotune_version = 6
 
     def __init__(self, context, image_parameters, grid_parameters, tuning=None):
@@ -666,7 +664,7 @@ class VisOperation(accel.Operation):
         Allocator used to allocate unbound slots
     """
     def __init__(self, command_queue, num_polarizations, max_vis, allocator=None):
-        super(VisOperation, self).__init__(command_queue, allocator)
+        super().__init__(command_queue, allocator)
         self.max_vis = max_vis
         self.slots['uv'] = accel.IOSlot(
             (max_vis, accel.Dimension(4, exact=True)), np.int16)
@@ -745,7 +743,7 @@ class GridDegrid(VisOperation):
     def __init__(self, template, command_queue, array_parameters,
                  max_vis, allocator=None):
         num_polarizations = len(template.image_parameters.polarizations)
-        super(GridDegrid, self).__init__(command_queue, num_polarizations, max_vis, allocator)
+        super().__init__(command_queue, num_polarizations, max_vis, allocator)
         # Check that longest baseline won't cause an out-of-bounds access
         max_uv_src = float(array_parameters.longest_baseline / template.image_parameters.cell_size)
         convolve_kernel_size = template.convolve_kernel.padded_data.shape[-1]
@@ -773,7 +771,7 @@ class Gridder(GridDegrid):
     """
 
     def __init__(self, *args, **kwargs):
-        super(Gridder, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.slots['weights_grid'] = accel.IOSlot(self.slots['grid'].shape, np.float32)
         self._kernel = self.template.program.get_kernel('grid')
 
@@ -860,7 +858,7 @@ class Gridder(GridDegrid):
             self.template.convolve_kernel.padded_data)
 
 
-class DegridderTemplate(object):
+class DegridderTemplate:
     autotune_version = 3
 
     def __init__(self, context, image_parameters, grid_parameters, tuning=None):
@@ -972,7 +970,7 @@ class Degridder(GridDegrid):
     """
 
     def __init__(self, *args, **kwargs):
-        super(Degridder, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         num_polarizations = len(self.template.image_parameters.polarizations)
         self.slots['weights'] = accel.IOSlot(
             (self.max_vis, accel.Dimension(num_polarizations, exact=True)), np.float32)
@@ -1058,7 +1056,7 @@ def _grid(kernel, grid, weights_grid, uv, sub_uv, w_plane, vis, sample):
                     grid[pol, int(v0 + j), int(u0 + k)] += sample[pol] * weight
 
 
-class VisOperationHost(object):
+class VisOperationHost:
     """Equivalent to :class:`VisOperation` on the host."""
     def __init__(self):
         self._num_vis = 0
@@ -1113,7 +1111,7 @@ class VisOperationHost(object):
 class GridDegridHost(VisOperationHost):
     """Common code shared by :class:`GridderHost` and :class:`DegridderHost`."""
     def __init__(self, image_parameters, grid_parameters):
-        super(GridDegridHost, self).__init__()
+        super().__init__()
         self.image_parameters = image_parameters
         self.grid_parameters = grid_parameters
         self.kernel = ConvolutionKernel(image_parameters, grid_parameters)
@@ -1124,7 +1122,7 @@ class GridDegridHost(VisOperationHost):
 
 class GridderHost(GridDegridHost):
     def __init__(self, image_parameters, grid_parameters):
-        super(GridderHost, self).__init__(image_parameters, grid_parameters)
+        super().__init__(image_parameters, grid_parameters)
         self.weights_grid = np.empty(self.values.shape, np.float32)
 
     def clear(self):
@@ -1162,7 +1160,7 @@ def _degrid(kernel, values, uv, sub_uv, w_plane, weights, vis, sample):
 
 class DegridderHost(GridDegridHost):
     def __init__(self, image_parameters, grid_parameters):
-        super(DegridderHost, self).__init__(image_parameters, grid_parameters)
+        super().__init__(image_parameters, grid_parameters)
         self.weights = None
 
     @VisOperationHost.num_vis.setter

@@ -1,6 +1,5 @@
 """Utilities for converting type names between numpy and C"""
 
-from __future__ import division, print_function, absolute_import
 import numpy as np
 
 

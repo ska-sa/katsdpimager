@@ -2,17 +2,17 @@
 
 """Benchmark suite for various steps in imaging"""
 
-from __future__ import division, print_function, absolute_import
 import argparse
+import timeit
+import json
+
 import katpoint
 import pkg_resources
 import numpy as np
-import timeit
-import json
 from astropy import units
-from katsdpimager import grid, preprocess, parameters, polarization, fft
 from katsdpsigproc import accel
-from six.moves import range
+
+from katsdpimager import grid, preprocess, parameters, polarization, fft
 
 
 def load_antennas():

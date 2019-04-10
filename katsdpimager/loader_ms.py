@@ -1,16 +1,16 @@
 """Data loading backend for CASA Measurement Sets."""
 
-from __future__ import division, print_function, absolute_import
 import argparse
 import logging
-import katsdpimager.loader_core
+
 import casacore.tables
 import casacore.quanta
 import numpy as np
 import astropy.units as units
 import astropy.time
 import astropy.coordinates
-from six.moves import range
+
+import katsdpimager.loader_core
 
 
 _logger = logging.getLogger(__name__)
@@ -210,7 +210,7 @@ def _fix_cache_size(table, column):
 
 class LoaderMS(katsdpimager.loader_core.LoaderBase):
     def __init__(self, filename, options):
-        super(LoaderMS, self).__init__(filename, options)
+        super().__init__(filename, options)
         parser = argparse.ArgumentParser(
             prog='Measurement set options',
             usage='Measurement set options: [-i data=COLUMN] [-i field=FIELD] ...')

@@ -1,13 +1,13 @@
 """Top-level objects for accelerated imaging, that glue the lower-level
 objects together."""
 
-from __future__ import division, print_function, absolute_import
 import numpy as np
 from katsdpsigproc import accel
+
 from . import grid, predict, weight, image, clean
 
 
-class ImagingTemplate(object):
+class ImagingTemplate:
     """Template holding all the other templates for imaging."""
 
     def __init__(self, command_queue, array_parameters, image_parameters,
@@ -123,7 +123,7 @@ class Imaging(accel.OperationSequence):
         # early on while setting up weights_grid.
         # TODO: could alias noise_est:rank with something, since it's only
         # needed at the start of the minor cycles (it is small though).
-        super(Imaging, self).__init__(
+        super().__init__(
             template.command_queue, operations, compounds, allocator=allocator)
 
     def __call__(self):
@@ -237,7 +237,7 @@ class Imaging(accel.OperationSequence):
         return self._clean(psf_patch, threshold)
 
 
-class ImagingHost(object):
+class ImagingHost:
     """Host-only equivalent to :class:`Imaging`."""
 
     def __init__(self, image_parameters, weight_parameters, grid_parameters, clean_parameters):

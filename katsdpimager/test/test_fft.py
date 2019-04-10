@@ -1,7 +1,5 @@
 """Tests for :mod:`katsdpimager.fft`"""
 
-from __future__ import division, print_function, absolute_import
-
 import numpy as np
 import katsdpsigproc.accel as accel
 from katsdpsigproc.test.test_accel import device_test, cuda_test
@@ -10,7 +8,7 @@ from .. import fft
 from .utils import RandomState
 
 
-class TestFftshift(object):
+class TestFftshift:
     @classmethod
     def pad_dimension(cls, dim, extra):
         """Modifies `dim` to have at least `extra` padding"""
@@ -48,7 +46,7 @@ class TestFftshift(object):
         np.testing.assert_equal(expected, actual)
 
 
-class TestFft(object):
+class TestFft:
     @device_test
     @cuda_test
     def test_forward(self, context, command_queue):

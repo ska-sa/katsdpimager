@@ -15,14 +15,14 @@ minor cycles if the launch overheads become an issue.
 .. include:: macros.rst
 """
 
-from __future__ import division, print_function, absolute_import
 import math
+
 import numpy as np
-from katsdpimager import numba
 import katsdpsigproc.accel as accel
 import katsdpimager.types
 import pkg_resources
-from six.moves import range
+
+from katsdpimager import numba
 
 #: Use only Stokes I to find peaks
 CLEAN_I = 0
@@ -30,7 +30,7 @@ CLEAN_I = 0
 CLEAN_SUMSQ = 1
 
 
-class PsfPatchTemplate(object):
+class PsfPatchTemplate:
     """Examines a PSF to determine how big a PSF patch is required to
     enclosure all values above some threshold.
 
@@ -99,7 +99,7 @@ class PsfPatch(accel.Operation):
     def __init__(self, template, command_queue, shape, allocator=None):
         if shape[0] != template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
-        super(PsfPatch, self).__init__(command_queue, allocator)
+        super().__init__(command_queue, allocator)
         max_wg_x = accel.divup(shape[2], template.wgsx)
         max_wg_y = accel.divup(shape[1], template.wgsy)
         polarizations = accel.Dimension(template.num_polarizations, exact=True)
@@ -178,7 +178,7 @@ def power_to_metric(mode, power):
         raise ValueError('Invalid mode {}'.format(mode))
 
 
-class NoiseEstTemplate(object):
+class NoiseEstTemplate:
     """Robust estimation of the noise (as a standard deviation) in an image.
 
     The noise is estimated by computing the median absolute value via binary
@@ -253,7 +253,7 @@ class NoiseEst(accel.Operation):
             raise ValueError('Mismatch in number of polarizations')
         if border * 2 >= min(image_shape[1], image_shape[2]):
             raise ValueError('Border must be less than half the image size')
-        super(NoiseEst, self).__init__(command_queue, allocator)
+        super().__init__(command_queue, allocator)
         self._num_tiles_x = accel.divup(image_shape[2] - 2 * border, template.tilex)
         self._num_tiles_y = accel.divup(image_shape[1] - 2 * border, template.tiley)
         self.template = template
@@ -326,7 +326,7 @@ class NoiseEst(accel.Operation):
         return metric_to_power(self.template.mode, low) * 1.48260222
 
 
-class _UpdateTilesTemplate(object):
+class _UpdateTilesTemplate:
     """Operation template to compute the peak (including location) for each
     tile intersecting a window.
 
@@ -400,7 +400,7 @@ class _UpdateTiles(accel.Operation):
             raise ValueError('Mismatch in number of polarizations')
         if border * 2 >= min(image_shape[1], image_shape[2]):
             raise ValueError('Border must be less than half the image size')
-        super(_UpdateTiles, self).__init__(command_queue, allocator)
+        super().__init__(command_queue, allocator)
         num_tiles_x = accel.divup(image_shape[2] - 2 * border, template.tilex)
         num_tiles_y = accel.divup(image_shape[1] - 2 * border, template.tiley)
         image_width = accel.Dimension(image_shape[2])
@@ -447,7 +447,7 @@ class _UpdateTiles(accel.Operation):
                 local_size=(self.template.wgsx, self.template.wgsy))
 
 
-class _FindPeakTemplate(object):
+class _FindPeakTemplate:
     """Find the global peak from per-tile peaks.
 
     Parameters
@@ -515,7 +515,7 @@ class _FindPeak(accel.Operation):
     def __init__(self, template, command_queue, image_shape, tile_shape, allocator=None):
         if image_shape[0] != template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
-        super(_FindPeak, self).__init__(command_queue, allocator)
+        super().__init__(command_queue, allocator)
         self.template = template
         image_dims = [accel.Dimension(image_shape[0], exact=True),
                       accel.Dimension(image_shape[1]),
@@ -553,7 +553,7 @@ class _FindPeak(accel.Operation):
             local_size=(self.template.wgsx, self.template.wgsy))
 
 
-class _SubtractPsfTemplate(object):
+class _SubtractPsfTemplate:
     """Subtract a multiple of the point spread function from the dirty image,
     and add a corresponding single pixel to the model image.
 
@@ -626,7 +626,7 @@ class _SubtractPsf(accel.Operation):
         match `template`
     """
     def __init__(self, template, command_queue, loop_gain, image_shape, psf_shape, allocator=None):
-        super(_SubtractPsf, self).__init__(command_queue, allocator)
+        super().__init__(command_queue, allocator)
         pol_dim = accel.Dimension(template.num_polarizations, exact=True)
         if image_shape[0] != template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
@@ -687,7 +687,7 @@ class _SubtractPsf(accel.Operation):
             local_size=(self.template.wgsx, self.template.wgsy))
 
 
-class CleanTemplate(object):
+class CleanTemplate:
     """Composite template for the CLEAN minor cycles.
 
     Parameters
@@ -787,7 +787,7 @@ class Clean(accel.OperationSequence):
             'peak_pos': ['find_peak:peak_pos'],
             'peak_pixel': ['find_peak:peak_pixel', 'subtract_psf:peak_pixel']
         }
-        super(Clean, self).__init__(command_queue, ops, compounds, allocator=allocator)
+        super().__init__(command_queue, ops, compounds, allocator=allocator)
         peak_value = self.slots['peak_value']
         peak_pos = self.slots['peak_pos']
         self._peak_value_host = accel.HostArray(
@@ -926,7 +926,7 @@ def _tile_peak(y0, x0, y1, x1, image, mode, zero):
     return best_pos, best_value
 
 
-class CleanHost(object):
+class CleanHost:
     """CPU-only equivalent to :class:`Clean`. The class keeps references to
     the provided arrays, and only examines modifies them when :meth:`reset`
     or :meth:`__call__` is invoked.

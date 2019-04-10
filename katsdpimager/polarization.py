@@ -28,8 +28,8 @@ different from those used in FITS:
 .. py:data:: STOKES_YY
 """
 
-from __future__ import division, print_function, absolute_import
 import numpy as np
+
 
 STOKES_I = 1
 STOKES_Q = 2

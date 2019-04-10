@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
 
 """Base classes used by loader modules"""
-from __future__ import division, print_function, absolute_import
 import numpy as np
 import astropy.units as units
+
 from . import parameters
-from six.moves import range
 
 
-class LoaderBase(object):
+class LoaderBase:
     def __init__(self, filename, options):
         """Open the file"""
         self.filename = filename

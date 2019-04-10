@@ -1,7 +1,7 @@
 FROM sdp-docker-registry.kat.ac.za:5000/docker-base-gpu-build as build
 
-# Enable Python 2 ve
-ENV PATH="$PATH_PYTHON2" VIRTUAL_ENV="$VIRTUAL_ENV_PYTHON2"
+# Enable Python 3 ve
+ENV PATH="$PATH_PYTHON3" VIRTUAL_ENV="$VIRTUAL_ENV_PYTHON3"
 
 # Install dependencies
 RUN mkdir -p /tmp/install/katsdpimager
@@ -17,7 +17,7 @@ RUN pip check
 
 #######################################################################
 
-FROM sdp-docker-registry.kat.ac.za:5000/docker-base-gpu-runtime:18.04
+FROM sdp-docker-registry.kat.ac.za:5000/docker-base-gpu-runtime
 
-COPY --from=build --chown=kat:kat /home/kat/ve /home/kat/ve
-ENV PATH="$PATH_PYTHON2" VIRTUAL_ENV="$VIRTUAL_ENV_PYTHON2"
+COPY --from=build --chown=kat:kat /home/kat/ve3 /home/kat/ve3
+ENV PATH="$PATH_PYTHON3" VIRTUAL_ENV="$VIRTUAL_ENV_PYTHON3"

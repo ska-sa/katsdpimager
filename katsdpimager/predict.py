@@ -14,13 +14,11 @@ The visibilities are assumed to have already been passed through the
 .. include:: macros.rst
 """
 
-from __future__ import division, print_function, absolute_import
 import logging
 
 import numpy as np
 import pkg_resources
 from astropy import units
-
 from katsdpsigproc import accel, tune
 
 from . import polarization, types, grid, parameters, numba
@@ -100,7 +98,7 @@ def _uvw_scale_bias(image_parameters, grid_parameters):
     return uv_scale, w_scale, w_bias
 
 
-class PredictTemplate(object):
+class PredictTemplate:
     """Predict visibilities from a sky model by directly evaluating the RIME.
 
     Parameters
@@ -219,8 +217,8 @@ class Predict(grid.VisOperation):
                  max_vis, max_sources, allocator=None):
         if len(image_parameters.polarizations) != template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
-        super(Predict, self).__init__(command_queue, template.num_polarizations, max_vis,
-                                      allocator)
+        super().__init__(command_queue, template.num_polarizations, max_vis,
+                         allocator)
         self.template = template
         pol_dim = accel.Dimension(template.num_polarizations, exact=True)
         sources_dim = max(1, max_sources)   # Cannot allocate 0-byte buffer

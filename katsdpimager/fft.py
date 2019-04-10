@@ -3,13 +3,12 @@
 .. include:: macros.rst
 """
 
-from __future__ import division, print_function, absolute_import
 import numpy as np
 import pkg_resources
 import skcuda.fft
 from katsdpsigproc import accel
+
 import katsdpimager.types
-from six.moves import zip
 
 #: Forward FFT
 FFT_FORWARD = 0
@@ -17,7 +16,7 @@ FFT_FORWARD = 0
 FFT_INVERSE = 1
 
 
-class _Gpudata(object):
+class _Gpudata:
     """Adapter to allow skcuda.fft to work with managed memory
     allocations. Add it as a `gpudata` member on an arbitrary object, to allow
     that object to be passed instead of a :py:class`pycuda.gpuarray.GPUArray`.
@@ -36,7 +35,7 @@ class _Gpudata(object):
         return int(self) != int(other)
 
 
-class _GpudataWrapper(object):
+class _GpudataWrapper:
     """Forwarding wrapper around a :py:class:`katsdpsigproc.accel.SVMArray` or
     :py:class:`katsdpsigproc.accel.DeviceArray` that allows it to be passed
     to skcuda.fft.
@@ -54,7 +53,7 @@ class _GpudataWrapper(object):
         return getattr(self._wrapped, attr)
 
 
-class FftshiftTemplate(object):
+class FftshiftTemplate:
     """Operation template for the equivalent of :py:meth:`np.fft.fftshift` on
     the device, in-place. The last two dimensions are shifted, and these
     dimensions must have even size. Because the size is even, this operation
@@ -113,7 +112,7 @@ class Fftshift(accel.Operation):
         if the first two dimensions in `shape` are not even
     """
     def __init__(self, template, command_queue, shape, allocator=None):
-        super(Fftshift, self).__init__(command_queue, allocator)
+        super().__init__(command_queue, allocator)
         self.template = template
         self.kernel = template.program.get_kernel('fftshift')
         if shape[-1] % 2 != 0 or shape[-2] % 2 != 0:
@@ -146,7 +145,7 @@ class Fftshift(accel.Operation):
         )
 
 
-class FftTemplate(object):
+class FftTemplate:
     r"""Operation template for a forward or reverse FFT. The transformation is
     done over the last N dimensions, with the remaining dimensions for batching
     multiple arrays to be transformed. Dimensions before the first N must have
@@ -236,7 +235,7 @@ class Fft(accel.Operation):
         Allocator used to allocate unbound slots
     """
     def __init__(self, template, mode, allocator=None):
-        super(Fft, self).__init__(template.command_queue, allocator)
+        super().__init__(template.command_queue, allocator)
         self.template = template
         src_shape = list(template.shape)
         dest_shape = list(template.shape)

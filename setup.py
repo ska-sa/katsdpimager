@@ -8,10 +8,10 @@ try:
 except ImportError:
     eigen3 = {'include_dirs': set()}
 
-tests_require = ['nose', 'mock', 'scipy', 'fakeredis']
+tests_require = ['nose', 'scipy', 'fakeredis']
 
 
-class get_include(object):
+class get_include:
     """Helper class to defer importing a module until build time for fetching the include directory.
     """
     def __init__(self, module, *args, **kwargs):
@@ -48,10 +48,11 @@ setup(
     scripts=["scripts/imager.py"],
     ext_package='katsdpimager',
     ext_modules=extensions,
+    python_requires='>=3.5',       # Somewhat arbitrary choice; only tested with 3.6+
     setup_requires=['pkgconfig', 'pybind11>=2.2.0'],
     install_requires=[
         'numpy>=1.10.0', 'katsdpsigproc', 'katpoint', 'astropy>=1.3', 'progress',
-        'pycuda', 'scikit-cuda', 'h5py', 'ansicolors', 'six'
+        'pycuda', 'scikit-cuda', 'h5py', 'ansicolors'
     ],
     tests_require=tests_require,
     extras_require={

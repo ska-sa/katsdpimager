@@ -1,12 +1,12 @@
 """Tests for :py:mod:`katsdpimager.polarization`."""
 
-from __future__ import division, print_function, absolute_import
 import numpy as np
 from nose.tools import assert_raises
+
 import katsdpimager.polarization as polarization
 
 
-class TestPolarizationMatrix(object):
+class TestPolarizationMatrix:
     """Tests for :py:func:`katsdpimager.polarization.polarization_matrix`,
     using standard coordinate systems.
     """

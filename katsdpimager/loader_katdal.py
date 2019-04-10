@@ -6,17 +6,18 @@ on correlation products while katsdpimager works on baselines, so some
 conversion is needed.
 """
 
-from __future__ import division, print_function, absolute_import
 import argparse
 import logging
 import itertools
 import math
+import urllib
+
 import katsdpimager.loader_core
 import katdal
 import numpy as np
 import astropy.units as units
+
 from . import polarization
-from six.moves import range, urllib
 
 
 _logger = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
                 return idx
 
     def __init__(self, filename, options):
-        super(LoaderKatdal, self).__init__(filename, options)
+        super().__init__(filename, options)
         parser = argparse.ArgumentParser(
             prog='katdal options',
             usage='katdal options: [-i subarray=N] [-i spw=M] ...')

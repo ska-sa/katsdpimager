@@ -24,16 +24,15 @@ only adjacent visibilities are candidates for merging.
 The core pieces are implemented in C++ for speed (see preprocess.cpp).
 """
 
-from __future__ import division, print_function, absolute_import
 import sys
-import h5py
-import numpy as np
 import math
 import logging
-from katsdpimager import _preprocess
+
+import h5py
+import numpy as np
 import astropy.units as units
-import six
-from six.moves import range
+
+from katsdpimager import _preprocess
 
 
 logger = logging.getLogger(__name__)
@@ -98,7 +97,7 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
             config[i]["w_planes"] = grid_p.w_planes
             config[i]["oversample"] = grid_p.oversample
             config[i]["cell_size"] = image_parameters[i].cell_size.to(units.m).value
-        super(VisibilityCollector, self).__init__(
+        super().__init__(
             num_polarizations, config, self._emit, buffer_size)
         self.image_parameters = image_parameters
         self.grid_parameters = grid_parameters
@@ -153,7 +152,7 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
         # Ensure metres
         uvw = units.Quantity(uvw, unit=units.m, copy=False)
         uvw = np.require(uvw.value, np.float32, 'C')
-        super(VisibilityCollector, self).add(
+        super().add(
             uvw, weights, baselines, vis, feed_angle1, feed_angle2,
             mueller_stokes, mueller_circular)
 
@@ -209,7 +208,7 @@ class VisibilityCollectorHDF5(VisibilityCollector):
     def __init__(self, filename, *args, **kwargs):
         max_cache_size = kwargs.pop('max_cache_size', None)
         chunk_elements = kwargs.pop('chunk_elements', 16384)
-        super(VisibilityCollectorHDF5, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         chunk_size = chunk_elements * self.store_dtype.itemsize
         # We will be jumping between channels and W slices, so to avoid
         # evicting a chunk and then reloading it, we ideally have a big
@@ -226,7 +225,7 @@ class VisibilityCollectorHDF5(VisibilityCollector):
         while not _is_prime(slots):
             slots += 2
         logger.debug('Setting cache size to %d slots, %d bytes', slots, cache_size)
-        if isinstance(filename, six.text_type):
+        if isinstance(filename, str):
             filename = filename.encode(sys.getfilesystemencoding())
         self.filename = filename
         self._file = h5py.File(h5py.h5f.create(filename, fapl=_make_fapl(slots, cache_size, 1.0)))
@@ -257,7 +256,7 @@ class VisibilityCollectorHDF5(VisibilityCollector):
             elements.astype(self.store_dtype)[np.newaxis, np.newaxis, :]
 
     def close(self):
-        super(VisibilityCollectorHDF5, self).close()
+        super().close()
         self._dataset.attrs.create('length', self._length)
         if logger.isEnabledFor(logging.INFO):
             filesize = self._file.id.get_filesize()
@@ -283,7 +282,7 @@ class VisibilityCollectorMem(VisibilityCollector):
     """
 
     def __init__(self, *args, **kwargs):
-        super(VisibilityCollectorMem, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.datasets = [
             [[] for w_slice in range(self.grid_parameters[channel].w_slices)]
             for channel in range(self.num_channels)]
@@ -299,7 +298,7 @@ class VisibilityCollectorMem(VisibilityCollector):
         return VisibilityReaderMem(self)
 
 
-class VisibilityReader(object):
+class VisibilityReader:
     """Abstract base class for visibility readers.
 
     Parameters
@@ -337,7 +336,7 @@ class VisibilityReader(object):
 
 class VisibilityReaderHDF5(VisibilityReader):
     def __init__(self, collector):
-        super(VisibilityReaderHDF5, self).__init__(collector)
+        super().__init__(collector)
         # We're doing a linear read over the file, so we don't need to increase
         # the cache size.
         # TODO: experiment with setting a tiny cache so that blocks bypass the
@@ -377,14 +376,14 @@ class VisibilityReaderHDF5(VisibilityReader):
         return self._length.shape[1]
 
     def close(self):
-        super(VisibilityReaderHDF5, self).close()
+        super().close()
         self._file.close()
         self._file = None
 
 
 class VisibilityReaderMem(VisibilityReader):
     def __init__(self, collector):
-        super(VisibilityReaderMem, self).__init__(collector)
+        super().__init__(collector)
         self.datasets = collector.datasets
 
     def _iter_slice_blocked(self, channel, w_slice, block_size):
@@ -422,5 +421,5 @@ class VisibilityReaderMem(VisibilityReader):
         return len(self.datasets[channel])
 
     def close(self):
-        super(VisibilityReaderMem, self).close()
+        super().close()
         self.datasets = None

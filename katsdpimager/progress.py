@@ -7,17 +7,17 @@ This wraps the :py:mod:`progress` module to add certain enhancements:
 - A fallback implementation is used when stderr is not a TTY.
 """
 
-from __future__ import division, print_function, absolute_import
-import progress
-import progress.bar
 import sys
 import functools
 from contextlib import contextmanager
 
+import progress
+import progress.bar
 
-class NoTtyMixin(object):
+
+class NoTtyMixin:
     def __init__(self, *args, **kwargs):
-        super(NoTtyMixin, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self._written_length = 0
 
     def update(self):
@@ -54,7 +54,7 @@ def make_progressbar(name, *args, **kwargs):
     return bar
 
 
-class RunOnce(object):
+class RunOnce:
     """Wrapper callable that calls the wrapped function only the first time."""
     def __init__(self, wrapped):
         self.wrapped = wrapped

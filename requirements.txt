@@ -1,60 +1,47 @@
 ansicolors
-appdirs
-argparse
-astropy==1.3
-botocore
-chardet
-certifi
-dask
-decorator
-defusedxml
-docutils
-enum34
-fakeredis
-funcsigs
-future
-futures
-h5py
-idna
-ipaddress
-jmespath
-katversion
-linecache2
-llvmlite
+appdirs                   # via katsdpsigproc
+astropy==3.1.2
+botocore                  # for S3 authentication in katdal
+chardet                   # via requests
+certifi                   # via requests
+dask                      # via katdal
+decorator                 # via pycuda, katsdpsigproc
+defusedxml                # via katdal
+docutils                  # via botocore
+future                    # via katdal, katpoint
+futures                   # via katsdpsigsproc
+h5py                      # via katdal
+idna                      # via requests
+ipaddress                 # via katsdptelstate
+jmespath                  # via botocore
+llvmlite                  # via numba
 Mako
-MarkupSafe
-mock
-msgpack
-netifaces
-nose
+MarkupSafe                # via Mako
+msgpack                   # via katsdptelstate
+netifaces                 # via katsdptelstate
 numba
 numpy
-pandas
-pbr
+pandas                    # via katsdpsigproc
 pkgconfig==1.1.0
 progress==1.2
-py
-pybind11==2.2.3
+py                        # via pytest
+pybind11==2.2.4
 pycuda
-pyephem
-pytest
+pyephem                   # via katpoint
+pytest                    # via pycuda
 python-casacore
-python-dateutil
-python-lzf
-pytools
-pytz
-rdbtools
-redis
-requests
+python-dateutil           # via pandas, botocore
+python-lzf                # via katsdptelstate
+pytools                   # via pycuda
+pytz                      # via pandas
+rdbtools                  # via katsdptelstate
+redis                     # via katsdptelstate
+requests                  # via katdal
 scikit-cuda
-scipy
-singledispatch
-six
-toolz
-traceback2
-trollius
-unittest2
-urllib3
+scipy                     # via katdal (its fallback interpolation behaves differently)
+six                       # via pytools, python-dateutil
+toolz                     # via dask[array]
+urllib3                   # via requests
 
 git+ssh://git@github.com/ska-sa/katdal#egg=katdal
 git+ssh://git@github.com/ska-sa/katpoint#egg=katpoint

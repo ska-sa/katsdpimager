@@ -1,13 +1,11 @@
 """Tests for :mod:`katsdpimager.grid`."""
 
-from __future__ import division, print_function, absolute_import
+from unittest import mock
 
 import numpy as np
 import astropy.units as units
 import katsdpsigproc.accel as accel
 from katsdpsigproc.test.test_accel import device_test, force_autotune
-import mock
-from six.moves import range, zip
 
 from .. import parameters, polarization, grid
 from .utils import RandomState
@@ -24,7 +22,7 @@ def _middle(array, shape):
     return array[tuple(index)]
 
 
-class BaseTest(object):
+class BaseTest:
     def setup(self):
         pixels = 256
         grid_cover = 180

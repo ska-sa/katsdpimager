@@ -36,18 +36,19 @@ and its square root is
 .. include:: macros.rst
 """
 
-from __future__ import division, print_function, absolute_import
 import math
+
 import numpy as np
 import pkg_resources
 from astropy.modeling import models, fitting
 from astropy import units
 from katsdpsigproc import accel
-from katsdpimager import fft
 import katsdpimager.types
 
+from katsdpimager import fft
 
-class Beam(object):
+
+class Beam:
     """Gaussian synthesised beam model.
 
     Parameters
@@ -199,7 +200,7 @@ def convolve_beam(model, beam, out=None):
     return out
 
 
-class FourierBeamTemplate(object):
+class FourierBeamTemplate:
     """Multiply the Fourier transform of an image by the Fourier transform of a
     Gaussian beam model. The beam parameters must be in units of image pixels.
 
@@ -259,7 +260,7 @@ class FourierBeam(accel.Operation):
     def __init__(self, template, command_queue, image_shape, allocator=None):
         if len(image_shape) != 2:
             raise ValueError('image_shape must be 2D')
-        super(FourierBeam, self).__init__(command_queue, allocator=allocator)
+        super().__init__(command_queue, allocator=allocator)
         self.template = template
         self.image_shape = image_shape
         output_shape = (image_shape[0], image_shape[1] // 2 + 1)
@@ -304,7 +305,7 @@ class FourierBeam(accel.Operation):
         )
 
 
-class ConvolveBeamTemplate(object):
+class ConvolveBeamTemplate:
     """Template for device convolution of a model image with a Gaussian
     restoring beam, for a single polarization. Due to limitations in CUFFT,
     many parameters are folded into the template.
@@ -381,7 +382,7 @@ class ConvolveBeam(accel.OperationSequence):
             'image': ['fft:src', 'ifft:dest'],
             'fourier': ['fft:dest', 'ifft:src', 'fourier_beam:data']
         }
-        super(ConvolveBeam, self).__init__(
+        super().__init__(
             template.fft.command_queue, operations, compounds, allocator=allocator)
 
     @property

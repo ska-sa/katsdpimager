@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
 import tempfile
+from unittest import mock
 
 from nose.tools import assert_equal, assert_raises
-import mock
 import fakeredis
 from astropy import units
 import numpy as np
@@ -18,7 +18,7 @@ _TRG_B = 'B, radec, 8:00:00.00, 60:00:00, (200.0 12000.0 2.0 0.0 0.0)'
 _TRG_C = 'C, radec, 21:00:00.00, -60:00:00, (800.0 43200.0 1 0 0 0 0 0  1 0.8 -0.7 0.6)'
 
 
-class TestKatpointSkyModel(object):
+class TestKatpointSkyModel:
     def setUp(self):
         self.catalogue = katpoint.Catalogue([_TRG_A, _TRG_B, _TRG_C])
         self.sky_model = KatpointSkyModel(self.catalogue)
@@ -58,7 +58,7 @@ def _put_target(view, idx, description, targets):
     view['target{}_clean_components'.format(idx)] = d
 
 
-class TestCatalogueFromTelstate(object):
+class TestCatalogueFromTelstate:
     def setUp(self):
         self.cbid = '1234567890'
         self.continuum = 'continuum'
@@ -91,7 +91,7 @@ class TestCatalogueFromTelstate(object):
         assert_equal(len(catalogue), 0)
 
 
-class TestOpenSkyModel(object):
+class TestOpenSkyModel:
     def test_bad_format(self):
         with assert_raises(ValueError):
             open_sky_model('file:///does_not_exist?format=sir_not_appearing_in_this_codebase')

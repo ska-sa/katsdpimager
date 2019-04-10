@@ -5,17 +5,17 @@ It also handles conversion between visibility and image planes.
 .. include:: macros.rst
 """
 
-from __future__ import division, print_function, absolute_import
-import numpy as np
 import math
+
+import numpy as np
 import pkg_resources
 from katsdpsigproc import accel
+
 from . import fft
 import katsdpimager.types
-from six.moves import range, zip
 
 
-class _LayerImageTemplate(object):
+class _LayerImageTemplate:
     r"""Base class for :class:`LayerToImageTemplate` and :class:`ImageToLayerTemplate`.
 
     These operations convert between a "layer" (the raw Fourier Transform from
@@ -129,7 +129,7 @@ class _LayerImage(accel.Operation):
             raise ValueError('shape must be square, not {}'.format(shape))
         if shape[-1] % 2 != 0:
             raise ValueError('image size must be even, not {}'.format(shape[-1]))
-        super(_LayerImage, self).__init__(command_queue, allocator)
+        super().__init__(command_queue, allocator)
         self.template = template
         complex_dtype = katsdpimager.types.real_to_complex(template.real_dtype)
         dims = [accel.Dimension(x) for x in shape]
@@ -194,7 +194,7 @@ class LayerToImageTemplate(_LayerImageTemplate):
         Tuning parameters (currently unused)
     """
     def __init__(self, context, real_dtype, tuning=None):
-        super(LayerToImageTemplate, self).__init__(
+        super().__init__(
             context, real_dtype, 'imager_kernels/layer_to_image.mako', tuning)
 
     def instantiate(self, *args, **kwargs):
@@ -226,7 +226,7 @@ class LayerToImage(_LayerImage):
         if the last two elements of shape are not equal and even
     """
     def __init__(self, template, command_queue, shape, lm_scale, lm_bias, allocator=None):
-        super(LayerToImage, self).__init__(
+        super().__init__(
             template, command_queue, shape, lm_scale, lm_bias, "layer_to_image", allocator)
 
 
@@ -243,7 +243,7 @@ class ImageToLayerTemplate(_LayerImageTemplate):
         Tuning parameters (currently unused)
     """
     def __init__(self, context, real_dtype, tuning=None):
-        super(ImageToLayerTemplate, self).__init__(
+        super().__init__(
             context, real_dtype, 'imager_kernels/image_to_layer.mako', tuning)
 
     def instantiate(self, *args, **kwargs):
@@ -275,11 +275,11 @@ class ImageToLayer(_LayerImage):
         if the last two elements of shape are not equal and even
     """
     def __init__(self, template, command_queue, shape, lm_scale, lm_bias, allocator=None):
-        super(ImageToLayer, self).__init__(
+        super().__init__(
             template, command_queue, shape, lm_scale, lm_bias, "image_to_layer", allocator)
 
 
-class ScaleTemplate(object):
+class ScaleTemplate:
     """Scale an image by a fixed amount per polarization.
 
     Parameters
@@ -335,7 +335,7 @@ class Scale(accel.Operation):
         Allocator used to allocate unbound slots
     """
     def __init__(self, template, command_queue, shape, allocator=None):
-        super(Scale, self).__init__(command_queue, allocator)
+        super().__init__(command_queue, allocator)
         self.template = template
         if len(shape) != 3:
             raise ValueError('Wrong number of dimensions in shape')
@@ -366,7 +366,7 @@ class Scale(accel.Operation):
         )
 
 
-class GridImageTemplate(object):
+class GridImageTemplate:
     """Template for a combined operation that converts from a complex grid to a
     real image or vice versa, including layer-to-image/image-to-layer
     conversion.  The grid need not be conjugate symmetric: it is put through a
@@ -437,7 +437,7 @@ class GridToImage(accel.OperationSequence):
             'image': ['layer_to_image:image'],
             'kernel1d': ['layer_to_image:kernel1d']
         }
-        super(GridToImage, self).__init__(command_queue, operations, compounds, allocator=allocator)
+        super().__init__(command_queue, operations, compounds, allocator=allocator)
         self.slots['grid'] = accel.IOSlot(shape_grid, template.fft.dtype_src)
 
     def set_w(self, w):
@@ -467,7 +467,7 @@ class GridToImage(accel.OperationSequence):
                     grid.copy_region(
                         self.command_queue, layer, (pol, sy, sx), (dy, dx))
             self._layer_to_image.set_polarization(pol)
-            super(GridToImage, self)._run()
+            super()._run()
 
 
 class ImageToGrid(accel.OperationSequence):
@@ -500,7 +500,7 @@ class ImageToGrid(accel.OperationSequence):
             'image': ['image_to_layer:image'],
             'kernel1d': ['image_to_layer:kernel1d']
         }
-        super(ImageToGrid, self).__init__(command_queue, operations, compounds, allocator=allocator)
+        super().__init__(command_queue, operations, compounds, allocator=allocator)
         self.slots['grid'] = accel.IOSlot(shape_grid, template.fft.dtype_dest)
 
     def set_w(self, w):
@@ -519,7 +519,7 @@ class ImageToGrid(accel.OperationSequence):
         half_height = height // 2
         for pol in range(polarizations):
             self._image_to_layer.set_polarization(pol)
-            super(ImageToGrid, self)._run()
+            super()._run()
             # Copy one polarization from the grid to the layer, also switching
             # the centre to the corners. The two slices in each of src/dest_x/y
             # are the two halves of the data.
@@ -533,7 +533,7 @@ class ImageToGrid(accel.OperationSequence):
                         self.command_queue, grid, (sy, sx), (pol, dy, dx))
 
 
-class GridToImageHost(object):
+class GridToImageHost:
     """CPU-only equivalent to :class:`GridToImage`.
 
     The parameters specify which buffers the operation runs on, but the
@@ -592,7 +592,7 @@ class GridToImageHost(object):
         self.image += image
 
 
-class ImageToGridHost(object):
+class ImageToGridHost:
     """CPU-only equivalent to :class:`ImageToGrid`.
 
     The parameters specify which buffers the operation runs on, but the
