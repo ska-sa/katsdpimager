@@ -125,5 +125,5 @@ class TestOpenSkyModel:
                 'redis://invalid:6379/?format=katpoint&db=1&capture_block_id=1234567890'
                 '&continuum=continuum'
                 '&target=A,+radec,+20:00:00.00,+-60:00:00.0,+(200.0+12000.0+1.0+0.5+0.0)')
-            from_url.assert_called_with('redis://invalid:6379/?db=1')
+            from_url.assert_called_with('redis://invalid:6379/?db=1', db=0, socket_timeout=mock.ANY)
             assert_equal(expected, test._catalogue)

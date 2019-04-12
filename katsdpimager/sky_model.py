@@ -165,7 +165,6 @@ def open_sky_model(url):
             catalogue = katpoint.Catalogue(f)
         return KatpointSkyModel(catalogue)
     elif parts.scheme == 'redis':
-        import redis
         import katsdptelstate.redis
         try:
             capture_block_id = params.pop('capture_block_id')[0]
@@ -178,9 +177,7 @@ def open_sky_model(url):
             parts.scheme, parts.netloc, parts.path, parts.params,
             urllib.parse.urlencode(params, doseq=True),
             parts.fragment))
-        client = redis.StrictRedis.from_url(redis_url)
-        backend = katsdptelstate.redis.RedisBackend(client)
-        telstate = katsdptelstate.TelescopeState(backend)
+        telstate = katsdptelstate.TelescopeState(redis_url)
         catalogue = catalogue_from_telstate(telstate, capture_block_id, continuum, target)
         return KatpointSkyModel(catalogue)
     else:
