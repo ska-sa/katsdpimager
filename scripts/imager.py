@@ -71,8 +71,8 @@ def get_parser():
                        help='Index of first channel to process [%(default)s]')
     group.add_argument('--stop-channel', '-C', type=int,
                        help='Index past last channel to process [#channels]')
-    group.add_argument('--subtract', metavar='TYPE:FILENAME',
-                       help='File with sources to subtract at the start')
+    group.add_argument('--subtract', metavar='URL',
+                       help='Sky model with sources to subtract at the start')
 
     group = parser.add_argument_group('Image options')
     group.add_argument('--q-fov', type=float, default=1.0,
