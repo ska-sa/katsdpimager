@@ -165,7 +165,7 @@ def open_sky_model(url):
             catalogue = katpoint.Catalogue(f)
         return KatpointSkyModel(catalogue)
     elif parts.scheme == 'redis':
-        import katsdptelstate.redis
+        import katsdptelstate
         try:
             capture_block_id = params.pop('capture_block_id')[0]
             continuum = params.pop('continuum')[0]
