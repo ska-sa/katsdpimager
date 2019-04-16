@@ -18,5 +18,4 @@ sphinx-rtd-theme
 sphinx
 sphinxcontrib-tikz==0.4.6
 sphinxcontrib-websupport
-typing
 urllib3
