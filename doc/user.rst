@@ -106,11 +106,11 @@ Input selection options
    Selects a range of channels to image. The channels are numbered from 0, and
    the stop channel is *excluded*.
 
-.. option:: --subtract <FILE>
+.. option:: --subtract <URL>
 
    A file containing a local sky model to subtract from the visibilities
    (typically for continuum subtraction). The only file format currently
-   supported is a `katpoint`_ catalogue.
+   supported is a `katpoint`_ catalogue (with a ``file:///`` URL).
 
 .. option:: -i <KEY>=<VALUE>, --input-option <KEY>=<VALUE>
 
