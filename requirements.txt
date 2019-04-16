@@ -12,7 +12,6 @@ future                    # via katdal, katpoint
 futures                   # via katsdpsigsproc
 h5py                      # via katdal
 idna                      # via requests
-ipaddress                 # via katsdptelstate
 jmespath                  # via botocore
 llvmlite                  # via numba
 Mako
