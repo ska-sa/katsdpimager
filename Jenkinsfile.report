@@ -16,19 +16,8 @@ catchError {
             katsdp.unpackVenv()
             katsdp.unpackKatsdpdockerbase()
             /* Meqtrees won't run against our virtualenv, since it uses system
-             * Python, so run it outside the virtualenv closure. On the other
-             * hand, the system Tigger is broken
-             * (https://github.com/ska-sa/tigger/issues/71), so we must use the
-             * version inside the virtualenv.
+             * Python, so run it outside the virtualenv closure.
              */
-            katsdp.virtualenv('venv3') {
-                katsdp.installRequirements('git/katsdpimager/report-requirements.txt')
-                sh 'pip install --no-deps -v ./git/katsdpimager[report]'
-                sh 'pip check'
-                dir(testdir) {
-                    sh 'tigger-convert --rename --format "name ra_h ra_m ra_s dec_d dec_m dec_s i q u v" -f simple.lsm.txt simple.lsm.html'
-                }
-            }
             dir(testdir) {
                 sh 'makems && mv simple.ms_p0 simple.ms'
                 // makems hard-codes LOFAR antenna information; replace with MeerKAT
@@ -36,9 +25,12 @@ catchError {
                 sh 'meqtree-pipeliner.py -c batch.tdlconf "[turbo-sim]" ms_sel.msname=simple.ms /usr/lib/python2.7/dist-packages/Cattery/Siamese/turbo-sim.py =_tdl_job_1_simulate_MS'
             }
             katsdp.virtualenv('venv3') {
+                katsdp.installRequirements('git/katsdpimager/report-requirements.txt')
+                sh 'pip install --no-deps -v ./git/katsdpimager[report]'
+                sh 'pip check'
                 dir(testdir) {
                     sh './images_report.py --start-channel=2 --stop-channel=4 simple.ms report'
-                    sh 'cp simple.lsm.txt simple.lsm.html makems.cfg batch.tdlconf report/'
+                    sh 'cp simple.lsm.txt makems.cfg batch.tdlconf report/'
                 }
             }
             publishHTML(target: [reportName: 'Test images',

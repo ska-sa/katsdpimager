@@ -1,3 +1,4 @@
+# format: name ra_h ra_m ra_s dec_d dec_m dec_s i q u v
 A1 3 30 0 -35 0 0 1 0 0 0
 A2 3 30 30 -35 7 0 1.5 0 0 0
 A3 3 32 0 -35 2 0 1.5 1.0 0 0
