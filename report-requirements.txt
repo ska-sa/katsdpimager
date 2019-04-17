@@ -4,7 +4,6 @@ astro-kittens==0.3.3
 astro-tigger==1.3.3
 astropy==1.3.0            # via aplpy
 cycler                    # via matplotlib
-functools32               # via matplotlib
 mako
 markupsafe                # via mako
 matplotlib
@@ -16,7 +15,5 @@ pytz                      # via matplotlib
 ruamel.ordereddict==0.4.9
 ruamel.yaml==0.13.4
 six                       # via cycler, python-dateutil
-subprocess32              # via matplotlib
-typing==3.5.2.2
 vext==0.6.7
 vext.pyqt4==0.5.20
