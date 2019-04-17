@@ -1,5 +1,6 @@
 ansicolors
 appdirs                   # via katsdpsigproc
+argparse                  # via python-casacore
 astropy==3.1.2
 botocore                  # for S3 authentication in katdal
 chardet                   # via requests
@@ -28,7 +29,7 @@ pybind11==2.2.4
 pycuda
 pyephem                   # via katpoint
 pytest                    # via pycuda
-python-casacore
+python-casacore==3.0.0
 python-dateutil           # via pandas, botocore
 python-lzf                # via katsdptelstate
 pytools                   # via pycuda
