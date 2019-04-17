@@ -6,7 +6,7 @@ env.BRANCH_NAME = 'imager-dev'
 
 String workdir = 'git/katsdpimager'
 String testdir = "$workdir/tests"
-katsdp.stagePrepare(subdir: 'katsdpimager')
+katsdp.stagePrepare(subdir: 'katsdpimager', python2: false, python3: true)
 
 catchError {
     stage('Generate report') {
@@ -21,7 +21,7 @@ catchError {
              * (https://github.com/ska-sa/tigger/issues/71), so we must use the
              * version inside the virtualenv.
              */
-            katsdp.virtualenv('venv') {
+            katsdp.virtualenv('venv3') {
                 katsdp.installRequirements('git/katsdpimager/report-requirements.txt')
                 sh 'pip install --no-deps -v ./git/katsdpimager[report]'
                 sh 'pip check'
@@ -35,7 +35,7 @@ catchError {
                 sh 'rm -r simple.ms/ANTENNA && cp -a MeerKAT64_ANTENNAS simple.ms/ANTENNA'
                 sh 'meqtree-pipeliner.py -c batch.tdlconf "[turbo-sim]" ms_sel.msname=simple.ms /usr/lib/python2.7/dist-packages/Cattery/Siamese/turbo-sim.py =_tdl_job_1_simulate_MS'
             }
-            katsdp.virtualenv('venv') {
+            katsdp.virtualenv('venv3') {
                 dir(testdir) {
                     sh './images_report.py --start-channel=2 --stop-channel=4 simple.ms report'
                     sh 'cp simple.lsm.txt simple.lsm.html makems.cfg batch.tdlconf report/'
