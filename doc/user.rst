@@ -81,7 +81,7 @@ The simplest possible incantation is
 
 .. code-block:: sh
 
-   imager.py input.ms output.fits
+   imager.py input.ms output%05d.fits
 
 Imaging is not a one-size-fits-all process, and so this is unlikely
 to do what you need. Nevertheless, it tries to make reasonable guesses about
