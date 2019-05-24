@@ -600,6 +600,8 @@ def main():
             args.stop_channel = dataset.num_channels()
         if not (0 <= args.start_channel < args.stop_channel <= dataset.num_channels()):
             raise ValueError('Channels are out of range')
+        if args.stop_channel - args.start_channel > 1 and '%' not in args.output_file:
+            parser.error('More than one channel selected but no %d in output filename')
         weight_p = parameters.WeightParameters(WEIGHT_TYPES[args.weight_type], args.robustness)
 
         if args.stop_channel - args.start_channel > 1:
