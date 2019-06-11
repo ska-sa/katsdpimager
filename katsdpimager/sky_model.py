@@ -107,7 +107,7 @@ def catalogue_from_telstate(telstate, capture_block_id, continuum, target):
     # if we are run under Python 3.
     from katdal.sensordata import TelstateToStr
 
-    prefix = telstate.SEPARATOR.join([capture_block_id, continuum])
+    prefix = telstate.join(capture_block_id, continuum)
     view = TelstateToStr(telstate.view(prefix))
     for i in itertools.count():
         key = 'target{}_clean_components'.format(i)
@@ -118,8 +118,8 @@ def catalogue_from_telstate(telstate, capture_block_id, continuum, target):
             if katpoint.Target(data['description']) == target:
                 return katpoint.Catalogue(data['components'])
         except KeyError:
-            logger.warning('Failed to access %s%s%s from telescope state',
-                           prefix, telstate.SEPARATOR, key, exc_info=True)
+            logger.warning('Failed to access %s from telescope state',
+                           telstate.join(prefix, key), exc_info=True)
     logger.warning('Sky model for target %s not found', target.name)
     return katpoint.Catalogue()
 
