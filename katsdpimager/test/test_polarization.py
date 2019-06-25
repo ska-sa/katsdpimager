@@ -1,9 +1,9 @@
 """Tests for :py:mod:`katsdpimager.polarization`."""
 
 import numpy as np
-from nose.tools import assert_raises
+from nose.tools import assert_equal, assert_raises
 
-import katsdpimager.polarization as polarization
+from .. import polarization
 
 
 class TestPolarizationMatrix:
@@ -59,4 +59,23 @@ class TestPolarizationMatrix:
         np.testing.assert_array_equal(expected, actual)
 
     def test_xy_diag_to_iquv(self):
-        assert_raises(ValueError, polarization.polarization_matrix, self.IQUV, self.XY_DIAG)
+        with assert_raises(ValueError):
+            polarization.polarization_matrix(self.IQUV, self.XY_DIAG)
+
+
+class TestParseStokes:
+    def test_good(self):
+        assert_equal(polarization.parse_stokes('QIV'),
+                     [polarization.STOKES_I, polarization.STOKES_Q, polarization.STOKES_V])
+
+    def test_empty(self):
+        with assert_raises(ValueError):
+            polarization.parse_stokes('')
+
+    def test_duplicate(self):
+        with assert_raises(ValueError):
+            polarization.parse_stokes('QQ')
+
+    def test_invalid(self):
+        with assert_raises(ValueError):
+            polarization.parse_stokes('Z')

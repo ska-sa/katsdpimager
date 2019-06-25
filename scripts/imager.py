@@ -39,22 +39,6 @@ def parse_quantity(str_value):
     raise ValueError('Could not parse {} as a quantity'.format(str_value))
 
 
-def parse_stokes(str_value):
-    ans = []
-    for p in str_value:
-        if p not in 'IQUV':
-            raise ValueError('Invalid Stokes parameter {}'.format(p))
-    if not str_value:
-        raise ValueError('Empty Stokes parameter list')
-    for p in 'IQUV':
-        cnt = str_value.count(p)
-        if cnt > 1:
-            raise ValueError('Stokes parameter {} listed multiple times'.format(p))
-        elif cnt > 0:
-            ans.append(polarization.STOKES_NAMES.index(p))
-    return sorted(ans)
-
-
 def get_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('input_file', type=str, metavar='INPUT',
@@ -83,7 +67,7 @@ def get_parser():
                        help='Size of each image pixel [computed from array]')
     group.add_argument('--pixels', type=int,
                        help='Number of pixels in image [computed from array]')
-    group.add_argument('--stokes', type=parse_stokes, default='I',
+    group.add_argument('--stokes', type=polarization.parse_stokes, default='I',
                        help='Stokes parameters to image e.g. IQUV for full-Stokes [%(default)s]')
     group.add_argument('--precision', choices=['single', 'double'], default='single',
                        help='Internal floating-point precision [%(default)s]')
@@ -167,29 +151,6 @@ def get_parser():
     return parser
 
 
-def data_iter(dataset, args, start_channel, stop_channel):
-    """Wrapper around :py:meth:`katsdpimager.loader_core.LoaderBase.data_iter`
-    that handles truncation to a number of visibilities specified on the
-    command line.
-    """
-    N = args.vis_limit
-    for chunk in dataset.data_iter(start_channel, stop_channel, args.vis_load):
-        if N is not None:
-            if N < len(chunk['uvw']):
-                for key in ['uvw', 'baselines']:
-                    if key in chunk:
-                        chunk[key] = chunk[key][:N]
-                for key in ['weights', 'vis']:
-                    if key in chunk:
-                        chunk[key] = chunk[key][:, :N]
-                chunk['progress'] = chunk['total']
-        yield chunk
-        if N is not None:
-            N -= len(chunk['uvw'])
-            if N == 0:
-                return
-
-
 class DummyCommandQueue:
     """Stub equivalent to CUDA/OpenCL CommandQueue objects, that just provides
     an empty :meth:`finish` method."""
@@ -211,7 +172,8 @@ def preprocess_visibilities(dataset, args, start_channel, stop_channel,
         collector = preprocess.VisibilityCollectorMem(
             image_parameters, grid_parameters, args.vis_block)
     try:
-        for chunk in data_iter(dataset, args, start_channel, stop_channel):
+        for chunk in loader.data_iter(dataset, args.vis_limit, args.vis_load,
+                                     start_channel, stop_channel):
             if bar is None:
                 bar = progress.make_progressbar("Preprocessing vis", max=chunk['total'])
             collector.add(

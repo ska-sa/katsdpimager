@@ -130,3 +130,19 @@ def polarization_matrices(outputs, inputs):
     """
     circular = [STOKES_RR, STOKES_RL, STOKES_LR, STOKES_LL]
     return polarization_matrix(outputs, circular), polarization_matrix(circular, inputs)
+
+
+def parse_stokes(str_value):
+    ans = []
+    for p in str_value:
+        if p not in 'IQUV':
+            raise ValueError('Invalid Stokes parameter {}'.format(p))
+    if not str_value:
+        raise ValueError('Empty Stokes parameter list')
+    for p in 'IQUV':
+        cnt = str_value.count(p)
+        if cnt > 1:
+            raise ValueError('Stokes parameter {} listed multiple times'.format(p))
+        elif cnt > 0:
+            ans.append(STOKES_NAMES.index(p))
+    return sorted(ans)
