@@ -18,7 +18,7 @@ logger = logging.getLogger()
 def get_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('input_file', type=str, metavar='INPUT',
-                        help='Input measurement set')
+                        help='Input data set')
     parser.add_argument('output_file', type=str, metavar='OUTPUT',
                         help='Output FITS file')
     parser.add_argument('--log-level', type=str, default='INFO', metavar='LEVEL',
