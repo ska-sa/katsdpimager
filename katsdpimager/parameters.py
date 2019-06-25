@@ -177,7 +177,7 @@ class WeightParameters:
 
     Parameters
     ----------
-    weight_type : {:py:const:`weight.NATURAL`, :py:const:`weight.UNIFORM`, :py:const:`weight.ROBUST`}
+    weight_type : :class:`weight.WeightType`
         Image weighting scheme
     robustness : float, optional
         Robustness parameter for robust weighting
@@ -187,14 +187,10 @@ class WeightParameters:
         self.robustness = robustness
 
     def __str__(self):
-        if self.weight_type == weight.NATURAL:
-            ans = 'natural'
-        elif self.weight_type == weight.UNIFORM:
-            ans = 'uniform'
-        elif self.weight_type == weight.ROBUST:
+        if self.weight_type == weight.WeightType.ROBUST:
             ans = 'robust ({:.3f})'.format(self.robustness)
         else:
-            raise ValueError('Unknown weight type {}'.format(self.weight_type))
+            ans = self.weight_type.name.lower()
         return 'Image weights: ' + ans
 
 

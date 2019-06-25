@@ -45,14 +45,17 @@ different beam shapes for the different polarizations.
 .. include:: macros.rst
 """
 
+import enum
+
 import pkg_resources
 import numpy as np
 from katsdpsigproc import accel, fill
 
 
-NATURAL = 0
-UNIFORM = 1
-ROBUST = 2
+class WeightType(enum.Enum):
+    NATURAL = 0
+    UNIFORM = 1
+    ROBUST = 2
 
 
 class GridWeightsTemplate:
@@ -377,7 +380,7 @@ class WeightsTemplate:
     ----------
     context : |Context|
         Context for which kernels will be compiled
-    weight_type : {:const:`NATURAL`, :const:`UNIFORM`, :const:`ROBUST`}
+    weight_type : :class:`WeightType`
         Weighting method
     num_polarizations : int
         Number of polarizations
@@ -390,7 +393,7 @@ class WeightsTemplate:
                  density_weights_tuning=None):
         self.context = context
         self.weight_type = weight_type
-        if weight_type == NATURAL:
+        if weight_type == WeightType.NATURAL:
             self.grid_weights = None
             self.mean_weight = None
             self.density_weights = None
@@ -398,7 +401,7 @@ class WeightsTemplate:
         else:
             self.grid_weights = GridWeightsTemplate(context, num_polarizations,
                                                     tuning=grid_weights_tuning)
-            if weight_type == ROBUST:
+            if weight_type == WeightType.ROBUST:
                 self.mean_weight = MeanWeightTemplate(context, tuning=mean_weight_tuning)
             else:
                 self.mean_weight = None
@@ -413,7 +416,7 @@ class WeightsTemplate:
 class Weights(accel.OperationSequence):
     """Instantiation of :class:`WeightsTemplate`. The steps to use it are:
 
-     1. If using :const:`ROBUST` weighting, set :attr:`robustness`.
+     1. If using :const:`WeightType.ROBUST` weighting, set :attr:`robustness`.
      2. Call :meth:`clear`.
      3. For each batch of weights, call :meth:`grid`.
      4. Call :meth:`finalize`, which returns the normalized thermal RMS.
@@ -431,7 +434,7 @@ class Weights(accel.OperationSequence):
     .. note::
 
         The **uv** and **weights** slots will be absent if the template was
-        created with :const:`NATURAL` weighting.
+        created with :const:`WeightType.NATURAL` weighting.
 
     Parameters
     ----------
@@ -534,7 +537,7 @@ class WeightsHost:
 
     Parameters
     ----------
-    weight_type : {:const:`NATURAL`, :const:`UNIFORM`, :const:`ROBUST`}
+    weight_type : :class:`WeightType`
         Weighting method
     weights_grid : array-like, float
         Grid for weights
@@ -552,7 +555,7 @@ class WeightsHost:
             "Only even-sized grids are currently supported"
 
     def clear(self):
-        if self.weight_type != NATURAL:
+        if self.weight_type != WeightType.NATURAL:
             self.weights_grid.fill(0)
 
     def grid(self, uv, weights):
@@ -563,10 +566,10 @@ class WeightsHost:
             self.weights_grid[:, uv[i, 1], uv[i, 0]] += weights[i, :]
 
     def finalize(self):
-        if self.weight_type == NATURAL:
+        if self.weight_type == WeightType.NATURAL:
             self.weights_grid.fill(1)
             normalized_rms = 1.0
-        elif self.weight_type == UNIFORM:
+        elif self.weight_type == WeightType.UNIFORM:
             sum_w = np.sum(self.weights_grid[0])
             sum_dw = np.count_nonzero(self.weights_grid[0])
             # Force density weights to be zero for cells with no visibilities
@@ -575,7 +578,7 @@ class WeightsHost:
             # d^2w == d, because d is 1/w
             sum_d2w = np.sum(self.weights_grid[0])
             normalized_rms = np.sqrt(sum_d2w * sum_w) / sum_dw
-        elif self.weight_type == ROBUST:
+        elif self.weight_type == WeightType.ROBUST:
             sum_sq = np.dot(self.weights_grid[0].flat, self.weights_grid[0].flat)
             sum = np.sum(self.weights_grid[0])
             mean_weight = sum_sq / sum

@@ -18,11 +18,6 @@ from katsdpimager import \
 
 
 logger = logging.getLogger()
-WEIGHT_TYPES = {
-    'natural': weight.NATURAL,
-    'uniform': weight.UNIFORM,
-    'robust': weight.ROBUST
-}
 
 
 def parse_quantity(str_value):
@@ -73,7 +68,8 @@ def get_parser():
                        help='Internal floating-point precision [%(default)s]')
 
     group = parser.add_argument_group('Weighting options')
-    group.add_argument('--weight-type', choices=['natural', 'uniform', 'robust'],
+    group.add_argument('--weight-type',
+                       choices=[name.lower() for name in weight.WeightType.__members__],
                        default='natural',
                        help='Imaging density weights [%(default)s]')
     group.add_argument('--robustness', type=float, default=0.0,
@@ -151,13 +147,6 @@ def get_parser():
     return parser
 
 
-class DummyCommandQueue:
-    """Stub equivalent to CUDA/OpenCL CommandQueue objects, that just provides
-    an empty :meth:`finish` method."""
-    def finish(self):
-        pass
-
-
 def preprocess_visibilities(dataset, args, start_channel, stop_channel,
                             image_parameters, grid_parameters, polarization_matrices):
     bar = None
@@ -199,7 +188,7 @@ def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block):
     bar = progress.make_progressbar('Computing weights', max=total)
     queue.finish()
     with progress.finishing(bar):
-        if weight_type != weight.NATURAL:
+        if weight_type != weight.WeightType.NATURAL:
             for w_slice in range(reader.num_w_slices(rel_channel)):
                 for chunk in reader.iter_slice(rel_channel, w_slice, vis_block):
                     imager.grid_weights(chunk.uv, chunk.weights)
@@ -308,12 +297,6 @@ def log_parameters(name, params):
         for line in lines:
             if line:
                 logger.info('    ' + line)
-
-
-@contextmanager
-def dummy_context():
-    """Do-nothing context manager used in place of a device context."""
-    yield
 
 
 class ChannelParameters:
@@ -564,7 +547,8 @@ def main():
             raise ValueError('Channels are out of range')
         if args.stop_channel - args.start_channel > 1 and '%' not in args.output_file:
             parser.error('More than one channel selected but no %d in output filename')
-        weight_p = parameters.WeightParameters(WEIGHT_TYPES[args.weight_type], args.robustness)
+        weight_p = parameters.WeightParameters(
+            weight.WeightType[args.weight_type.upper()], args.robustness)
 
         if args.stop_channel - args.start_channel > 1:
             ChannelParameters(args, dataset, args.start_channel, array_p).log_parameters(
