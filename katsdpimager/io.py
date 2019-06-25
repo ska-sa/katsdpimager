@@ -82,7 +82,7 @@ def _fits_polarizations(header, axis, polarizations):
 
 
 def write_fits_image(dataset, image, image_parameters, filename, channel,
-                     frequency, beam=None, bunit='JY/BEAM'):
+                     beam=None, bunit='JY/BEAM'):
     """Write an image to a FITS file.
 
     Parameters
@@ -98,8 +98,6 @@ def write_fits_image(dataset, image, image_parameters, filename, channel,
         File to write. It is silently overwritten if already present.
     channel : int
         Channel number to substitute into `filename` with printf formatting.
-    frequency : Quantity
-        Frequency of the data
     beam : :class:`katsdpimager.beam.Beam`, optional
         Synthesized beam model to write to the header
     bunit : str, optional
@@ -146,7 +144,8 @@ def write_fits_image(dataset, image, image_parameters, filename, channel,
     header['CTYPE4'] = 'FREQ    '
     header['CRVAL1'] = phase_centre[0].to(units.deg).value
     header['CRVAL2'] = phase_centre[1].to(units.deg).value
-    header['CRVAL4'] = frequency.to(units.Hz, equivalencies=units.spectral()).value
+    header['CRVAL4'] = image_parameters.wavelength.to(
+        units.Hz, equivalencies=units.spectral()).value
     if beam is not None:
         major = beam.major * image_parameters.pixel_size * units.rad
         minor = beam.minor * image_parameters.pixel_size * units.rad

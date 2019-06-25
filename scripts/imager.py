@@ -4,15 +4,38 @@ import argparse
 import logging
 from contextlib import contextmanager
 
+import numpy as np
 import colors
 import katsdpsigproc.accel as accel
 
-from katsdpimager import \
-    frontend, polarization, weight, \
-    numba
+from katsdpimager import frontend, polarization, weight, io, progress, numba
 
 
 logger = logging.getLogger()
+
+
+class Writer(frontend.Writer):
+    def __init__(self, args):
+        self.args = args
+
+    def write_fits_image(self, name, description, dataset, image, image_parameters, channel,
+                         beam=None, bunit='JY/BEAM'):
+        if name == 'clean':
+            filename = self.args.output_file
+        else:
+            filename = getattr(self.args, 'write_' + name)
+        if filename is not None:
+            with progress.step('Write {}'.format(description)):
+                io.write_fits_image(dataset, image, image_parameters, filename,
+                                    channel, beam, bunit)
+
+    def write_fits_grid(self, name, description, fftshift, grid_data, image_parameters, channel):
+        filename = getattr(self.args, 'write_' + name)
+        if filename is not None:
+            with progress.step('Write {}'.format(description)):
+                if fftshift:
+                    grid_data = np.fft.fftshift(grid_data, axes=(1, 2))
+                io.write_fits_grid(grid_data, image_parameters, filename, channel)
 
 
 def get_parser():
@@ -195,7 +218,7 @@ def main():
         if not numba.have_numba:
             logger.warn('could not import numba: --host mode will be VERY slow')
 
-    frontend.run(context, queue, args)
+    frontend.run(args, context, queue, Writer(args))
 
 
 if __name__ == '__main__':

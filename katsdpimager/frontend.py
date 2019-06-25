@@ -3,13 +3,14 @@ import os
 import atexit
 import logging
 from contextlib import closing
+from abc import abstractmethod
 
 import numpy as np
 import astropy.units as units
 import katsdpsigproc.accel as accel
 
 from . import \
-    loader, parameters, polarization, preprocess, io, clean, weight, sky_model, \
+    loader, parameters, polarization, preprocess, clean, weight, sky_model, \
     imaging, progress, beam
 
 
@@ -221,8 +222,31 @@ class ChannelParameters:
         log_parameters("CLEAN parameters" + suffix, self.clean_p)
 
 
+class Writer:
+    """Abstract class that handles writing grids/images to files"""
+    @abstractmethod
+    def write_fits_image(self, name, description, dataset, image, image_parameters, channel,
+                         beam=None, bunit='JY/BEAM'):
+        """Optionally output a FITS image.
+
+        `name` is a machine-readable name (consistent with the argument naming
+        in image.py, while `description` is human-readable. The other
+        arguments have the same meaning as for :meth:`.io.write_fits_image`.
+        """
+
+    @abstractmethod
+    def write_fits_grid(self, name, description, fftshift, grid_data, image_parameters, channel):
+        """Optional output a FITS image showing the UV plane.
+
+        `name` is a machine-readable name (consistent with the argument naming
+        in image.py, while `description` is human-readable. If `fftshift` is
+        true, the data needs to be fft-shifted on the u and v axes. The other
+        arguments have the same meaning as for :meth:`.io.write_fits_grid`.
+        """
+
+
 def process_channel(dataset, args, start_channel,
-                    context, queue, reader, channel_p, array_p, weight_p,
+                    context, queue, reader, writer, channel_p, array_p, weight_p,
                     subtract_model):
     channel = channel_p.channel
     rel_channel = channel - start_channel
@@ -249,10 +273,8 @@ def process_channel(dataset, args, start_channel,
     # Compute imaging weights
     make_weights(queue, reader, rel_channel,
                  imager, weight_p.weight_type, args.vis_block)
-    if args.write_weights is not None:
-        with progress.step('Write image weights'):
-            io.write_fits_image(dataset, imager.buffer('weights_grid'), image_p,
-                                args.write_weights, channel, image_p.wavelength, bunit=None)
+    writer.write_fits_image('weights', 'image weights',
+                            dataset, imager.buffer('weights_grid'), image_p, channel, bunit=None)
 
     # Create PSF
     slice_w_step = float(grid_p.max_w / image_p.wavelength / (grid_p.w_slices - 0.5))
@@ -276,10 +298,7 @@ def process_channel(dataset, args, start_channel,
     # Extract the patch for beam fitting
     psf_core = extract_psf(psf[0], psf_patch[1:])
     restoring_beam = beam.fit_beam(psf_core)
-    if args.write_psf is not None:
-        with progress.step('Write PSF'):
-            io.write_fits_image(dataset, psf, image_p, args.write_psf,
-                                channel, image_p.wavelength, restoring_beam)
+    writer.write_fits_image('psf', 'PSF', dataset, psf, image_p, channel, restoring_beam)
 
     # Imaging
     if subtract_model:
@@ -291,17 +310,10 @@ def process_channel(dataset, args, start_channel,
                    i != 0, subtract_model)
         imager.scale_dirty(scale)
         queue.finish()
-        if i == 0 and args.write_grid is not None:
-            with progress.step('Write grid'):
-                if args.host:
-                    io.write_fits_grid(grid_data, image_p, args.write_grid, channel)
-                else:
-                    io.write_fits_grid(np.fft.fftshift(grid_data, axes=(1, 2)),
-                                       image_p, args.write_grid, channel)
-        if i == 0 and args.write_dirty is not None:
-            with progress.step('Write dirty image'):
-                io.write_fits_image(dataset, dirty, image_p, args.write_dirty,
-                                    channel, image_p.wavelength, restoring_beam)
+        if i == 0:
+            writer.write_fits_grid('grid', 'grid', not args.host, grid_data, image_p, channel)
+            writer.write_fits_image('dirty', 'dirty image', dataset, dirty, image_p,
+                                    channel, restoring_beam)
 
         # Deconvolution
         noise = imager.noise_est()
@@ -326,14 +338,9 @@ def process_channel(dataset, args, start_channel,
                     break
         queue.finish()
 
-    if args.write_model is not None:
-        with progress.step('Write model'):
-            io.write_fits_image(dataset, model, image_p, args.write_model,
-                                channel, image_p.wavelength)
-    if args.write_residuals is not None:
-        with progress.step('Write residuals'):
-            io.write_fits_image(dataset, dirty, image_p, args.write_residuals,
-                                channel, image_p.wavelength, restoring_beam)
+    writer.write_fits_image('model', 'model', dataset, model, image_p, channel)
+    writer.write_fits_image('residuals', 'residuals', dataset, dirty, image_p,
+                            channel, restoring_beam)
 
     # Try to free up memory for the beam convolution
     del grid_data
@@ -356,12 +363,11 @@ def process_channel(dataset, args, start_channel,
         queue.finish()
 
     model += dirty
-    with progress.step('Write clean image'):
-        io.write_fits_image(dataset, model, image_p, args.output_file,
-                            channel, image_p.wavelength, restoring_beam)
+    writer.write_fits_image('clean', 'clean image', dataset, model, image_p,
+                            channel, restoring_beam)
 
 
-def run(context, queue, args):
+def run(args, context, queue, writer):
     # PyCUDA leaks resources that are freed when the corresponding context is
     # not active. We make it active for the rest of the execution to avoid
     # this.
@@ -411,4 +417,4 @@ def run(context, queue, args):
             # Do the work
             for channel_p in params:
                 process_channel(dataset, args, start_channel, context, queue,
-                                reader, channel_p, array_p, weight_p, subtract_model)
+                                reader, writer, channel_p, array_p, weight_p, subtract_model)
