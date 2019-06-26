@@ -1,14 +1,14 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import sys
 import argparse
 import logging
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 
 import numpy as np
 import colors
 import katsdpsigproc.accel as accel
 
-from katsdpimager import frontend, io, progress, numba
+from katsdpimager import frontend, loader, io, progress, numba
 
 
 logger = logging.getLogger()
@@ -140,7 +140,8 @@ def main():
         if not numba.have_numba:
             logger.warning('could not import numba: --host mode will be VERY slow')
 
-    frontend.run(args, context, queue, Writer(args))
+    with closing(loader.load(args.input_file, args.input_option)) as dataset:
+        frontend.run(args, context, queue, dataset, Writer(args))
 
 
 if __name__ == '__main__':

@@ -28,6 +28,7 @@ py                        # via pytest
 pybind11==2.2.4
 pycuda
 pyephem                   # via katpoint
+pygelf                    # via katsdpservices
 pytest                    # via pycuda
 python-casacore==3.0.0
 python-dateutil           # via pandas, botocore
@@ -43,7 +44,8 @@ six                       # via pytools, python-dateutil
 toolz                     # via dask[array]
 urllib3                   # via requests
 
-git+ssh://git@github.com/ska-sa/katdal#egg=katdal
-git+ssh://git@github.com/ska-sa/katpoint#egg=katpoint
-git+ssh://git@github.com/ska-sa/katsdpsigproc#egg=katsdpsigproc
-git+ssh://git@github.com/ska-sa/katsdptelstate#egg=katsdptelstate
+katdal @ git+https://github.com/ska-sa/katdal
+katpoint @ git+https://github.com/ska-sa/katpoint
+katsdpsigproc @ git+ssh://git@github.com/ska-sa/katsdpsigproc
+katsdptelstate @ git+https://github.com/ska-sa/katsdptelstate
+katsdpservices @ git+ssh://git@github.com/ska-sa/katsdpservices

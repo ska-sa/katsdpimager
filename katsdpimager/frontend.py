@@ -2,7 +2,6 @@ import tempfile
 import os
 import atexit
 import logging
-from contextlib import closing
 from abc import abstractmethod
 
 import numpy as np
@@ -453,11 +452,11 @@ def process_channel(dataset, args, start_channel,
                             channel, restoring_beam)
 
 
-def run(args, context, queue, writer):
+def run(args, context, queue, dataset, writer):
     # PyCUDA leaks resources that are freed when the corresponding context is
     # not active. We make it active for the rest of the execution to avoid
     # this.
-    with context, closing(loader.load(args.input_file, args.input_option)) as dataset:
+    with context:
         # Determine parameters
         input_polarizations = dataset.polarizations()
         if dataset.has_feed_angles():

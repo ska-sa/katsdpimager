@@ -272,7 +272,15 @@ class LoaderKatdal(loader_core.LoaderBase):
                 progress=end,
                 total=n_file_times)
 
+    @property
+    def raw_data(self):
+        return self._file
+
     def close(self):
         # katdal does not provide a way to close an input file. The best we can
         # do is leave it to the garbage collector to sort out.
         self._file = None
+
+    @property
+    def target(self):
+        return self._target

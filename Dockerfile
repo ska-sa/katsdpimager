@@ -12,7 +12,7 @@ RUN install-requirements.py -d ~/docker-base/base-requirements.txt -d ~/docker-b
 COPY --chown=kat:kat . /tmp/install/katsdpimager
 WORKDIR /tmp/install/katsdpimager
 RUN python ./setup.py clean
-RUN pip install --no-deps .[ms,katdal]
+RUN pip install --no-deps .[ms,katdal,pipeline]
 RUN pip check
 
 #######################################################################
