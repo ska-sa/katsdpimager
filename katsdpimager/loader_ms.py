@@ -202,7 +202,7 @@ def _fix_cache_size(table, column):
         pass
     if cache_size == 0:
         # No tile size info found - pick some default
-        _logger.warn('Could not get tile info for column %s', column)
+        _logger.warning('Could not get tile info for column %s', column)
         cache_size = 1024 * 1024
     _logger.debug('Using cache size %d for column %s', cache_size, column)
     table.setmaxcachesize(column, cache_size)

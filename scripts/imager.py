@@ -134,7 +134,7 @@ def main():
         context = dummy_context()
         queue = DummyCommandQueue()
         if not numba.have_numba:
-            logger.warn('could not import numba: --host mode will be VERY slow')
+            logger.warning('could not import numba: --host mode will be VERY slow')
 
     frontend.run(args, context, queue, Writer(args))
 
