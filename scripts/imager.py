@@ -25,6 +25,8 @@ class Writer(frontend.Writer):
         else:
             filename = getattr(self.args, 'write_' + name)
         if filename is not None:
+            if '%' in filename:
+                filename = filename % channel
             with progress.step('Write {}'.format(description)):
                 io.write_fits_image(dataset, image, image_parameters, filename,
                                     channel, beam, bunit)
@@ -32,6 +34,8 @@ class Writer(frontend.Writer):
     def write_fits_grid(self, name, description, fftshift, grid_data, image_parameters, channel):
         filename = getattr(self.args, 'write_' + name)
         if filename is not None:
+            if '%' in filename:
+                filename = filename % channel
             with progress.step('Write {}'.format(description)):
                 if fftshift:
                     grid_data = np.fft.fftshift(grid_data, axes=(1, 2))
