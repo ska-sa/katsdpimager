@@ -30,7 +30,7 @@ import logging
 
 import h5py
 import numpy as np
-import astropy.units as units
+from astropy import units
 
 from katsdpimager import _preprocess
 

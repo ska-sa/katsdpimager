@@ -3,7 +3,7 @@
 import logging
 
 import numpy as np
-import astropy.units as units
+from astropy import units
 import astropy.io.fits as fits
 
 import katsdpimager.polarization as polarization

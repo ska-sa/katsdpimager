@@ -126,7 +126,7 @@ class Imaging(accel.OperationSequence):
         super().__init__(
             template.command_queue, operations, compounds, allocator=allocator)
 
-    def __call__(self):
+    def __call__(self, **kwargs):
         raise NotImplementedError()
 
     @property

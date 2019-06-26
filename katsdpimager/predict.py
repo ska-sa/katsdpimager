@@ -125,13 +125,13 @@ class PredictTemplate:
         self.wgs = tuning['wgs']
         self.real_dtype = real_dtype
         self.num_polarizations = num_polarizations
-        parameters = {
+        params = {
             'real_type': types.dtype_to_ctype(real_dtype),
             'wgs': self.wgs,
             'num_polarizations': self.num_polarizations
         }
         self.program = accel.build(
-            context, 'imager_kernels/predict.mako', parameters,
+            context, 'imager_kernels/predict.mako', params,
             extra_dirs=[pkg_resources.resource_filename(__name__, '')])
 
     @classmethod
@@ -329,6 +329,7 @@ def _predict_host(vis, uv, sub_uv, w_plane, weights, lmn, flux,
 
 class PredictHost(grid.VisOperationHost):
     def __init__(self, image_parameters, grid_parameters):
+        super().__init__()
         self.image_parameters = image_parameters
         self.grid_parameters = grid_parameters
         self.lmn = None

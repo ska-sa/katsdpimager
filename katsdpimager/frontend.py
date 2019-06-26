@@ -6,7 +6,7 @@ from contextlib import closing
 from abc import abstractmethod
 
 import numpy as np
-import astropy.units as units
+from astropy import units
 import katsdpsigproc.accel as accel
 
 from . import \
@@ -143,10 +143,10 @@ def log_parameters(name, params):
     if logger.isEnabledFor(logging.INFO):
         s = str(params)
         lines = s.split('\n')
-        logger.info(name + ":")
+        logger.info('%s:', name)
         for line in lines:
             if line:
-                logger.info('    ' + line)
+                logger.info('    %s', line)
 
 
 class ChannelParameters:
@@ -264,7 +264,7 @@ def add_options(parser):
                        help='Number of W slices [computed from --kernel-width]')
     group.add_argument('--w-step', type=parse_quantity, default='1.0',
                        help='Separation between W planes, in subgrid cells or a distance '
-                            '[%(default)s]'),
+                            '[%(default)s]')
     group.add_argument('--max-w', type=parse_quantity,
                        help='Largest w, as either distance or wavelengths [longest baseline]')
     group.add_argument('--aa-width', type=float, default=7,
@@ -339,7 +339,7 @@ def process_channel(dataset, args, start_channel,
     image_p = channel_p.image_p
     grid_p = channel_p.grid_p
     clean_p = channel_p.clean_p
-    logger.info('Processing channel {}'.format(channel))
+    logger.info('Processing channel %d', channel)
     # Create data and operation instances
     if args.host:
         imager = imaging.ImagingHost(image_p, weight_p, grid_p, clean_p)

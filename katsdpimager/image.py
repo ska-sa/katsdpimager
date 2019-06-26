@@ -11,8 +11,8 @@ import numpy as np
 import pkg_resources
 from katsdpsigproc import accel
 
-from . import fft
 import katsdpimager.types
+from . import fft
 
 
 class _LayerImageTemplate:
@@ -155,7 +155,7 @@ class _LayerImage(accel.Operation):
     def _run(self):
         layer = self.buffer('layer')
         image = self.buffer('image')
-        assert(layer.padded_shape == image.padded_shape[-2:])
+        assert layer.padded_shape == image.padded_shape[-2:]
         half_size = image.shape[-1] // 2
         row_stride = image.padded_shape[-1]
         slice_stride = row_stride * image.padded_shape[-2]
