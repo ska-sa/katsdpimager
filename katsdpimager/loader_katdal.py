@@ -282,5 +282,6 @@ class LoaderKatdal(loader_core.LoaderBase):
         self._file = None
 
     @property
-    def target(self):
+    def raw_target(self):
+        """Target as a katpoint object"""
         return self._target

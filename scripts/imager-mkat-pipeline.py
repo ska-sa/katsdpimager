@@ -48,8 +48,8 @@ class Writer(frontend.Writer):
             'Declination': [Angle(radec_deg[1]).to_string(units.deg, sep=':', pad=True)],
             # JSON schema limits format to fixed-point with at most 10 decimal places
             'DecRa': [','.join('{:.10f}'.format(angle) for angle in radec_deg.value[::-1])],
-            'Targets': [dataset.target.name],
-            'KatpointTargets': [dataset.target.description],
+            'Targets': [dataset.raw_target.name],
+            'KatpointTargets': [dataset.raw_target.description],
             # katdal gives dump period in seconds, metadata value needs to be in hours
             'IntegrationTime': [raw_data.dump_period * len(raw_data.dumps) / 3600.0]
         }
