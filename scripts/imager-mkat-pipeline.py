@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from contextlib import closing
 
 from astropy import units
+from astropy.coordinates import Angle
 import katsdpservices
 import katdal
 from katsdpsigproc import accel
@@ -27,31 +28,30 @@ class Writer(frontend.Writer):
         raw_data = dataset.raw_data
         if not isinstance(raw_data, katdal.DataSet):
             raise RuntimeError('Only katdal data sets are supported')
-        # Yes, apparently the metadata contains a mix of degrees and radians
-        radec_rad = dataset.phase_centre().to(units.rad).value
-        radec_deg = dataset.phase_centre().to(units.deg).value
+        radec_deg = dataset.phase_centre().to(units.deg)
         obs_params = raw_data.obs_params
         self.common_metadata = {
             'ProductType': {
                 'ProductTypeName': 'FITSImageProduct',
                 'ReductionName': 'Spectral Image'
             },
-            'CaptureBlockID': raw_data.source.capture_block_id,
-            'ScheduleBlockIDCode': obs_params.get('sb_id_code', 'UNKNOWN'),
+            'CaptureBlockId': raw_data.source.capture_block_id,
+            'ScheduleBlockIdCode': obs_params.get('sb_id_code', 'UNKNOWN'),
             'Description': obs_params.get('description', 'UNKNOWN') + ': Spectral-line image',
-            'ProposalID': obs_params.get('proposal_id', 'UNKNOWN'),
+            'ProposalId': obs_params.get('proposal_id', 'UNKNOWN'),
             'Observer': obs_params.get('observer', 'UNKNOWN'),
             'StartTime': datetime.now(timezone.utc).isoformat(),
             'Bandwidth': raw_data.channel_width,
             'ChannelWidth': raw_data.channel_width,
             'NumFreqChannels': 1,
-            'RightAscension': [repr(radec_rad[0])],
-            'Declination': [repr(radec_rad[1])],
+            'RightAscension': [Angle(radec_deg[0]).to_string(units.hour, sep=':', pad=True)],
+            'Declination': [Angle(radec_deg[1]).to_string(units.deg, sep=':', pad=True)],
             # JSON schema limits format to fixed-point with at most 10 decimal places
-            'DecRa': [','.join('{:.10f}'.format(angle) for angle in radec_deg[::-1])],
+            'DecRa': [','.join('{:.10f}'.format(angle) for angle in radec_deg.value[::-1])],
             'Targets': [dataset.target.name],
             'KatpointTargets': [dataset.target.description],
-            'IntegrationTime': [raw_data.dump_period * len(raw_data.dumps)]
+            # katdal gives dump period in seconds, metadata value needs to be in hours
+            'IntegrationTime': [raw_data.dump_period * len(raw_data.dumps) / 3600.0]
         }
 
     def write_fits_image(self, name, description, dataset, image, image_parameters, channel,
@@ -72,7 +72,8 @@ class Writer(frontend.Writer):
             'FITSImageFilename': base_filename,
             'CenterFrequency': freq,
             'MinFreq': freq - 0.5 * channel_width,
-            'MaxFreq': freq + 0.5 * channel_width
+            'MaxFreq': freq + 0.5 * channel_width,
+            'Run': '{} {:05}'.format(self.args.prefix, channel)
         }
         os.mkdir(tmp_dir)
         try:
