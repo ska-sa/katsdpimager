@@ -249,7 +249,7 @@ def add_options(parser):
 
     group = parser.add_argument_group('Weighting options')
     group.add_argument('--weight-type',
-                       choices=[name.lower() for name in weight.WeightType.__members__],
+                       choices=[weight_type.name.lower() for weight_type in weight.WeightType],
                        default='natural',
                        help='Imaging density weights [%(default)s]')
     group.add_argument('--robustness', type=float, default=0.0,
