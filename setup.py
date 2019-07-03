@@ -45,7 +45,7 @@ setup(
     author="Bruce Merry and Ludwig Schwardt",
     packages=find_packages(),
     package_data={'': ['imager_kernels/*.mako', 'imager_kernels/*/*.mako']},
-    scripts=["scripts/imager.py"],
+    scripts=["scripts/imager.py", "scripts/imager-mkat-pipeline.py"],
     ext_package='katsdpimager',
     ext_modules=extensions,
     python_requires='>=3.5',       # Somewhat arbitrary choice; only tested with 3.6+
@@ -62,6 +62,7 @@ setup(
         'report': ['aplpy', 'matplotlib', 'mako'],
         'ms': ['python-casacore'],
         'katdal': ['katdal', 'scipy>=0.17'],
-        'benchmark': ['katpoint']
+        'benchmark': ['katpoint'],
+        'pipeline': ['katsdpservices']
     }
 )

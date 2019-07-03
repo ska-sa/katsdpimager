@@ -1,14 +1,14 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import sys
 import argparse
 import logging
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 
 import numpy as np
 import colors
 import katsdpsigproc.accel as accel
 
-from katsdpimager import frontend, io, progress, numba
+from katsdpimager import frontend, loader, io, progress, numba
 
 
 logger = logging.getLogger()
@@ -25,6 +25,8 @@ class Writer(frontend.Writer):
         else:
             filename = getattr(self.args, 'write_' + name)
         if filename is not None:
+            if '%' in filename:
+                filename = filename % channel
             with progress.step('Write {}'.format(description)):
                 io.write_fits_image(dataset, image, image_parameters, filename,
                                     channel, beam, bunit)
@@ -32,6 +34,8 @@ class Writer(frontend.Writer):
     def write_fits_grid(self, name, description, fftshift, grid_data, image_parameters, channel):
         filename = getattr(self.args, 'write_' + name)
         if filename is not None:
+            if '%' in filename:
+                filename = filename % channel
             with progress.step('Write {}'.format(description)):
                 if fftshift:
                     grid_data = np.fft.fftshift(grid_data, axes=(1, 2))
@@ -136,7 +140,8 @@ def main():
         if not numba.have_numba:
             logger.warning('could not import numba: --host mode will be VERY slow')
 
-    frontend.run(args, context, queue, Writer(args))
+    with closing(loader.load(args.input_file, args.input_option)) as dataset:
+        frontend.run(args, context, queue, dataset, Writer(args))
 
 
 if __name__ == '__main__':

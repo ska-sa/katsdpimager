@@ -395,6 +395,10 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
                 ret['feed_angle2'] = feed_angle2
             yield ret
 
+    @property
+    def raw_data(self):
+        return self._main
+
     def close(self):
         self._main.close()
         self._antenna.close()

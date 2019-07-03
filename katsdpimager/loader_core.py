@@ -159,6 +159,11 @@ class LoaderBase:
         """
         raise NotImplementedError('Abstract base class')
 
+    @property
+    def raw_data(self):
+        """Return a handle to the the underlying class-specific data set"""
+        raise NotImplementedError('Abstract base class')
+
     def close(self):
         """Close any open file handles. The object must not be used after this."""
         pass

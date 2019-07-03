@@ -168,8 +168,6 @@ def write_fits_image(dataset, image, image_parameters, filename, channel,
     # (https://github.com/aplpy/aplpy/issues/350).
     image = np.require(image[np.newaxis, :, :, ::-1], image.dtype.newbyteorder('>'), 'C')
     hdu = fits.PrimaryHDU(image, header)
-    if '%' in filename:
-        filename = filename % (channel,)
     hdu.writeto(filename, overwrite=True)
 
 
@@ -236,6 +234,4 @@ def write_fits_grid(grid, image_parameters, filename, channel):
     header['CDELT4'] = 1.0
 
     hdu = fits.PrimaryHDU(grid[:, pol_permute, :, :], header)
-    if '%' in filename:
-        filename = filename % (channel,)
     hdu.writeto(filename, overwrite=True)
