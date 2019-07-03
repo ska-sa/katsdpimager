@@ -7,7 +7,7 @@ Most formulae are taken from SKA-TEL-SDP-0000003.
 
 import math
 
-import astropy.units as units
+from astropy import units
 import numpy as np
 
 import katsdpimager.types
@@ -112,13 +112,12 @@ Cell size: {:.3f}
 Wavelength: {:.3f}
 Polarizations: {}
 Precision: {} bit
-""".format(
-            np.arcsin(self.pixel_size).to(units.arcsec),
-            self.pixels,
-            np.arcsin(self.pixel_size * self.pixels).to(units.deg),
-            self.cell_size, self.wavelength,
-            ','.join([polarization.STOKES_NAMES[i] for i in self.polarizations]),
-            32 if self.real_dtype == np.float32 else 64)
+""".format(np.arcsin(self.pixel_size).to(units.arcsec),
+           self.pixels,
+           np.arcsin(self.pixel_size * self.pixels).to(units.deg),
+           self.cell_size, self.wavelength,
+           ','.join([polarization.STOKES_NAMES[i] for i in self.polarizations]),
+           32 if self.real_dtype == np.float32 else 64)
 
 
 def w_kernel_width(image_parameters, w, eps_w, antialias_width=0):

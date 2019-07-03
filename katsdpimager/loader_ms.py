@@ -6,7 +6,7 @@ import logging
 import casacore.tables
 import casacore.quanta
 import numpy as np
-import astropy.units as units
+from astropy import units
 import astropy.time
 import astropy.coordinates
 
@@ -58,8 +58,8 @@ def _get(table, name, data, casacore_units=None, astropy_units=None,
             # Scalar column. Convert quantum_units from a 1D array of 1 element
             # to a numpy scalar
             if quantum_units.shape != (1,):
-                raise ValueError('Column {} is scalar, but QuantumUnits has shape {}'.format(
-                                 name, quantum_units.shape))
+                raise ValueError('Column {} is scalar, but QuantumUnits has shape {}'
+                                 .format(name, quantum_units.shape))
             quantum_units = quantum_units[0]
         # data[0] is included in the iteration so that broadcasting rules are
         # triggered if quantum_units has a smaller shape (e.g. one unit for both
@@ -202,7 +202,7 @@ def _fix_cache_size(table, column):
         pass
     if cache_size == 0:
         # No tile size info found - pick some default
-        _logger.warn('Could not get tile info for column %s', column)
+        _logger.warning('Could not get tile info for column %s', column)
         cache_size = 1024 * 1024
     _logger.debug('Using cache size %d for column %s', cache_size, column)
     table.setmaxcachesize(column, cache_size)

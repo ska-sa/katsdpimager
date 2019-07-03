@@ -18,10 +18,10 @@ minor cycles if the launch overheads become an issue.
 import math
 
 import numpy as np
-import katsdpsigproc.accel as accel
-import katsdpimager.types
+from katsdpsigproc import accel
 import pkg_resources
 
+import katsdpimager.types
 from katsdpimager import numba
 
 #: Use only Stokes I to find peaks

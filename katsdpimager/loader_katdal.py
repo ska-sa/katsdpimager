@@ -12,12 +12,11 @@ import itertools
 import math
 import urllib
 
-import katsdpimager.loader_core
 import katdal
 import numpy as np
-import astropy.units as units
+from astropy import units
 
-from . import polarization
+from . import polarization, loader_core
 
 
 _logger = logging.getLogger(__name__)
@@ -43,7 +42,7 @@ def _unique(seq):
     return [key for key, group in itertools.groupby(data)]
 
 
-class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
+class LoaderKatdal(loader_core.LoaderBase):
     def _find_target(self, target):
         """Find and return the target index based on the argument.
 
@@ -111,9 +110,9 @@ class LoaderKatdal(katsdpimager.loader_core.LoaderBase):
 
         self._file = katdal.open(filename, **open_args)
         if args.subarray < 0 or args.subarray >= len(self._file.subarrays):
-            raise ValueError('Subarray {} is out of range', args.subarray)
+            raise ValueError('Subarray {} is out of range'.format(args.subarray))
         if args.spw < 0 or args.spw >= len(self._file.spectral_windows):
-            raise ValueError('Spectral window {} is out of range', args.spw)
+            raise ValueError('Spectral window {} is out of range'.format(args.spw))
         target_idx = self._find_target(args.target)
         self._file.select(subarray=args.subarray, spw=args.spw,
                           targets=[target_idx], scans=['track'],

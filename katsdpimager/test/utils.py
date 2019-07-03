@@ -5,9 +5,6 @@ import numpy as np
 
 class RandomState(np.random.RandomState):
     """Extension of :class:`random.RandomState` with extra distributions"""
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
     def complex_normal(self, loc=0.0j, scale=1.0, size=None):
         """Circularly symmetric Gaussian in the Argand plane"""
         return self.normal(np.real(loc), scale, size) + 1j * self.normal(np.imag(loc), scale, size)

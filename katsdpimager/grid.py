@@ -374,7 +374,7 @@ class ConvolutionKernel:
                 self.beta, out=self.data[i, ...])
 
     @classmethod
-    def bin_size(cls, grid_parameters, tile_x, tile_y, pad):
+    def get_bin_size(cls, grid_parameters, tile_x, tile_y, pad):
         """Determine appropriate bin size given alignment restrictions."""
         size = max(tile_x, tile_y)
         # Round up to a power of 2
@@ -546,7 +546,7 @@ class GridderTemplate:
         min_pad = max(self.multi_x, self.multi_y) - 1
         self.tile_x = self.wgs_x * self.multi_x
         self.tile_y = self.wgs_y * self.multi_y
-        bin_size = ConvolutionKernel.bin_size(
+        bin_size = ConvolutionKernel.get_bin_size(
             grid_parameters, self.tile_x, self.tile_y, min_pad)
         pad = bin_size - grid_parameters.kernel_width
         self.convolve_kernel = ConvolutionKernelDevice(
@@ -876,7 +876,8 @@ class DegridderTemplate:
         self.tile_x = self.wgs_x * self.multi_x
         self.tile_y = self.wgs_y * self.multi_y
         min_pad = max(self.multi_x, self.multi_y) - 1
-        bin_size = ConvolutionKernel.bin_size(grid_parameters, self.tile_x, self.tile_y, min_pad)
+        bin_size = ConvolutionKernel.get_bin_size(grid_parameters, self.tile_x, self.tile_y,
+                                                  min_pad)
         pad = bin_size - grid_parameters.kernel_width
         # Note: we can't necessarily use the same kernel as for gridding,
         # because different tuning parameters will affect the kernel padding.
@@ -947,7 +948,7 @@ class DegridderTemplate:
 
             def fn():
                 Degridder.static_run(
-                    queue, kernel, wgs_x, wgs_y, wgs_z, bin_size,
+                    queue, kernel, wgs_x, wgs_y, wgs_z,
                     num_vis, uv_bias,
                     grid, uv, w_plane, weights, vis, convolve_kernel)
             return tune.make_measure(queue, fn)
@@ -988,7 +989,7 @@ class Degridder(GridDegrid):
 
     @classmethod
     def static_run(cls, command_queue, kernel,
-                   wgs_x, wgs_y, wgs_z, bin_size, num_vis, uv_bias,
+                   wgs_x, wgs_y, wgs_z, num_vis, uv_bias,
                    grid, uv, w_plane, weights, vis, convolve_kernel):
         if num_vis == 0:
             return
@@ -1022,7 +1023,6 @@ class Degridder(GridDegrid):
         self.static_run(
             self.command_queue, self._kernel,
             self.template.wgs_x, self.template.wgs_y, self.template.wgs_z,
-            self.template.convolve_kernel.bin_size,
             self.num_vis,
             uv_bias,
             self.buffer('grid'),

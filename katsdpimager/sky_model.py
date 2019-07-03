@@ -10,7 +10,7 @@ import logging
 import urllib
 
 import numpy as np
-import astropy.units as units
+from astropy import units
 import katpoint
 
 
