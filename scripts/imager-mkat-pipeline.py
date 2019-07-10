@@ -73,7 +73,7 @@ class Writer(frontend.Writer):
             'CenterFrequency': freq,
             'MinFreq': freq - 0.5 * channel_width,
             'MaxFreq': freq + 0.5 * channel_width,
-            'Run': '{} {:05}'.format(self.args.prefix, channel)
+            'Run': channel
         }
         os.mkdir(tmp_dir)
         try:
