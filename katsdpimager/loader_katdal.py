@@ -218,7 +218,6 @@ class LoaderKatdal(loader_core.LoaderBase):
             load_times = max(1, max_chunk_vis // (n_chans * n_file_cp))
         # timestamps is a property, so ensure it's only evaluated once
         timestamps = self._file.timestamps
-        antenna_uvw = [None] * n_ants
         baseline_idx = np.arange(len(self._baselines)).astype(np.int32)
         for start in range(0, n_file_times, load_times):
             end = min(n_file_times, start + load_times)
@@ -235,16 +234,11 @@ class LoaderKatdal(loader_core.LoaderBase):
             # Apply flags to weights
             weights *= np.logical_not(flags)
 
-            # Compute per-antenna UVW coordinates and parallactic angles. The
-            # tensor product yields arrays of shape 3xN, which we transpose to
-            # Nx3.
-            basis = self._target.uvw_basis(timestamp=timestamps[start:end], antenna=self._ref_ant)
-            for i, antenna in enumerate(self._file.ants):
-                enu = np.array(self._ref_ant.baseline_toward(antenna))
-                ant_uvw = np.tensordot(basis, enu, ([1], [0]))
-                antenna_uvw[i] = units.Quantity(
-                    ant_uvw.transpose(), unit=units.m, dtype=np.float32)
-            # parangle converts to degree before returning, so we have to
+            # Compute per-antenna UVW coordinates and parallactic angles.
+            antenna_uvw = units.Quantity(self._target.uvw(
+                self._file.ants, timestamp=timestamps[start:end], antenna=self._ref_ant))
+            antenna_uvw = antenna_uvw.T   # Switch from (uvw, time, ant) to (ant, time, uvw)
+            # parangle converts to degrees before returning, so we have to
             # convert back to radians.
             antenna_pa = units.Quantity(
                 self._file.parangle[start:end, :].transpose(),
