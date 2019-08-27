@@ -211,7 +211,6 @@ class LoaderKatdal(loader_core.LoaderBase):
         assert 0 <= start_channel < stop_channel <= n_file_chans
         n_chans = stop_channel - start_channel
         n_pols = len(self._polarizations)
-        n_ants = len(self._file.ants)
         if max_chunk_vis is None:
             load_times = n_file_times
         else:
