@@ -102,7 +102,7 @@ class LoaderKatdal(loader_core.LoaderBase):
         parser.add_argument('--secret-key', type=str, help='S3 secret key')
         args = parser.parse_args(options)
 
-        open_args = dict(ref_ant=args.ref_ant, apply_cal=args.apply_cal)
+        open_args = dict(ref_ant=args.ref_ant, applycal=args.apply_cal)
         if (args.access_key is not None) != (args.secret_key is not None):
             raise ValueError('access-key and secret-key must be used together')
         if args.access_key is not None:
@@ -162,6 +162,10 @@ class LoaderKatdal(loader_core.LoaderBase):
         # antenna is the first antenna in the file, which is not as useful.
         # This determines the reference frame for UVW coordinates.
         self._ref_ant = self._file.sensor.get('Antennas/array/antenna')[0]
+        corrections = ', '.join(self._file.applycal_products)
+        if not corrections:
+            corrections = 'none'
+        _logger.info('Calibration corrections applied: %s', corrections)
 
     @classmethod
     def match(cls, filename):
