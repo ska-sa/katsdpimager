@@ -4,7 +4,7 @@
 import numpy as np
 from astropy import units
 
-from . import parameters
+from . import parameters, sky_model
 
 
 class LoaderBase:
@@ -158,6 +158,21 @@ class LoaderBase:
             in a measurement set) exceeds this size.
         """
         raise NotImplementedError('Abstract base class')
+
+    def sky_model(self):
+        """Get the stored sky model, if any
+
+        Returns
+        -------
+        sky_model : :class:`~katsdpimager.sky_model.SkyModel`
+            Sky model from the data set
+
+        Raises
+        ------
+        sky_model.NoSkyModelError
+            If there is no sky model in the data set
+        """
+        return sky_model.NoSkyModelError('This input format does not support sky models')
 
     @property
     def raw_data(self):

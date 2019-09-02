@@ -16,7 +16,7 @@ import katdal
 import numpy as np
 from astropy import units
 
-from . import polarization, loader_core
+from . import polarization, loader_core, sky_model
 
 
 _logger = logging.getLogger(__name__)
@@ -264,6 +264,15 @@ class LoaderKatdal(loader_core.LoaderBase):
                 feed_angle2=feed_angle2.reshape(-1),
                 progress=end,
                 total=n_file_times)
+
+    def sky_model(self):
+        try:
+            source = self._file.source
+        except AttributeError:
+            raise sky_model.NoSkyModelError('This data set does not support sky models')
+
+        return sky_model.KatpointSkyModel(sky_model.catalogue_from_telstate(
+            source.telstate, source.capture_block_id, None, self._target))
 
     @property
     def raw_data(self):

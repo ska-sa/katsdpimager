@@ -482,7 +482,9 @@ def run(args, context, queue, dataset, writer):
             ChannelParameters(args, dataset, args.start_channel, array_p).log_parameters()
         log_parameters("Weight parameters", weight_p)
 
-        if args.subtract is not None:
+        if args.subtract == 'auto':
+            subtract_model = dataset.sky_model()
+        elif args.subtract is not None:
             subtract_model = sky_model.open_sky_model(args.subtract)
         else:
             subtract_model = None
