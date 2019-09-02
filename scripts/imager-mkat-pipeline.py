@@ -69,7 +69,7 @@ class Writer(frontend.Writer):
         channel_width = dataset.raw_data.channel_width
         metadata = {
             **self.common_metadata,
-            'FITSImageFilename': base_filename,
+            'FITSImageFilename': [base_filename],
             'CenterFrequency': freq,
             'MinFreq': freq - 0.5 * channel_width,
             'MaxFreq': freq + 0.5 * channel_width,
