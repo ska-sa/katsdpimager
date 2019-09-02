@@ -5,7 +5,6 @@ At present the only file format supported is a katpoint catalogue file, but
 other formats (e.g. Tigger) may be added later.
 """
 
-import itertools
 import logging
 import urllib
 
@@ -15,6 +14,11 @@ import katpoint
 
 
 logger = logging.getLogger(__name__)
+
+
+class NoSkyModelError(Exception):
+    """Attempted to load a sky model for continuum subtraction but there isn't one"""
+    pass
 
 
 class SkyModel:
@@ -92,12 +96,21 @@ def catalogue_from_telstate(telstate, capture_block_id, continuum, target):
 
     Parameters
     ----------
+    telstate : :class:`katsdptelstate.TelescopeState` or :class:`katdal.sensordata.TelstateToStr`
+        Telescope state
     capture_block_id : str
         Capture block ID
-    continuum : str
-        Name of the continuum imaging task (used to form the telstate view).
+    continuum : str or ``None``
+        Name of the continuum imaging stream (used to form the telstate view).
+        If ``None``, there must be exactly one continuum imaging stream in the
+        data set, which is used.
     target : :class:`katpoint.Target`
         Target field
+
+    Raises
+    ------
+    NoSkyModelError
+        If no sky model could be found for the given parameters
 
     Returns
     -------
@@ -107,21 +120,35 @@ def catalogue_from_telstate(telstate, capture_block_id, continuum, target):
     # if we are run under Python 3.
     from katdal.sensordata import TelstateToStr
 
-    prefix = telstate.join(capture_block_id, continuum)
-    view = TelstateToStr(telstate.view(prefix))
-    for i in itertools.count():
-        key = 'target{}_clean_components'.format(i)
-        data = view.get(key)
-        if data is None:
-            break
-        try:
-            if katpoint.Target(data['description']) == target:
-                return katpoint.Catalogue(data['components'])
-        except KeyError:
-            logger.warning('Failed to access %s from telescope state',
-                           telstate.join(prefix, key), exc_info=True)
-    logger.warning('Sky model for target %s not found', target.name)
-    return katpoint.Catalogue()
+    telstate = TelstateToStr(telstate)
+    try:
+        # Find the continuum image stream
+        if continuum is None:
+            archived_streams = telstate['sdp_archived_streams']
+            for stream_name in archived_streams:
+                view = telstate.view(stream_name, exclusive=True)
+                view = view.view(telstate.join(capture_block_id, stream_name))
+                stream_type = view.get('stream_type', 'unknown')
+                if stream_type != 'sdp.continuum_image':
+                    continue
+                if continuum is not None:
+                    raise NoSkyModelError(
+                        'Multiple continuum image streams found - need to select one')
+                continuum = stream_name
+            if continuum is None:
+                raise NoSkyModelError('No continuum image streams found')
+
+        view = telstate.view(continuum, exclusive=True)
+        view = view.view(telstate.join(capture_block_id, continuum))
+        target_namespace = view['targets'][target.description]
+        prefix = telstate.join(capture_block_id, continuum, target_namespace, 'target0')
+        data = view.view(prefix)['clean_components']
+        # Should always match, but for safety
+        if katpoint.Target(data['description']) == target:
+            return katpoint.Catalogue(data['components'])
+    except KeyError:
+        logger.debug('KeyError', exc_info=True)
+    raise NoSkyModelError('Sky model for target {} not found'.format(target.name))
 
 
 def open_sky_model(url):
@@ -133,10 +160,19 @@ def open_sky_model(url):
     Parameters
     ----------
     url : str
-        Either a catalogue file to load (only local files are currently
-        supported) or an URL of the form
-        :samp:`redis://{host}:{port}/?format=katpoint&capture_block_id={id}&continuum={name}&target={description}`,
-        which will read clean components written by katsdpcontim.
+        The interpretation depends on the format.
+
+        katpoint
+            A ``file://`` URL for a katpoint catalogue file
+        katdal
+            A katdal MVFv4 URL. The following extra query parameters are interpreted
+            and removed before they are passed to katdal:
+
+            target (required)
+                Description of the katpoint target whose LSM should be loaded
+            continuum (optional)
+                Name of the continuum image stream. If not specified, there
+                must be exactly one in the file.
 
     Raises
     ------
@@ -145,10 +181,8 @@ def open_sky_model(url):
         expected query parameters, or the URL scheme is not supported
     IOError, OSError
         if there was a low-level error reading a file
-    redis.RedisError
-        if a ``redis://`` url was used and there was an error accessing redis
-    katsdptelstate.telescope_state.TelstateError
-        if a ``redis://`` url was used and there was an error accessing the telescope state
+    Exception
+        any exception raised by katdal in opening the file
 
     Returns
     -------
@@ -157,28 +191,31 @@ def open_sky_model(url):
     parts = urllib.parse.urlparse(url, scheme='file')
     params = urllib.parse.parse_qs(parts.query)
     model_format = params.pop('format', ['katpoint'])[0]
-    if model_format != 'katpoint':
-        raise ValueError('format "{}" is not recognised'.format(model_format))
 
-    if parts.scheme == 'file':
-        with open(parts.path) as f:
-            catalogue = katpoint.Catalogue(f)
-        return KatpointSkyModel(catalogue)
-    elif parts.scheme == 'redis':
-        import katsdptelstate
+    if model_format == 'katdal':
+        import katdal
         try:
-            capture_block_id = params.pop('capture_block_id')[0]
-            continuum = params.pop('continuum')[0]
             target = katpoint.Target(params.pop('target')[0])
         except KeyError:
-            raise ValueError('URL must contain capture_block_id, continuum and target')
+            raise ValueError('URL must contain target')
+        try:
+            continuum = params.pop('continuum')[0]
+        except KeyError:
+            continuum = None
         # Reconstruct the URL without the query components we've absorbed
-        redis_url = urllib.parse.urlunparse((
+        new_url = urllib.parse.urlunparse((
             parts.scheme, parts.netloc, parts.path, parts.params,
             urllib.parse.urlencode(params, doseq=True),
             parts.fragment))
-        telstate = katsdptelstate.TelescopeState(redis_url)
-        catalogue = catalogue_from_telstate(telstate, capture_block_id, continuum, target)
+        data_source = katdal.open_data_source(new_url, chunk_store=None, upgrade_flags=False)
+        catalogue = catalogue_from_telstate(data_source.telstate, data_source.capture_block_id,
+                                            continuum, target)
+        return KatpointSkyModel(catalogue)
+    elif model_format == 'katpoint':
+        if parts.scheme != 'file':
+            raise ValueError('Only file:// URLs are supported for katpoint sky model format')
+        with open(parts.path) as f:
+            catalogue = katpoint.Catalogue(f)
         return KatpointSkyModel(catalogue)
     else:
-        raise ValueError('Unsupported URL scheme {}'.format(parts.scheme))
+        raise ValueError('format "{}" is not recognised'.format(model_format))

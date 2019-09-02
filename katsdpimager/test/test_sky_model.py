@@ -10,12 +10,13 @@ import numpy as np
 import katpoint
 import katsdptelstate.redis
 
-from katsdpimager.sky_model import KatpointSkyModel, catalogue_from_telstate, open_sky_model
+from katsdpimager.sky_model import (KatpointSkyModel, catalogue_from_telstate, open_sky_model,
+                                    NoSkyModelError)
 
 
-_TRG_A = 'A, radec, 20:00:00.00, -60:00:00.0, (200.0 12000.0 1.0 0.5 0.0)'
-_TRG_B = 'B, radec, 8:00:00.00, 60:00:00, (200.0 12000.0 2.0 0.0 0.0)'
-_TRG_C = 'C, radec, 21:00:00.00, -60:00:00, (800.0 43200.0 1 0 0 0 0 0  1 0.8 -0.7 0.6)'
+_TRG_A = 'A, radec, 20:00:00.00, -60:00:00.0, (200.0 12000.0 1 0.5)'
+_TRG_B = 'B, radec, 8:00:00.00, 60:00:00.0, (200.0 12000.0 2)'
+_TRG_C = 'C, radec, 21:00:00.00, -60:00:00.0, (800.0 43200.0 1 0 0 0 0 0 1 0.8 -0.7 0.6)'
 
 
 class TestKatpointSkyModel:
@@ -50,23 +51,38 @@ class TestKatpointSkyModel:
             [0, 0, 0, 0]])
 
 
-def _put_target(view, idx, description, targets):
+def _put_models(telstate, cbid, continuum, models):
+    """Populate telstate with continuum models.
+
+    Each element of `models` is a tuple containing a phase centre and a list of
+    components. The component list may also be ``None`` to omit that part of
+    the value (to test failure handling).
+    """
     # Uses bytes strings to emulate katsdpcontim (which uses Python 2 native strings)
-    d = {b'description': description.encode('utf-8')}
-    if targets is not None:
-        d[b'components'] = [target.encode('utf-8') for target in targets]
-    view['target{}_clean_components'.format(idx)] = d
+    targets = {}
+    for i, (phase_centre, components) in enumerate(models):
+        normalised_name = 'test{}'.format(i)
+        d = {b'description': phase_centre.encode('utf-8')}
+        if components is not None:
+            d[b'components'] = [component.encode('utf-8') for component in components]
+        namespace = telstate.join(cbid, continuum, normalised_name, 'target0')
+        telstate.view(namespace)['clean_components'] = d
+        targets[phase_centre] = normalised_name
+    telstate.view(telstate.join(cbid, continuum))['targets'] = targets
 
 
 class TestCatalogueFromTelstate:
-    def setUp(self):
+    def setup(self):
         self.cbid = '1234567890'
         self.continuum = 'continuum'
         self.telstate = katsdptelstate.TelescopeState()
-        view = self.telstate.view('1234567890_continuum')
-        _put_target(view, 0, _TRG_A, [_TRG_A, _TRG_C])
-        _put_target(view, 1, _TRG_B, [_TRG_B])
-        _put_target(view, 2, 'Nothing, special', None)
+        self.telstate['sdp_archived_streams'] = [self.continuum]
+        self.telstate[self.telstate.join(self.continuum, 'stream_type')] = 'sdp.continuum_image'
+        _put_models(self.telstate, self.cbid, self.continuum, [
+            (_TRG_A, [_TRG_A, _TRG_C]),
+            (_TRG_B, [_TRG_B]),
+            ('Nothing, special', None)
+        ])
 
     def test_present(self):
         catalogue = catalogue_from_telstate(self.telstate, self.cbid, self.continuum,
@@ -80,15 +96,19 @@ class TestCatalogueFromTelstate:
         assert_equal(len(catalogue), 1)
         assert_equal(catalogue.targets[0], katpoint.Target(_TRG_B))
 
+    def test_auto_continuum(self):
+        self.continuum = None
+        self.test_present()
+
     def test_absent(self):
-        catalogue = catalogue_from_telstate(self.telstate, self.cbid, self.continuum,
-                                            katpoint.Target(_TRG_C))
-        assert_equal(len(catalogue), 0)
+        with assert_raises(NoSkyModelError):
+            catalogue_from_telstate(self.telstate, self.cbid, self.continuum,
+                                    katpoint.Target(_TRG_C))
 
     def test_missing_key(self):
-        catalogue = catalogue_from_telstate(self.telstate, self.cbid, self.continuum,
-                                            katpoint.Target('Nothing, special'))
-        assert_equal(len(catalogue), 0)
+        with assert_raises(NoSkyModelError):
+            catalogue_from_telstate(self.telstate, self.cbid, self.continuum,
+                                    katpoint.Target('Nothing, special'))
 
 
 class TestOpenSkyModel:
@@ -102,7 +122,8 @@ class TestOpenSkyModel:
 
     def test_missing_params(self):
         with assert_raises(ValueError):
-            open_sky_model('redis://invalid/?capture_block_id=1234567890&continuum=continuum')
+            open_sky_model('redis://invalid/?capture_block_id=1234567890'
+                           '&continuum=continuum&format=katdal')
 
     def test_file(self):
         orig = katpoint.Catalogue([_TRG_A, _TRG_B, _TRG_C])
@@ -116,14 +137,29 @@ class TestOpenSkyModel:
     def test_telstate(self):
         client = fakeredis.FakeStrictRedis()
         telstate = katsdptelstate.TelescopeState(katsdptelstate.redis.RedisBackend(client))
-        view = telstate.view('1234567890_continuum')
-        _put_target(view, 0, _TRG_A, [_TRG_A, _TRG_C])
+        # Fake just enough of telstate to keep katdal happy. This isn't all in the right
+        # namespace, but that doesn't really matter.
+        telstate['stream_name'] = 'sdp_l0'
+        telstate_l0 = telstate.view('sdp_l0')
+        telstate_l0['stream_type'] = 'sdp.vis'
+        telstate_l0['chunk_info'] = {
+            'correlator_data': {
+                'prefix': '1234567890-sdp-l0',
+                'dtype': '<c8',
+                'shape': (0, 0, 0)
+            }
+        }
+        telstate_l0['sync_time'] = 1234567890.0
+        telstate_l0['first_timestamp'] = 0.0
+        telstate_l0['int_time'] = 1.0
+
+        _put_models(telstate, '1234567890', 'continuum', [(_TRG_A, [_TRG_A, _TRG_C])])
         expected = katpoint.Catalogue([_TRG_A, _TRG_C])
 
-        with mock.patch('redis.StrictRedis.from_url', return_value=client) as from_url:
+        with mock.patch('redis.StrictRedis', return_value=client) as mock_redis:
             test = open_sky_model(
-                'redis://invalid:6379/?format=katpoint&db=1&capture_block_id=1234567890'
+                'redis://invalid:6379/?format=katdal&db=1&capture_block_id=1234567890'
                 '&continuum=continuum'
                 '&target=A,+radec,+20:00:00.00,+-60:00:00.0,+(200.0+12000.0+1.0+0.5+0.0)')
-            from_url.assert_called_with('redis://invalid:6379/?db=1', db=0, socket_timeout=mock.ANY)
+            mock_redis.assert_called_with(host='invalid', port=6379, db=1, socket_timeout=mock.ANY)
             assert_equal(expected, test._catalogue)
