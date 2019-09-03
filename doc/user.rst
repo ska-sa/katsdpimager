@@ -108,9 +108,28 @@ Input selection options
 
 .. option:: --subtract <URL>
 
-   A file containing a local sky model to subtract from the visibilities
-   (typically for continuum subtraction). The only file format currently
-   supported is a `katpoint`_ catalogue (with a ``file:///`` URL).
+   Specifies a local sky model to subtract from the visibilities
+   (typically for continuum subtraction). There are three options:
+
+   auto
+       Specifying the value ``auto`` will use a sky model found in the input
+       data set. This only works with katdal data sets.
+   `katpoint`_ catalogue
+       A ``file://`` URL containing a catalogue of sources. Sources whose flux
+       model frequency range do not cover the channel being imaged will be
+       ignored.
+   `katdal`_ dataset
+       For more flexibility than the ``auto`` option, one can specify a katdal
+       URL explicitly. There are a few extra query parameters to specify:
+
+       format
+           Must be ``katdal``
+       target
+           The katpoint description of the target that was imaged (required).
+       continuum
+           Optional, specifies the name of the continuum image stream. This is
+           only needed if there were multiple continuum imager configurations
+           run on this data set.
 
 .. option:: -i <KEY>=<VALUE>, --input-option <KEY>=<VALUE>
 
