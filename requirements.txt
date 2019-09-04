@@ -46,6 +46,6 @@ urllib3                   # via requests
 
 katdal @ git+https://github.com/ska-sa/katdal
 katpoint @ git+https://github.com/ska-sa/katpoint
-katsdpsigproc @ git+ssh://git@github.com/ska-sa/katsdpsigproc
+katsdpsigproc @ git+https://git@github.com/ska-sa/katsdpsigproc
 katsdptelstate @ git+https://github.com/ska-sa/katsdptelstate
-katsdpservices @ git+ssh://git@github.com/ska-sa/katsdpservices
+katsdpservices @ git+https://git@github.com/ska-sa/katsdpservices
