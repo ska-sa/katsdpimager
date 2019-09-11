@@ -14,9 +14,9 @@ from katsdpimager.sky_model import (KatpointSkyModel, catalogue_from_telstate, o
                                     NoSkyModelError)
 
 
-_TRG_A = 'A, radec, 20:00:00.00, -60:00:00.0, (200.0 12000.0 1 0.5)'
-_TRG_B = 'B, radec, 8:00:00.00, 60:00:00.0, (200.0 12000.0 2)'
-_TRG_C = 'C, radec, 21:00:00.00, -60:00:00.0, (800.0 43200.0 1 0 0 0 0 0 1 0.8 -0.7 0.6)'
+_TRG_A = 'A, radec, 20:00:00.00, -60:00:00.0, (200.0 12000.0 1.0 0.5)'
+_TRG_B = 'B, radec, 8:00:00.00, 60:00:00.0, (200.0 12000.0 2.0)'
+_TRG_C = 'C, radec, 21:00:00.00, -60:00:00.0, (800.0 43200.0 1.0 0.0 0.0 0.0 0.0 0.0 1.0 0.8 -0.7 0.6)'    # noqa: E501
 
 
 class TestKatpointSkyModel:
