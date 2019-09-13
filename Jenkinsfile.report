@@ -4,9 +4,9 @@
 
 env.BRANCH_NAME = 'imager-dev'
 
-String workdir = 'git/katsdpimager'
+String workdir = 'git'
 String testdir = "$workdir/tests"
-katsdp.stagePrepare(subdir: 'katsdpimager', python2: false, python3: true)
+katsdp.stagePrepare(python2: false, python3: true)
 
 catchError {
     stage('Generate report') {
@@ -25,8 +25,8 @@ catchError {
                 sh 'meqtree-pipeliner.py -c batch.tdlconf "[turbo-sim]" ms_sel.msname=simple.ms /usr/lib/python2.7/dist-packages/Cattery/Siamese/turbo-sim.py =_tdl_job_1_simulate_MS'
             }
             katsdp.virtualenv('venv3') {
-                katsdp.installRequirements('git/katsdpimager/report-requirements.txt')
-                sh 'pip install --no-deps -v ./git/katsdpimager[report]'
+                katsdp.installRequirements('git/report-requirements.txt')
+                sh 'pip install --no-deps -v ./git[report]'
                 sh 'pip check'
                 dir(testdir) {
                     sh './images_report.py --start-channel=2 --stop-channel=4 simple.ms report'
