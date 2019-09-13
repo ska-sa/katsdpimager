@@ -2,13 +2,13 @@
 # These are needed because readthedocs doesn't install requirements.txt
 # (and it can't, because things like pycuda won't installed).
 astropy
-casacore
 h5py
 katdal
 katsdpsigproc @ git+https://github.com/ska-sa/katsdpsigproc
 nose
 numpy
 progress
+python-casacore
 scipy
 
 # Pin version of sphinx
