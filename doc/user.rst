@@ -7,21 +7,13 @@ Requirements
 ============
 katsdpimager is implemented in Python, and is installed with standard Python
 packaging tools. The pure-Python dependencies are automatically handled by
-these packaging tools, with one exception: for now a special fork of pybind11
-is required, which can be installed with
-
-.. code-block:: sh
-
-    pip install git+https://github.com/bmerry/pybind11@factory-constructors#egg=pybind11
-
-At some point this functionality is expected to be merged into pybind11.
+these packaging tools.
 
 There are some additional requirements:
 
- - A Github account with access to the SKA South Africa private repositories;
  - An NVIDIA GPU with the CUDA toolkit. At least version 6.0 is required, but
-   testing is only done with 8.0 and later (but see :ref:`cpu`);
- - `Casacore`_ 2.x, compiled with Python support (optional, only needed for
+   testing is only done with 10.0 and later (but see :ref:`cpu`);
+ - `Casacore`_, compiled with Python support (optional, only needed for
    reading Measurement Sets);
  - libhdf5, including development headers (``libhdf5-dev`` in Debian/Ubuntu)
  - `Eigen3`_ (``libeigen3-dev`` in Debian/Ubuntu);
@@ -40,18 +32,16 @@ katsdpsigproc:
 
 .. code-block:: sh
 
-   git clone git@github.com:ska-sa/katsdpsigproc
+   git clone https://github.com/ska-sa/katsdpsigproc
    cd katsdpsigproc
    pip install .
 
-Then install katsdpimager from the katsdppipelines repository. The cutting
-edge is the ``imager-dev`` branch of katsdppipelines; the ``master`` branch
-contains code that has been reviewed.
+Then install katsdpimager:
 
 .. code-block:: sh
 
-   git clone -b imager-dev git@github.com:ska-sa/katsdppipelines
-   cd katsdppipelines/katsdpimager
+   git clone https://github.com/ska-sa/katsdpimager
+   cd katsdpimager
    pip install .
 
 After these steps, you should be able to run ``imager.py``, but see the next
@@ -59,16 +49,16 @@ section for information on file format-specific dependencies.
 
 File formats
 ============
-Two input formats are supported: `Measurement Sets`_ and KAT-style HDF5 files
-read by `katdal`_. Output is to `FITS`_ files. The input can contain multiple
-channels, but a separate FITS file is written for each channel.
+Two input formats are supported: `Measurement Sets`_ and KAT/MeerKAT
+data sets read by `katdal`_. Output is to `FITS`_ files. The input can contain
+multiple channels, but a separate FITS file is written for each channel.
 
 .. _Measurement sets: http://casa.nrao.edu/Memos/229.html
-.. _katdal: https://github.com/ska-sa/katdal/
+.. _katdal: https://katdal.readthedocs.io/
 .. _FITS: http://fits.gsfc.nasa.gov/fits_documentation.html
 
 The input file format is detected by extension, so a Measurement Set *must*
-have the suffix ``.ms`` and a katdal file must have the suffix ``.h5`` or
+have the suffix ``.ms`` and a katdal data set must have the suffix ``.h5`` or
 ``.rdb``.
 
 Each file format has additional Python package dependencies. Use ``pip install
