@@ -1,0 +1,6 @@
+version: 2
+python:
+  version: 3.6
+  install:
+    - requirements: rtd-requirements.txt
+    - requirements: doc-requirements.txt
