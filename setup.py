@@ -2,10 +2,12 @@
 from setuptools import setup, find_packages, Extension
 import glob
 
-import pkgconfig
+try:
+    import pkgconfig
+    eigen3 = pkgconfig.parse('eigen3')
+except ImportError:
+    eigen3 = {'include_dirs': set()}
 
-
-eigen3 = pkgconfig.parse('eigen3')
 tests_require = ['nose', 'scipy', 'fakeredis']
 
 extensions = [
