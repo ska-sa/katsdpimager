@@ -1,5 +1,5 @@
 [flake8]
-exclude = doc/conf.py
+exclude = doc/conf.py 3rdparty/
 max-line-length = 100
 ignore =
     # whitespace before ':' - flake8 doesn't handle slices properly

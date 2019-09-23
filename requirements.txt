@@ -22,10 +22,8 @@ netifaces                 # via katsdptelstate
 numba
 numpy
 pandas                    # via katsdpsigproc
-pkgconfig==1.1.0
 progress==1.2
 py                        # via pytest
-pybind11==2.4.2
 pycuda
 pyephem                   # via katpoint
 pygelf                    # via katsdpservices

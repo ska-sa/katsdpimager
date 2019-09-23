@@ -5,6 +5,7 @@
 *.pyc
 *.lsm.html
 /build
+/dist
 /doc/_build
 /tests/report
 .coverage
