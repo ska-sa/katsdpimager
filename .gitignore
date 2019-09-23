@@ -6,6 +6,8 @@
 *.lsm.html
 /build
 /dist
+/wheelhouse
+/pip-wheel-metadata
 /doc/_build
 /tests/report
 .coverage

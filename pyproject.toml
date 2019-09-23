@@ -1,2 +1,2 @@
 [build-system]
-requires = ["setuptools", "wheel", "pkgconfig", "pybind11==2.4.2"]
+requires = ["setuptools", "wheel", "pkgconfig==1.5.1"]
