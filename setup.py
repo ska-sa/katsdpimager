@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 from setuptools import setup, find_packages, Extension
 import glob
-import importlib
+
 try:
     import pkgconfig
     eigen3 = pkgconfig.parse('eigen3')
@@ -10,28 +10,12 @@ except ImportError:
 
 tests_require = ['nose', 'scipy', 'fakeredis']
 
-
-class get_include:
-    """Helper class to defer importing a module until build time for fetching the include directory.
-    """
-    def __init__(self, module, *args, **kwargs):
-        self.module = module
-        self.args = args
-        self.kwargs = kwargs
-
-    def __str__(self):
-        module = importlib.import_module(self.module)
-        return getattr(module, 'get_include')(*self.args, **self.kwargs)
-
-
 extensions = [
     Extension(
         '_preprocess',
         sources=['katsdpimager/preprocess.cpp'],
         language='c++',
-        include_dirs=[
-            get_include('pybind11'),
-            get_include('pybind11', user=True)] + list(eigen3.get('include_dirs', [])),
+        include_dirs=['3rdparty/pybind11/include'] + list(eigen3.get('include_dirs', [])),
         depends=glob.glob('katsdpimager/*.h'),
         extra_compile_args=['-std=c++1y', '-g0', '-fvisibility=hidden'],
         libraries=list(eigen3.get('libraries', []))
@@ -49,7 +33,6 @@ setup(
     ext_package='katsdpimager',
     ext_modules=extensions,
     python_requires='>=3.5',       # Somewhat arbitrary choice; only tested with 3.6+
-    setup_requires=['pkgconfig', 'pybind11>=2.2.0'],
     install_requires=[
         'numpy>=1.10.0', 'katsdpsigproc', 'katpoint', 'astropy>=1.3', 'progress',
         'pycuda', 'scikit-cuda', 'h5py', 'ansicolors'
