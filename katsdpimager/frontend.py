@@ -338,6 +338,13 @@ def process_channel(dataset, args, start_channel,
     image_p = channel_p.image_p
     grid_p = channel_p.grid_p
     clean_p = channel_p.clean_p
+
+    # Check if there is anything to do
+    if not any(reader.len(rel_channel, w_slice)
+               for w_slice in range(reader.num_w_slices(rel_channel))):
+        logger.info('Skipping channel %d which has no data', channel)
+        return
+
     logger.info('Processing channel %d', channel)
     # Create data and operation instances
     if args.host:
