@@ -5,7 +5,7 @@ import os
 import uuid
 import shutil
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from contextlib import closing
 
 from astropy import units
@@ -40,7 +40,8 @@ class Writer(frontend.Writer):
             'Description': obs_params.get('description', 'UNKNOWN') + ': Spectral-line image',
             'ProposalId': obs_params.get('proposal_id', 'UNKNOWN'),
             'Observer': obs_params.get('observer', 'UNKNOWN'),
-            'StartTime': datetime.now(timezone.utc).isoformat(),
+            # Solr doesn't accept +00:00, only Z, so we can't just format a timezone-aware value
+            'StartTime': datetime.utcnow().isoformat() + 'Z',
             'Bandwidth': raw_data.channel_width,
             'ChannelWidth': raw_data.channel_width,
             'NumFreqChannels': 1,
