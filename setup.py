@@ -7,7 +7,7 @@ import os
 class MissingPkgconfig:
     """Raise an exception only when trying to convert it to a string.
 
-    This allows commands like setup.py clean to work even when pkgconfig
+    This allows commands like ``setup.py clean`` to work even when pkgconfig
     is not present, but makes it fail when trying to build the extension.
     """
     def __str__(self):
