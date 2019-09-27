@@ -45,9 +45,10 @@ extensions = [
 
 setup(
     name="katsdpimager",
-    version="0.1.dev0",
-    description="GPU-accelerated radio-astronomy imager",
-    author="Bruce Merry and Ludwig Schwardt",
+    description="GPU-accelerated radio-astronomy spectral line imager",
+    author="MeerKAT SDP Team",
+    author_email="sdpdev+katsdpimager@ska.ac.za",
+    url="https://github.com/ska-sa/katsdpimager/",
     packages=find_packages(),
     package_data={'': ['imager_kernels/*.mako', 'imager_kernels/*/*.mako']},
     scripts=["scripts/imager.py", "scripts/imager-mkat-pipeline.py"],
@@ -68,5 +69,13 @@ setup(
         'katdal': ['katdal', 'scipy>=0.17'],
         'benchmark': ['katpoint'],
         'pipeline': ['katsdpservices']
-    }
+    },
+    use_katversion=True,
+    classifiers=[
+        "Development Status :: 5 - Production/Stable",
+        "License :: OSI Approved :: BSD License",
+        "Programming Language :: Python :: 3 :: Only",
+        "Topic :: Scientific/Engineering :: Astronomy",
+        "Environment :: Console"
+    ]
 )

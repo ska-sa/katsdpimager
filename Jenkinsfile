@@ -16,4 +16,4 @@ katsdp.standardBuild(
     python2: false,
     prepare_timeout: [time: 90, unit: 'MINUTES'],
     test_timeout: [time: 90, unit: 'MINUTES'])
-katsdp.mail('bmerry@ska.ac.za')
+katsdp.mail('sdpdev+katsdpimager@ska.ac.za')

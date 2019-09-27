@@ -18,6 +18,7 @@ RUN pip check
 #######################################################################
 
 FROM sdp-docker-registry.kat.ac.za:5000/docker-base-gpu-runtime
+LABEL maintainer="sdpdev+katsdpimager@ska.ac.za"
 
 COPY --from=build --chown=kat:kat /home/kat/ve3 /home/kat/ve3
 ENV PATH="$PATH_PYTHON3" VIRTUAL_ENV="$VIRTUAL_ENV_PYTHON3"
