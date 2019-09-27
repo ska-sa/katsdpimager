@@ -1,14 +1,35 @@
 #!/usr/bin/env python
 from setuptools import setup, find_packages, Extension
 import glob
+import os
+
+
+class MissingPkgconfig:
+    """Raise an exception only when trying to convert it to a string.
+
+    This allows commands like ``setup.py clean`` to work even when pkgconfig
+    is not present, but makes it fail when trying to build the extension.
+    """
+    def __str__(self):
+        raise RuntimeError(
+            'The pkgconfig module was not found. Try upgrading pip to the latest '
+            'version and using it to install.')
+
 
 try:
     import pkgconfig
     eigen3 = pkgconfig.parse('eigen3')
 except ImportError:
-    eigen3 = {'include_dirs': set()}
+    eigen3 = {'include_dirs': {MissingPkgconfig()}}
 
 tests_require = ['nose', 'scipy', 'fakeredis']
+
+root_dir = os.path.dirname(__file__)
+pybind11_dir = os.path.join(root_dir, '3rdparty', 'pybind11', 'include', 'pybind11')
+if not os.path.exists(pybind11_dir):
+    raise RuntimeError(
+        'pybind11 directory not found in source tree. If this is a git checkout, you '
+        'can probably fix it by running "git submodule update --init --recursive".')
 
 extensions = [
     Extension(
