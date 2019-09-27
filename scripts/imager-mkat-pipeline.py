@@ -5,7 +5,7 @@ import os
 import uuid
 import shutil
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from contextlib import closing
 
 from astropy import units
