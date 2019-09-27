@@ -6,6 +6,8 @@
  * Most of the functionality is documented in the wrappers in preprocess.py.
  */
 
+#define EIGEN_MPL2_ONLY 1    /* Avoid accidentally using non-MPL2 code */
+
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <pybind11/eigen.h>
