@@ -426,7 +426,9 @@ void visibility_collector<P>::add_impl2(
         for (std::size_t i = 0; i < N; i++)
         {
             if (baselines[i] < 0)
-                continue; // autocorrelation
+                continue;   // autocorrelation
+            if (weights.col(i).cwiseEqual(0.0f).all())
+                continue;   // zero weights on all polarisations
             if (buffer_size == buffer_capacity)
                 compress();
 
