@@ -2,49 +2,51 @@ User guide for katsdpimager
 ---------------------------
 katsdpimager is a GPU-accelerated spectral line imager for radio astronomy.
 
-Requirements
-============
-katsdpimager is implemented in Python, and is installed with standard Python
-packaging tools. The pure-Python dependencies are automatically handled by
-these packaging tools.
-
-There are some additional requirements:
-
- - An NVIDIA GPU with the CUDA toolkit. At least version 6.0 is required, but
-   testing is only done with 10.0 and later (but see :ref:`cpu`);
- - `Casacore`_, compiled with Python support (optional, only needed for
-   reading Measurement Sets);
- - libhdf5, including development headers (``libhdf5-dev`` in Debian/Ubuntu)
- - `Eigen3`_ (``libeigen3-dev`` in Debian/Ubuntu);
- - A C++ compiler such as GCC.
- - Boost headers, if the C++ compiler is too old to provide either
-   ``std::experimental::optional`` or ``std::optional``.
-
-.. _Casacore: https://github.com/casacore/casacore
-
-.. _Eigen3: http://eigen.tuxfamily.org
-
 Installation
 ============
-Once the pre-requisites from the previous section are present, install
-katsdpsigproc:
+
+Only Python 3.5+ is supported. You will also need an NVIDIA GPU with the
+CUDA toolkit and drivers. At least version 6.0 is required, but testing is only
+done with 10.0 and later (but see :ref:`cpu`).
+
+To install with support for Measurement Sets, run
 
 .. code-block:: sh
 
-   git clone https://github.com/ska-sa/katsdpsigproc
-   cd katsdpsigproc
-   pip install .
+   pip install 'katsdpimager[ms]'
 
-Then install katsdpimager:
+To install with support for katdal_ data sets, run
 
 .. code-block:: sh
 
-   git clone https://github.com/ska-sa/katsdpimager
-   cd katsdpimager
-   pip install .
+   pip install 'katsdpimager[katdal]'
 
-After these steps, you should be able to run ``imager.py``, but see the next
-section for information on file format-specific dependencies.
+and to support both, use
+
+.. code-block:: sh
+
+   pip install 'katsdpimager[katdal,ms]'
+
+After these steps, you should be able to run ``imager.py``, but see following
+sections for details of how to run it.
+
+Binary installation
+^^^^^^^^^^^^^^^^^^^
+If you have a sufficiently recent version of :program:`pip` and a Linux x86-64
+system the above will install a binary wheel, and all requirements will be
+handled by :program:`pip`.
+
+From source
+^^^^^^^^^^^
+If there is no binary wheel available for your platform, then there are
+additional requirements as some C code will need to be compiled:
+
+ - libhdf5, including development headers (``libhdf5-dev`` in Debian/Ubuntu);
+ - `Eigen3`_ (``libeigen3-dev`` in Debian/Ubuntu);
+ - A C++ compiler such as GCC;
+ - Boost headers.
+
+.. _Eigen3: http://eigen.tuxfamily.org
 
 File formats
 ============
@@ -59,10 +61,6 @@ multiple channels, but a separate FITS file is written for each channel.
 The input file format is detected by extension, so a Measurement Set *must*
 have the suffix ``.ms`` and a katdal data set must have the suffix ``.h5`` or
 ``.rdb``.
-
-Each file format has additional Python package dependencies. Use ``pip install
-.[ms]`` to ensure support for Measurement Sets and ``pip install .[katdal]`` to
-ensure support for katdal.
 
 Command-line options
 ====================
