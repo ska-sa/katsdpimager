@@ -1,5 +1,5 @@
-User guide for katsdpimager
----------------------------
+User guide
+----------
 katsdpimager is a GPU-accelerated spectral line imager for radio astronomy.
 
 Installation
