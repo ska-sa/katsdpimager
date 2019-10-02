@@ -31,6 +31,9 @@ if not os.path.exists(pybind11_dir):
         'pybind11 directory not found in source tree. If this is a git checkout, you '
         'can probably fix it by running "git submodule update --init --recursive".')
 
+with open(os.path.join(root_dir, 'README.rst')) as f:
+    long_description = f.read()
+
 extensions = [
     Extension(
         '_preprocess',
@@ -46,6 +49,7 @@ extensions = [
 setup(
     name="katsdpimager",
     description="GPU-accelerated radio-astronomy spectral line imager",
+    long_description=long_description,
     author="MeerKAT SDP Team",
     author_email="sdpdev+katsdpimager@ska.ac.za",
     url="https://github.com/ska-sa/katsdpimager/",
