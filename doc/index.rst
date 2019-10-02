@@ -12,6 +12,7 @@ Contents:
    :maxdepth: 2
 
    user.rst
+   changelog.rst
    modules.rst
 
 Indices and tables
