@@ -7,4 +7,3 @@ katsdpimager/_preprocess.so
 build
 doc/_build
 tests/report
-Dockerfile
