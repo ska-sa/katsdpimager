@@ -9,7 +9,7 @@ markupsafe                # via mako
 matplotlib
 networkx==2.3             # via scikit-image
 numpy                     # via astropy, matplotlib
-pillow==6.2.1             # via aplpy
+pillow                    # via aplpy
 pyavm==0.9.4              # via aplpy
 pyparsing                 # via matplotlib
 pyregion==2.0             # via aplpy
