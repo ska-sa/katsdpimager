@@ -40,6 +40,7 @@ scikit-cuda
 scipy                     # via katdal (its fallback interpolation behaves differently)
 six                       # via pytools, python-dateutil
 toolz                     # via dask[array]
+typing_extensions         # via katsdpsigproc
 urllib3                   # via requests
 
 katdal @ git+https://github.com/ska-sa/katdal
