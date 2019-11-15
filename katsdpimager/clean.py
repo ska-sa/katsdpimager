@@ -112,6 +112,10 @@ class PsfPatch(accel.Operation):
         self.template = template
         self.kernel = template.program.get_kernel('psf_patch')
 
+    def _run(self):
+        # Never used because we override __call__
+        pass        # pragma: nocover
+
     def __call__(self, threshold, limit=None, **kwargs):
         self.bind(**kwargs)
         self.ensure_all_bound()
@@ -266,6 +270,10 @@ class NoiseEst(accel.Operation):
             accel.Dimension(self._num_tiles_x, exact=True)], np.uint32)
         self.kernel = template.program.get_kernel('compute_rank')
 
+    def _run(self):
+        # Never used because we override __call__
+        pass        # pragma: nocover
+
     def __call__(self, **kwargs):
         self.bind(**kwargs)
         self.ensure_all_bound()
@@ -415,6 +423,10 @@ class _UpdateTiles(accel.Operation):
         self.slots['tile_pos'] = accel.IOSlot(
             [tiles_height, tiles_width, accel.Dimension(2, exact=True)], np.int32)
         self.kernel = template.program.get_kernel('update_tiles')
+
+    def _run(self):
+        # Never used because we override __call__
+        pass        # pragma: nocover
 
     def __call__(self, x0, y0, x1, y1, **kwargs):
         """Update all tiles intersected by the pixel range [x0, x1) by [y0, y1)"""
@@ -641,6 +653,10 @@ class _SubtractPsf(accel.Operation):
         self.loop_gain = loop_gain
         self.template = template
         self.kernel = template.program.get_kernel('subtract_psf')
+
+    def _run(self):
+        # Never used because we override __call__
+        pass        # pragma: nocover
 
     def __call__(self, pos, psf_patch, **kwargs):
         """Execute the operation.
