@@ -123,7 +123,7 @@ class Fftshift(accel.Operation):
         data = self.buffer('data')
         items_x = data.shape[-1] // 2
         items_y = data.shape[-2] // 2
-        if len(data.shape) == 1:
+        if len(data.shape) == 2:
             items_z = 1
         else:
             items_z = data.shape[0] * int(np.product(data.padded_shape[1:-2]))
