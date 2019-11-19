@@ -267,6 +267,8 @@ class DensityWeights(accel.Operation):
                 grid.buffer,
                 np.int32(grid.padded_shape[2]),
                 np.int32(grid.padded_shape[1] * grid.padded_shape[2]),
+                np.int32(grid.shape[2]),
+                np.int32(grid.shape[1]),
                 np.float32(self.a),
                 np.float32(self.b)
             ],
