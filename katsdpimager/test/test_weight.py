@@ -1,6 +1,7 @@
 """Tests for :mod:`katsdpimager.weight`."""
 
 import numpy as np
+import katsdpsigproc.accel as accel
 from katsdpsigproc.test.test_accel import device_test
 
 from katsdpimager import weight
@@ -85,7 +86,12 @@ class TestDensityWeights:
         fn.ensure_all_bound()
         fn.a = 2.5
         fn.b = 1.75
-        fn.buffer('grid').set(command_queue, self.data)
+        # The 'grid' is set in a roundabout way to fill the padding with
+        # non-zero values
+        tmp_data = fn.buffer('grid').empty_like()
+        accel.HostArray.padded_view(tmp_data).fill(3)
+        tmp_data[:] = self.data
+        fn.buffer('grid').set(command_queue, tmp_data)
         normalized_rms = fn()
         actual = fn.buffer('grid').get(command_queue)
         np.testing.assert_allclose(self.expected, actual, 1e-5, 1e-5)

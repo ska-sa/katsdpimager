@@ -13,6 +13,7 @@ void density_weights(
     GLOBAL float * RESTRICT grid,
     int grid_row_stride,
     int grid_pol_stride,
+    int size_x, int size_y,
     float a, float b)
 {
     LOCAL_DECL scratch_t scratch;
@@ -20,9 +21,10 @@ void density_weights(
     int v = get_global_id(1);
     int lid = get_local_id(1) * ${wgs_x} + get_local_id(0);
     int address = v * grid_row_stride + u;
+    bool inside = (u < size_x && v < size_y);
     for (int pol = 0; pol < NPOLS; pol++)
     {
-        float w = grid[address];
+        float w = inside ? grid[address] : 0.0f;
         float d = (w != 0.0f) ? 1.0f / fma(a, w, b) : 0.0f;
         if (pol == 0)
         {
