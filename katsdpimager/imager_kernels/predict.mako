@@ -23,10 +23,11 @@ void predict(
 {
     int gid = get_global_id(0);
     int lid = get_local_id(0);
-    short4 local_uv = uv[gid];
+    bool overflow = gid >= n_vis;
+    short4 local_uv = overflow ? make_short4(0, 0, 0, 0) : uv[gid];
     float u = (local_uv.x * oversample + local_uv.z + 0.5f) * uv_scale;
     float v = (local_uv.y * oversample + local_uv.w + 0.5f) * uv_scale;
-    float w = w_plane[gid] * w_scale + w_bias;
+    float w = overflow ? 0.0f : w_plane[gid] * w_scale + w_bias;
     /* We want to compute e^(-2pi i*...) later. The pi is taken care of
      * by sincospi, and we absorb the -2 here. It could also be handled
      * on the host, but the overhead is tiny since we're outside the loop
@@ -56,7 +57,7 @@ void predict(
         }
         BARRIER();
 
-        if (gid < n_vis)
+        if (!overflow)
         {
             for (int i = 0; i < batch; i++)
             {
@@ -74,6 +75,8 @@ void predict(
         BARRIER();
     }
 
+    if (overflow)
+        return;
     int out_idx = POLS * gid;
     for (int i = 0; i < POLS; i++)
     {
