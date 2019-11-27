@@ -27,6 +27,7 @@ py                        # via pytest
 pycuda
 pyephem                   # via katpoint
 pygelf                    # via katsdpservices
+pyjwt                     # via katdal
 pytest                    # via pycuda
 python-casacore==3.1.1
 python-dateutil           # via pandas, botocore
