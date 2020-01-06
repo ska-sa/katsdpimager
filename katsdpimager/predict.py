@@ -68,6 +68,54 @@ def _extract_sky_model(image_parameters, grid_parameters, model, phase_centre):
     return lmn.astype(np.float32), flux.astype(np.float32)
 
 
+def _extract_sky_image(image_parameters, grid_parameters, image):
+    """Turn a sky model image into a model for direct prediction.
+
+    The return values have the same meanings as for :func:`_extract_sky_model`.
+
+    Parameters
+    ----------
+    image_parameters : :class:`~.ImageParameters`
+        Image parameters
+    grid_parameters : :class:`~.GridParameters`
+        Grid parameters for the corresponding UVW coordinates, for aliasing correction.
+    image : array of float
+        P×size×size image
+
+    Returns
+    -------
+    lmn : array of float32
+        Array of shape N×3, containing l, m, n-1
+    flux : array of float
+        Array of shape N×P, containing the Stokes parameters specified by
+        `image_parameters` for each source.
+    """
+    dtype = image.dtype
+    pols = image.shape[2]
+    # Create a mask of non-zero pixels
+    mask = np.logical_or.reduce(image.astype(np.bool_), axis=0)
+    pos = np.nonzero(mask)
+    N = len(pos[0])
+
+    lmn = np.empty((N, 3), np.float32)
+    flux = np.empty((N, pols), dtype)
+    # Note: These are currently done in double precision to avoid cancellation
+    # issues in computing n-1.
+    pixel_size = float(image_parameters.pixel_size)   # unitless Quantity -> plain float
+    l = (pos[1] - 0.5 * image_parameters.pixels) * pixel_size
+    m = (pos[0] - 0.5 * image_parameters.pixels) * pixel_size
+    n1 = np.sqrt(1.0 - (np.square(l) + np.square(m))) - 1.0
+    lmn[:, 0] = l
+    lmn[:, 1] = m
+    lmn[:, 2] = n1
+    flux = image[:, pos[0], pos[1]].T
+    # See :func:`_extract_sky_model` for explanation of this tapering
+    taper_scale = float(image_parameters.image_size * grid_parameters.oversample)
+    taper = np.sinc(l / taper_scale) * np.sinc(m / taper_scale)
+    flux *= taper[:, np.newaxis]
+    return lmn, flux
+
+
 def _uvw_scale_bias(image_parameters, grid_parameters):
     r"""Compute scale and bias values to turn UVW indices back into coordinates.
 
@@ -179,7 +227,8 @@ class Predict(grid.VisOperation):
 
     1. Configure the visibilities, by setting :attr:`num_vis` and
        calling :meth:`set_coordinates`, :meth:`set_vis` and :meth:`set_w`.
-    2. Configure the sources, by calling :meth:`set_sky_model`.
+    2. Configure the sources, by calling :meth:`set_sky_model` or
+       :meth:`set_sky_image`.
 
     .. rubric:: Slots
 
@@ -246,6 +295,21 @@ class Predict(grid.VisOperation):
             raise ValueError('too many sources ({} > {})'.format(N, self.max_sources))
         lmn, flux = _extract_sky_model(self.image_parameters, self.grid_parameters,
                                        model, phase_centre)
+        self.buffer('lmn')[:N] = lmn
+        self.buffer('flux')[:N] = flux
+        self._num_sources = N
+
+    def set_sky_image(self, image):
+        """Set the sky model from a model image.
+
+        This extracts components from the image, so if the image is altered a
+        subsequent call is needed.
+        """
+        lmn, flux = _extract_sky_image(self.image_parameters, self.grid_parameters, image)
+        N = len(lmn)
+        if N > self.max_sources:
+            raise ValueError('too many components ({} > {})'.format(N, self.max_sources))
+        # TODO: have _extract_sky_image write directly to the buffer
         self.buffer('lmn')[:N] = lmn
         self.buffer('flux')[:N] = flux
         self._num_sources = N
@@ -359,6 +423,16 @@ class PredictHost(grid.VisOperationHost):
         self.lmn, self.flux = _extract_sky_model(self.image_parameters,
                                                  self.grid_parameters,
                                                  model, phase_centre)
+
+    def set_sky_image(self, image):
+        """Set the sky model from an image.
+
+        This copies data, so if `image` is altered, a subsequent
+        call is needed to update the internal structures.
+        """
+        self.lmn, self.flux = _extract_sky_image(self.image_parameters,
+                                                 self.grid_parameters,
+                                                 image)
 
     def __call__(self):
         """Subtract predicted visibilities from existing values"""
