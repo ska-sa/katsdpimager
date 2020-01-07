@@ -229,6 +229,8 @@ class Imaging(accel.OperationSequence):
     def model_to_predict(self):
         if self.template.grid_parameters.degrid:
             raise RuntimeError('Can only use model_to_predict with direct prediction')
+        # It's computed on the CPU, so we need to be sure that device work is complete
+        self._predict.command_queue.finish()
         self._predict.set_sky_image(self.buffer('model'))
 
     def scale_dirty(self, scale_factor):
