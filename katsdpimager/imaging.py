@@ -270,12 +270,6 @@ class ImagingHost:
         self._clean_parameters = clean_parameters
         self._image_parameters = image_parameters
         self._gridder = grid.GridderHost(image_parameters, grid_parameters)
-        if grid_parameters.degrid:
-            self._predict = grid.DegridderHost(image_parameters, grid_parameters)
-            self._degrid = self._degridder.values
-        else:
-            self._predict = predict.PredictHost(image_parameters, grid_parameters)
-            self._degrid = None
         self._grid = self._gridder.values
         self._continuum_predict = predict.PredictHost(image_parameters, grid_parameters)
         self._weights_grid = self._gridder.weights_grid
@@ -288,11 +282,18 @@ class ImagingHost:
         self._grid_to_image = image.GridToImageHost(
             self._grid, self._layer, self._dirty,
             self._gridder.kernel.taper(image_parameters.pixels), lm_scale, lm_bias)
-        self._image_to_grid = image.ImageToGridHost(
-            self._degrid, self._layer, self._model,
-            self._degridder.kernel.taper(image_parameters.pixels), lm_scale, lm_bias)
         self._clean = clean.CleanHost(image_parameters, clean_parameters,
                                       self._dirty, self._psf, self._model)
+        if grid_parameters.degrid:
+            self._predict = grid.DegridderHost(image_parameters, grid_parameters)
+            self._degrid = self._predict.values
+            self._image_to_grid = image.ImageToGridHost(
+                self._degrid, self._layer, self._model,
+                self._predict.kernel.taper(image_parameters.pixels), lm_scale, lm_bias)
+        else:
+            self._predict = predict.PredictHost(image_parameters, grid_parameters)
+            self._degrid = None
+            self._image_to_grid = None
         self._buffer = {
             'psf': self._psf,
             'dirty': self._dirty,
@@ -368,12 +369,15 @@ class ImagingHost:
         self._grid_to_image()
 
     def model_to_grid(self, w):
+        if self._degrid is None:
+            raise RuntimeError('Can only use model_to_grid with degridding')
         self._image_to_grid.set_w(w)
         self._image_to_grid()
 
     def model_to_predict(self):
-        if self._degrid is None:
-            self._predict.set_sky_image(self._model)
+        if self._degrid is not None:
+            raise RuntimeError('Can only use model_to_predict with direct prediction')
+        self._predict.set_sky_image(self._model)
 
     def scale_dirty(self, scale_factor):
         self._dirty *= scale_factor[:, np.newaxis, np.newaxis]
