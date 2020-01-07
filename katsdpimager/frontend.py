@@ -92,7 +92,8 @@ def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block
     imager.clear_dirty()
     queue.finish()
     if full_cycle and not degrid:
-        imager.model_to_predict()
+        with progress.step('Extract components'):
+            imager.model_to_predict()
     for w_slice in range(reader.num_w_slices(rel_channel)):
         N = reader.len(rel_channel, w_slice)
         if N == 0:
