@@ -50,7 +50,8 @@ def main():
 
     rs = RandomState(seed=1)
     uv = rs.random_integers(-2048, 2048, size=(args.vis, 2)).astype(np.int16)
-    sub_uv = rs.random_integers(0, grid_parameters.oversample - 1, size=(args.vis, 2)).astype(np.int16)
+    sub_uv = rs.random_integers(0, grid_parameters.oversample - 1,
+                                size=(args.vis, 2)).astype(np.int16)
     w_plane = rs.random_integers(0, grid_parameters.w_planes - 1, size=args.vis).astype(np.int16)
     weights = rs.uniform(size=(args.vis, len(image_parameters.polarizations))).astype(np.float32)
     vis = rs.complex_normal(size=(args.vis, len(image_parameters.polarizations)))
