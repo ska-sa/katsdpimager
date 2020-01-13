@@ -324,7 +324,11 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         pointing = astropy.coordinates.SkyCoord(ra=pointing[0], dec=pointing[1], frame='fk5')
         pos = self.antenna_positions()
         pos = astropy.coordinates.EarthLocation.from_geocentric(pos[:, 0], pos[:, 1], pos[:, 2])
-        pole = astropy.coordinates.SkyCoord(ra=0 * units.deg, dec=90 * units.deg, frame='fk5')
+        # Construct a point that is displaced from the pointing by a small
+        # quantity northwards. It's necessary to use a small finite difference
+        # rather than the pole itself, because the transformation to AzEl is
+        # not rigid (does not preserve great circles).
+        pole = pointing.directional_offset_by(0 * units.rad, 1e-5 * units.rad)
         for start in range(0, self._main.nrows(), max_chunk_rows):
             end = min(self._main.nrows(), start + max_chunk_rows)
             nrows = end - start
@@ -358,7 +362,7 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
                 # calculations for every antenna.
                 cirs_frame = astropy.coordinates.CIRS(obstime=time)
                 pole_cirs = pole.transform_to(cirs_frame)
-                pointing_cirs = pointing.transform_to(astropy.coordinates.CIRS(obstime=time))
+                pointing_cirs = pointing.transform_to(cirs_frame)
                 feed_angle = units.Quantity(
                     np.empty((len(time), len(pos))), unit=units.rad, copy=False)
                 for i in range(len(pos)):
