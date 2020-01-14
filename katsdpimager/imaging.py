@@ -30,7 +30,6 @@ class ImagingTemplate:
         self.weights = weight.WeightsTemplate(
             context, weight_parameters.weight_type, num_polarizations)
         self.gridder = grid.GridderTemplate(context, image_parameters, grid_parameters)
-        self.degridder = grid.DegridderTemplate(context, image_parameters, grid_parameters)
         self.predict = predict.PredictTemplate(
             context, image_parameters.real_dtype, num_polarizations)
         self.grid_image = image.GridImageTemplate(
@@ -46,16 +45,21 @@ class ImagingTemplate:
         self.taper1d = accel.SVMArray(
             context, (image_parameters.pixels,), image_parameters.real_dtype)
         self.gridder.convolve_kernel.taper(image_parameters.pixels, self.taper1d)
-        self.untaper1d = accel.SVMArray(
-            context, (image_parameters.pixels,), image_parameters.real_dtype)
-        self.degridder.convolve_kernel.taper(image_parameters.pixels, self.untaper1d)
+        if grid_parameters.degrid:
+            self.untaper1d = accel.SVMArray(
+                context, (image_parameters.pixels,), image_parameters.real_dtype)
+            self.degridder = grid.DegridderTemplate(context, image_parameters, grid_parameters)
+            self.degridder.convolve_kernel.taper(image_parameters.pixels, self.untaper1d)
+        else:
+            self.untaper1d = None
+            self.degridder = None
 
     def instantiate(self, *args, **kwargs):
         return Imaging(self, *args, **kwargs)
 
 
 class Imaging(accel.OperationSequence):
-    def __init__(self, template, max_vis, max_sources, allocator=None):
+    def __init__(self, template, max_vis, max_sources, major, allocator=None):
         self.template = template
         lm_scale = float(template.image_parameters.pixel_size)
         lm_bias = -0.5 * template.image_parameters.pixels * lm_scale
@@ -64,20 +68,15 @@ class Imaging(accel.OperationSequence):
                        template.image_parameters.pixels)
         self._gridder = template.gridder.instantiate(
             template.command_queue, template.array_parameters, max_vis, allocator)
-        self._degridder = template.degridder.instantiate(
-            template.command_queue, template.array_parameters, max_vis, allocator)
-        self._predict = template.predict.instantiate(
+        self._continuum_predict = template.predict.instantiate(
             template.command_queue, template.image_parameters, template.grid_parameters,
             max_vis, max_sources, allocator)
         grid_shape = self._gridder.slots['grid'].shape
-        degrid_shape = self._degridder.slots['grid'].shape
         self._weights = template.weights.instantiate(
             template.command_queue, grid_shape, max_vis, allocator)
         self._weights.robustness = template.weight_parameters.robustness
         self._grid_to_image = template.grid_image.instantiate_grid_to_image(
             grid_shape, lm_scale, lm_bias, allocator)
-        self._image_to_grid = template.grid_image.instantiate_image_to_grid(
-            degrid_shape, lm_scale, lm_bias, allocator)
         self._psf_patch = template.psf_patch.instantiate(
             template.command_queue, image_shape, allocator)
         self._noise_est = template.noise_est.instantiate(
@@ -87,14 +86,25 @@ class Imaging(accel.OperationSequence):
         self._scale = template.scale.instantiate(
             template.command_queue, image_shape, allocator)
         self._grid_to_image.bind(kernel1d=template.taper1d)
-        self._image_to_grid.bind(kernel1d=template.untaper1d)
+        if template.grid_parameters.degrid:
+            self._predict = template.degridder.instantiate(
+                template.command_queue, template.array_parameters, max_vis, allocator)
+            degrid_shape = self._predict.slots['grid'].shape
+            self._image_to_grid = template.grid_image.instantiate_image_to_grid(
+                degrid_shape, lm_scale, lm_bias, allocator)
+            self._image_to_grid.bind(kernel1d=template.untaper1d)
+        else:
+            max_components = min(template.image_parameters.pixels**2,
+                                 (major - 1) * template.clean_parameters.minor)
+            self._predict = template.predict.instantiate(
+                template.command_queue, template.image_parameters, template.grid_parameters,
+                max_vis, max_components, allocator)
         operations = [
             ('weights', self._weights),
             ('gridder', self._gridder),
-            ('degridder', self._degridder),
             ('predict', self._predict),
+            ('continuum_predict', self._continuum_predict),
             ('grid_to_image', self._grid_to_image),
-            ('image_to_grid', self._image_to_grid),
             ('psf_patch', self._psf_patch),
             ('noise_est', self._noise_est),
             ('clean', self._clean),
@@ -103,15 +113,14 @@ class Imaging(accel.OperationSequence):
         compounds = {
             'weights': ['weights:weights'],
             'weights_grid': ['weights:grid', 'gridder:weights_grid'],
-            'uv': ['weights:uv', 'gridder:uv', 'degridder:uv', 'predict:uv'],
-            'w_plane': ['gridder:w_plane', 'degridder:w_plane', 'predict:w_plane'],
-            'vis': ['gridder:vis', 'degridder:vis', 'predict:vis'],
-            'predict_weights': ['degridder:weights', 'predict:weights'],
+            'uv': ['weights:uv', 'gridder:uv', 'predict:uv', 'continuum_predict:uv'],
+            'w_plane': ['gridder:w_plane', 'predict:w_plane', 'continuum_predict:w_plane'],
+            'vis': ['gridder:vis', 'predict:vis', 'continuum_predict:vis'],
+            'predict_weights': ['predict:weights', 'continuum_predict:weights'],
             'grid': ['gridder:grid', 'grid_to_image:grid'],
-            'degrid': ['degridder:grid', 'image_to_grid:grid'],
-            'layer': ['grid_to_image:layer', 'image_to_grid:layer'],
+            'layer': ['grid_to_image:layer'],
             'dirty': ['grid_to_image:image', 'noise_est:dirty', 'clean:dirty', 'scale:data'],
-            'model': ['clean:model', 'image_to_grid:image'],
+            'model': ['clean:model'],
             'psf': ['clean:psf', 'psf_patch:psf'],
             'tile_max': ['clean:tile_max'],
             'tile_pos': ['clean:tile_pos'],
@@ -119,6 +128,11 @@ class Imaging(accel.OperationSequence):
             'peak_pos': ['clean:peak_pos'],
             'peak_pixel': ['clean:peak_pixel']
         }
+        if template.grid_parameters.degrid:
+            operations.append(('image_to_grid', self._image_to_grid))
+            compounds['degrid'] = ['predict:grid', 'image_to_grid:grid']
+            compounds['layer'].append('image_to_grid:layer')
+            compounds['model'].append('image_to_grid:image')
         # TODO: could alias weights with something, since it's only needed
         # early on while setting up weights_grid.
         # TODO: could alias noise_est:rank with something, since it's only
@@ -136,8 +150,8 @@ class Imaging(accel.OperationSequence):
     @num_vis.setter
     def num_vis(self, value):
         self._gridder.num_vis = value
-        self._degridder.num_vis = value
         self._predict.num_vis = value
+        self._continuum_predict.num_vis = value
 
     def clear_weights(self):
         self.ensure_all_bound()
@@ -165,39 +179,40 @@ class Imaging(accel.OperationSequence):
 
     def set_coordinates(self, *args, **kwargs):
         self.ensure_all_bound()
-        # The gridder, degridder and predict share their coordinates, so we can
+        # The gridder and predictors share their coordinates, so we can
         # use any here.
         self._gridder.set_coordinates(*args, **kwargs)
 
     def set_vis(self, *args, **kwargs):
         self.ensure_all_bound()
-        # The gridder, degridder and predict share their visibilities, so we
+        # The gridder and predicters share their visibilities, so we
         # can use any here.
         self._gridder.set_vis(*args, **kwargs)
 
     def set_weights(self, *args, **kwargs):
         """Set statistical weights for prediction"""
         self.ensure_all_bound()
-        # The degridder and predict share their weights, so we can use
-        # either here.
-        self._degridder.set_weights(*args, **kwargs)
+        # The predicters share their weights, so we can use any here.
+        self._predict.set_weights(*args, **kwargs)
 
     def grid(self):
         self.ensure_all_bound()
         self._gridder()
 
-    def degrid(self):
-        self.ensure_all_bound()
-        self._degridder()
-
     def predict(self, w):
         self.ensure_all_bound()
-        self._predict.set_w(w)
+        if not self.template.grid_parameters.degrid:
+            self._predict.set_w(w)
         self._predict()
+
+    def continuum_predict(self, w):
+        self.ensure_all_bound()
+        self._continuum_predict.set_w(w)
+        self._continuum_predict()
 
     def set_sky_model(self, sky_model, phase_centre):
         self.ensure_all_bound()
-        self._predict.set_sky_model(sky_model, phase_centre)
+        self._continuum_predict.set_sky_model(sky_model, phase_centre)
 
     def grid_to_image(self, w):
         self.ensure_all_bound()
@@ -205,9 +220,18 @@ class Imaging(accel.OperationSequence):
         self._grid_to_image()
 
     def model_to_grid(self, w):
+        if not self._image_to_grid:
+            raise RuntimeError('Can only use model_to_grid with degridding')
         self.ensure_all_bound()
         self._image_to_grid.set_w(w)
         self._image_to_grid()
+
+    def model_to_predict(self):
+        if self.template.grid_parameters.degrid:
+            raise RuntimeError('Can only use model_to_predict with direct prediction')
+        # It's computed on the CPU, so we need to be sure that device work is complete
+        self._predict.command_queue.finish()
+        self._predict.set_sky_image(self.buffer('model'))
 
     def scale_dirty(self, scale_factor):
         self.ensure_all_bound()
@@ -246,10 +270,8 @@ class ImagingHost:
         self._clean_parameters = clean_parameters
         self._image_parameters = image_parameters
         self._gridder = grid.GridderHost(image_parameters, grid_parameters)
-        self._degridder = grid.DegridderHost(image_parameters, grid_parameters)
         self._grid = self._gridder.values
-        self._degrid = self._degridder.values
-        self._predict = predict.PredictHost(image_parameters, grid_parameters)
+        self._continuum_predict = predict.PredictHost(image_parameters, grid_parameters)
         self._weights_grid = self._gridder.weights_grid
         self._weights = weight.WeightsHost(weight_parameters.weight_type, self._weights_grid)
         self._weights.robustness = weight_parameters.robustness
@@ -260,19 +282,27 @@ class ImagingHost:
         self._grid_to_image = image.GridToImageHost(
             self._grid, self._layer, self._dirty,
             self._gridder.kernel.taper(image_parameters.pixels), lm_scale, lm_bias)
-        self._image_to_grid = image.ImageToGridHost(
-            self._degrid, self._layer, self._model,
-            self._degridder.kernel.taper(image_parameters.pixels), lm_scale, lm_bias)
         self._clean = clean.CleanHost(image_parameters, clean_parameters,
                                       self._dirty, self._psf, self._model)
+        if grid_parameters.degrid:
+            self._predict = grid.DegridderHost(image_parameters, grid_parameters)
+            self._degrid = self._predict.values
+            self._image_to_grid = image.ImageToGridHost(
+                self._degrid, self._layer, self._model,
+                self._predict.kernel.taper(image_parameters.pixels), lm_scale, lm_bias)
+        else:
+            self._predict = predict.PredictHost(image_parameters, grid_parameters)
+            self._degrid = None
+            self._image_to_grid = None
         self._buffer = {
             'psf': self._psf,
             'dirty': self._dirty,
             'model': self._model,
             'grid': self._grid,
-            'degrid': self._degrid,
             'weights_grid': self._weights_grid
         }
+        if self._degrid is not None:
+            self._buffer['degrid'] = self._degrid
 
     def buffer(self, name):
         return self._buffer[name]
@@ -284,8 +314,8 @@ class ImagingHost:
     @num_vis.setter
     def num_vis(self, value):
         self._gridder.num_vis = value
-        self._degridder.num_vis = value
         self._predict.num_vis = value
+        self._continuum_predict.num_vis = value
 
     def clear_weights(self):
         self._weights_grid.fill(0)
@@ -306,39 +336,48 @@ class ImagingHost:
         self._model.fill(0)
 
     def set_sky_model(self, sky_model, phase_centre):
-        self._predict.set_sky_model(sky_model, phase_centre)
+        self._continuum_predict.set_sky_model(sky_model, phase_centre)
 
     def set_coordinates(self, *args, **kwargs):
         self._gridder.set_coordinates(*args, **kwargs)
-        self._degridder.set_coordinates(*args, **kwargs)
         self._predict.set_coordinates(*args, **kwargs)
+        self._continuum_predict.set_coordinates(*args, **kwargs)
 
     def set_vis(self, *args, **kwargs):
         self._gridder.set_vis(*args, **kwargs)
-        self._degridder.set_vis(*args, **kwargs)
         self._predict.set_vis(*args, **kwargs)
+        self._continuum_predict.set_vis(*args, **kwargs)
 
     def set_weights(self, *args, **kwargs):
-        self._degridder.set_weights(*args, **kwargs)
         self._predict.set_weights(*args, **kwargs)
+        self._continuum_predict.set_weights(*args, **kwargs)
 
     def grid(self):
         self._gridder()
 
-    def degrid(self):
-        self._degridder()
-
     def predict(self, w):
-        self._predict.set_w(w)
+        if self._degrid is None:
+            self._predict.set_w(w)
         self._predict()
+
+    def continuum_predict(self, w):
+        self._continuum_predict.set_w(w)
+        self._continuum_predict()
 
     def grid_to_image(self, w):
         self._grid_to_image.set_w(w)
         self._grid_to_image()
 
     def model_to_grid(self, w):
+        if self._degrid is None:
+            raise RuntimeError('Can only use model_to_grid with degridding')
         self._image_to_grid.set_w(w)
         self._image_to_grid()
+
+    def model_to_predict(self):
+        if self._degrid is not None:
+            raise RuntimeError('Can only use model_to_predict with direct prediction')
+        self._predict.set_sky_image(self._model)
 
     def scale_dirty(self, scale_factor):
         self._dirty *= scale_factor[:, np.newaxis, np.newaxis]

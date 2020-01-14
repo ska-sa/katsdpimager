@@ -87,17 +87,20 @@ def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block):
     logger.info('Normalized thermal RMS: %g', normalized_rms)
 
 
-def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block,
+def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block, degrid,
                full_cycle=False, subtract_model=None):
     imager.clear_dirty()
     queue.finish()
+    if full_cycle and not degrid:
+        with progress.step('Extract components'):
+            imager.model_to_predict()
     for w_slice in range(reader.num_w_slices(rel_channel)):
         N = reader.len(rel_channel, w_slice)
         if N == 0:
             logger.info("Skipping slice %d which has no visibilities", w_slice + 1)
             continue
         label = '{} {}/{}'.format(name, w_slice + 1, reader.num_w_slices(rel_channel))
-        if full_cycle:
+        if full_cycle and degrid:
             with progress.step('FFT {}'.format(label)):
                 imager.model_to_grid(mid_w[w_slice])
         bar = progress.make_progressbar('Grid {}'.format(label), max=N)
@@ -111,9 +114,9 @@ def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block
                 if full_cycle or subtract_model:
                     imager.set_weights(chunk.weights)
                 if subtract_model:
-                    imager.predict(mid_w[w_slice])
+                    imager.continuum_predict(mid_w[w_slice])
                 if full_cycle:
-                    imager.degrid()
+                    imager.predict(mid_w[w_slice])
                 imager.grid()
                 # Need to serialise calls to grid, since otherwise the next
                 # call will overwrite the incoming data before the previous
@@ -202,7 +205,7 @@ class ChannelParameters:
         w_planes = int(np.ceil(w_planes / w_slices))
         self.grid_p = parameters.GridParameters(
             args.aa_width, args.grid_oversample, args.kernel_image_oversample,
-            w_slices, w_planes, max_w, args.kernel_width)
+            w_slices, w_planes, max_w, args.kernel_width, args.degrid)
         if args.clean_mode == 'I':
             clean_mode = clean.CLEAN_I
         elif args.clean_mode == 'IQUV':
@@ -272,6 +275,8 @@ def add_options(parser):
                        help='Support of combined anti-aliasing + w kernel [computed]')
     group.add_argument('--eps-w', type=float, default=0.001,
                        help='Level at which to truncate W kernel [%(default)s]')
+    group.add_argument('--degrid', action='store_true',
+                       help='Use degridding rather than direct prediction (less accurate)')
 
     group = parser.add_argument_group('Cleaning options')
     group.add_argument('--psf-cutoff', type=float, default=0.01,
@@ -354,7 +359,7 @@ def process_channel(dataset, args, start_channel,
         imager_template = imaging.ImagingTemplate(
             queue, array_p, image_p, weight_p, grid_p, clean_p)
         n_sources = len(subtract_model) if subtract_model else 0
-        imager = imager_template.instantiate(args.vis_block, n_sources, allocator)
+        imager = imager_template.instantiate(args.vis_block, n_sources, args.major, allocator)
         imager.ensure_all_bound()
     psf = imager.buffer('psf')
     dirty = imager.buffer('dirty')
@@ -372,7 +377,7 @@ def process_channel(dataset, args, start_channel,
     slice_w_step = float(grid_p.max_w / image_p.wavelength / (grid_p.w_slices - 0.5))
     mid_w = np.arange(grid_p.w_slices) * slice_w_step
     make_dirty(queue, reader, rel_channel,
-               'PSF', 'weights', imager, mid_w, args.vis_block)
+               'PSF', 'weights', imager, mid_w, args.vis_block, args.degrid)
     # Normalization
     psf_peak = dirty[..., dirty.shape[1] // 2, dirty.shape[2] // 2]
     if np.any(psf_peak == 0):
@@ -398,7 +403,7 @@ def process_channel(dataset, args, start_channel,
     for i in range(args.major):
         logger.info("Starting major cycle %d/%d", i + 1, args.major)
         make_dirty(queue, reader, rel_channel,
-                   'image', 'vis', imager, mid_w, args.vis_block,
+                   'image', 'vis', imager, mid_w, args.vis_block, args.degrid,
                    i != 0, subtract_model)
         imager.scale_dirty(scale)
         queue.finish()

@@ -210,11 +210,13 @@ class GridParameters:
         Number of samples to take in w within each slice
     max_w : Quantity
         Maximum absolute w value, as a distance quantity
-    kernel_width : int, optional
+    kernel_width : int
         Number of UV cells corresponding to the combined W+antialias kernel.
+    degrid : bool, optional
+        If true, use degridding, otherwise use direct prediction.
     """
     def __init__(self, antialias_width, oversample, image_oversample,
-                 w_slices, w_planes, max_w, kernel_width):
+                 w_slices, w_planes, max_w, kernel_width, degrid=False):
         if max_w.unit.physical_type != 'length':
             raise TypeError('max W must be specified as a length')
         self.antialias_width = antialias_width
@@ -224,8 +226,10 @@ class GridParameters:
         self.w_planes = w_planes
         self.max_w = max_w
         self.kernel_width = kernel_width
+        self.degrid = degrid
 
     def __str__(self):
+        prediction = 'degridding' if self.degrid else 'direct'
         return """\
 Grid oversampling: {self.oversample}
 Image oversample: {self.image_oversample}
@@ -233,7 +237,8 @@ W slices: {self.w_slices}
 W planes per slice: {self.w_planes}
 Maximum W: {self.max_w:.3f}
 Antialiasing support: {self.antialias_width} cells
-Kernel support: {self.kernel_width} cells""".format(self=self)
+Kernel support: {self.kernel_width} cells
+Prediction: {prediction}""".format(self=self, prediction=prediction)
 
 
 class CleanParameters:

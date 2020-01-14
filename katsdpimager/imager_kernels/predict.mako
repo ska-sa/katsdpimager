@@ -28,12 +28,6 @@ void predict(
     float u = (local_uv.x * oversample + local_uv.z + 0.5f) * uv_scale;
     float v = (local_uv.y * oversample + local_uv.w + 0.5f) * uv_scale;
     float w = overflow ? 0.0f : w_plane[gid] * w_scale + w_bias;
-    /* We want to compute e^(-2pi i*...) later. The pi is taken care of
-     * by sincospi, and we absorb the -2 here. It could also be handled
-     * on the host, but the overhead is tiny since we're outside the loop
-     * over sources.
-     */
-    u *= -2; v *= -2; w *= -2;
     Real2 ans[POLS];
     for (int i = 0; i < POLS; i++)
         ans[i] = make_Real2(0, 0);
@@ -62,8 +56,11 @@ void predict(
             for (int i = 0; i < batch; i++)
             {
                 float scaled_phase = l[i] * u + m[i] * v + n[i] * w;
+                // Manual range reduction, because __sincosf only works well near zero
+                scaled_phase -= roundf(scaled_phase);
+                scaled_phase *= -2 * (float) M_PI;
                 float2 K;
-                sincospif(scaled_phase, &K.y, &K.x);
+                __sincosf(scaled_phase, &K.y, &K.x);
                 for (int j = 0; j < POLS; j++)
                 {
                     Real pb = b[j][i];
