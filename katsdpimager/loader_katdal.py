@@ -9,10 +9,12 @@ conversion is needed.
 import argparse
 import logging
 import itertools
+import bisect
 import math
 import urllib
 
 import katdal
+from katdal.lazy_indexer import DaskLazyIndexer
 import numpy as np
 from astropy import units
 
@@ -222,15 +224,39 @@ class LoaderKatdal(loader_core.LoaderBase):
         # timestamps is a property, so ensure it's only evaluated once
         timestamps = self._file.timestamps
         baseline_idx = np.arange(len(self._baselines)).astype(np.int32)
-        for start in range(0, n_file_times, load_times):
+        start = 0
+        # Determine chunking scheme
+        if isinstance(self._file.vis, DaskLazyIndexer):
+            chunk_sizes = self._file.vis.dataset.chunks[0]
+            chunk_boundaries = [0] + list(itertools.accumulate(chunk_sizes))
+            if chunk_sizes and chunk_sizes[0] > load_times:
+                _logger.warning('Chunk size is %d dumps but only %d loaded at a time. '
+                                'Consider increasing --vis-load',
+                                chunk_sizes[0], load_times)
+        else:
+            chunk_boundaries = list(range(n_file_times + 1))  # No chunk info available
+        while start < n_file_times:
             end = min(n_file_times, start + load_times)
+            # Align to chunking if possible
+            aligned_end = chunk_boundaries[bisect.bisect(chunk_boundaries, end) - 1]
+            if aligned_end > start:
+                end = aligned_end
             # Load a chunk from the lazy indexer, then reindex to order
             # the baselines as desired.
+            _logger.debug('Loading dumps %d:%d', start, end)
             select = np.s_[start:end, start_channel:stop_channel, :]
             fix = np.s_[:, :, self._corr_product_permutation]
-            vis = self._file.vis[select][fix]
-            weights = self._file.weights[select][fix]
-            flags = self._file.flags[select][fix]
+            if isinstance(self._file.vis, DaskLazyIndexer):
+                vis, weights, flags = DaskLazyIndexer.get(
+                    [self._file.vis, self._file.weights, self._file.flags], select)
+            else:
+                vis = self._file.vis[select]
+                weights = self._file.weights[select]
+                flags = self._file.flags[select]
+            _logger.debug('Dumps %d:%d loaded', start, end)
+            vis = vis[fix]
+            weights = weights[fix]
+            flags = flags[fix]
             # Flag missing correlation products
             if self._missing_corr_products:
                 flags[:, :, self._missing_corr_products] = True
@@ -268,6 +294,7 @@ class LoaderKatdal(loader_core.LoaderBase):
                 feed_angle2=feed_angle2.reshape(-1),
                 progress=end,
                 total=n_file_times)
+            start = end
 
     def sky_model(self):
         try:
