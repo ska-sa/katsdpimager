@@ -427,8 +427,15 @@ void visibility_collector<P>::add_impl2(
         {
             if (baselines[i] < 0)
                 continue;   // autocorrelation
-            if (weights.col(i).cwiseEqual(0.0f).all())
-                continue;   // zero weights on all polarisations
+            if (weights.col(i).cwiseEqual(0.0f).any())
+            {
+                /* Discard visibilities with zero weight on any polarisation.
+                 * Zero weights generally indicates flagging, and if any
+                 * polarisation if flagged then at least one of the inputs is
+                 * contaminated and so no Stokes parameters will be clean.
+                 */
+                continue;
+            }
             if (buffer_size == buffer_capacity)
                 compress();
 
