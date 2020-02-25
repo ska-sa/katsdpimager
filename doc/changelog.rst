@@ -3,7 +3,7 @@ Changelog
 
 .. rubric:: 1.1
 
-- Use direction prediction for the measurement equation, rather than FFT and
+- Use direct prediction for the measurement equation, rather than FFT and
   degridding. This could potentially be slightly more accurate, although the
   images are not noticeably different. The old behaviour can be enabled with
   ``--degrid``, which could be faster if there are very large numbers of CLEAN
