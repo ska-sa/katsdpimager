@@ -139,6 +139,10 @@ class Imaging(accel.OperationSequence):
         # needed at the start of the minor cycles (it is small though).
         super().__init__(
             template.command_queue, operations, compounds, allocator=allocator)
+        # dirty_to_psf swaps the dirty and PSF images, so they need to have
+        # compatible padding.
+        for x, y in zip(self.slots['dirty'].dimensions, self.slots['psf'].dimensions):
+            x.link(y)
 
     def __call__(self, **kwargs):
         raise NotImplementedError()
