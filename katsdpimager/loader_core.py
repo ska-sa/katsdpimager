@@ -160,7 +160,7 @@ class LoaderBase:
         raise NotImplementedError('Abstract base class')
 
     def sky_model(self):
-        """Get the stored sky model, if any
+        """Get the stored sky model, if any.
 
         Returns
         -------
@@ -174,9 +174,21 @@ class LoaderBase:
         """
         return sky_model.NoSkyModelError('This input format does not support sky models')
 
+    def extra_fits_headers(self):
+        """Get loader-specific FITS headers to add to the output.
+
+        Returns
+        -------
+        headers : dict
+            Extra FITS headers to insert into output files. The headers are passed
+            to :py:class:`astropy.io.fits.Header`, so for example the value can be
+            a (value, comment) tuple.
+        """
+        return {}
+
     @property
     def raw_data(self):
-        """Return a handle to the the underlying class-specific data set"""
+        """Return a handle to the the underlying class-specific data set."""
         raise NotImplementedError('Abstract base class')
 
     def close(self):

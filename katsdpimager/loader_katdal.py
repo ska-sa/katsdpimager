@@ -305,6 +305,14 @@ class LoaderKatdal(loader_core.LoaderBase):
         return sky_model.KatpointSkyModel(sky_model.catalogue_from_telstate(
             source.telstate, source.capture_block_id, None, self._target))
 
+    def extra_fits_headers(self):
+        headers = {
+            'OBJECT': self._target.name
+        }
+        if self._file.observer:
+            headers['OBSERVER'] = self._file.observer
+        return headers
+
     @property
     def raw_data(self):
         return self._file

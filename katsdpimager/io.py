@@ -5,6 +5,7 @@ import logging
 import numpy as np
 from astropy import units
 import astropy.io.fits as fits
+from astropy.time import Time
 
 import katsdpimager.polarization as polarization
 
@@ -114,6 +115,10 @@ def write_fits_image(dataset, image, image_parameters, filename, channel,
     if bunit is not None:
         header['BUNIT'] = bunit
     header['ORIGIN'] = 'katsdpimager'
+    header['TIMESYS'] = 'UTC'
+    header['DATE'] = Time.now().utc.isot
+    header['SPECSYS'] = 'TOPOCENT'
+    # SSYSOBS is not needed because it defaults to TOPOCENT
 
     # Transformation from pixel coordinates to intermediate world coordinates,
     # which are taken to be l, m coordinates. The reference point is currently
@@ -153,6 +158,8 @@ def write_fits_image(dataset, image, image_parameters, filename, channel,
         header['BMIN'] = minor.to(units.deg).value
         header['BPA'] = beam.theta.to(units.deg).value
     _fits_polarizations(header, 3, image_parameters.polarizations)
+
+    header.update(dataset.extra_fits_headers())
 
     # l axis is reversed, because RA increases right-to-left.
     # Explicitly converting to big-endian has two advantages:
