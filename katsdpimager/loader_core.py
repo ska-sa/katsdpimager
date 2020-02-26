@@ -177,6 +177,11 @@ class LoaderBase:
     def extra_fits_headers(self):
         """Get loader-specific FITS headers to add to the output.
 
+        This is only called after iterating over the data with
+        :meth:`data_iter`, so it is possible for :meth:`data_iter` to compute
+        data that will be used here. However, note that when :opt:`--vis-limit`
+        is specified the data iterator will be closed early.
+
         Returns
         -------
         headers : dict

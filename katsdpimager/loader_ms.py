@@ -16,6 +16,20 @@ import katsdpimager.loader_core
 _logger = logging.getLogger(__name__)
 
 
+# Map casacore MFrequency::Types enum (used in MEAS_FREQ_REF column) to FITS reference frames
+_MEAS_FREQ_REF_MAP = {
+    0: 'SOURCE',        # REST in casacore
+    1: 'LSRK',
+    2: 'LSRD',
+    3: 'BARYCENT',
+    4: 'GEOCENTR',
+    5: 'TOPOCENT',
+    6: 'GALACTOC',
+    7: 'LOCALGRP',
+    8: 'CMBDIPOL'
+}
+
+
 def _get(table, name, data, casacore_units=None, astropy_units=None,
          measinfo_type=None, measinfo_ref=None):
     """Apply scaling to data loaded from a column. Scaling is done manually
@@ -277,6 +291,7 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             self._antenna_angle = units.Quantity(antenna_angle)
         else:
             self._antenna_angle = None
+        self._average_time = None     # Will be set by data_iter
 
     @classmethod
     def match(cls, filename):
@@ -309,6 +324,9 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
     def has_feed_angles(self):
         return self._feed_angle_correction
 
+    def extra_fits_headers(self):
+        return {}     # TODO
+
     def data_iter(self, start_channel, stop_channel, max_chunk_vis=None):
         if max_chunk_vis is None:
             max_chunk_vis = self._main.nrows()
@@ -329,6 +347,8 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         # rather than the pole itself, because the transformation to AzEl is
         # not rigid (does not preserve great circles).
         pole = pointing.directional_offset_by(0 * units.rad, 1e-5 * units.rad)
+        time_sum = 0.0
+        time_count = 0
         for start in range(0, self._main.nrows(), max_chunk_rows):
             end = min(self._main.nrows(), start + max_chunk_rows)
             nrows = end - start
@@ -347,12 +367,18 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
                                    start, nrows, 'Jy', units.Jy)[valid, ...]
             feed_angle1 = None
             feed_angle2 = None
+            time_full = _getcol(self._main, 'TIME_CENTROID', start, nrows, 's', None,
+                                'epoch', 'UTC')[valid, ...]
+            # Each time will be repeated per baseline, but we do not need to repeat all the
+            # calculations for each time. Extract just the unique times.
+            time, inverse = np.unique(time_full, return_inverse=True)
+            time_sum += np.sum(time)
+            time_count += len(time)
+            # Update average time as we go, in case the caller doesn't exhaust the generator
+            average_time = time_sum / time_count
+            self._average_time = astropy.time.Time(
+                average_time / 86400.0, format='mjd', scale='utc')
             if self._feed_angle_correction:
-                time_full = _getcol(self._main, 'TIME_CENTROID', start, nrows, 's', None,
-                                    'epoch', 'UTC')[valid, ...]
-                # Each time will be repeated per baseline, but we do not need to repeat all the
-                # calculations for each time. Extract just the unique times.
-                time, inverse = np.unique(time_full, return_inverse=True)
                 # Convert time from MJD seconds to MJD. We do this here rather
                 # than by passing 'd' to _getcol, because not all measurement sets
                 # specify the units and we want to assume seconds if not specified.

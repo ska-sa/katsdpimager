@@ -117,8 +117,8 @@ def write_fits_image(dataset, image, image_parameters, filename, channel,
     header['ORIGIN'] = 'katsdpimager'
     header['TIMESYS'] = 'UTC'
     header['DATE'] = Time.now().utc.isot
-    header['SPECSYS'] = 'TOPOCENT'
-    # SSYSOBS is not needed because it defaults to TOPOCENT
+    header['DATE-OBS'] = dataset.start_time().utc.isot
+    header['DATE-AVG'] = dataset.average_time().utc.isot
 
     # Transformation from pixel coordinates to intermediate world coordinates,
     # which are taken to be l, m coordinates. The reference point is currently

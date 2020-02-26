@@ -17,6 +17,7 @@ import katdal
 from katdal.lazy_indexer import DaskLazyIndexer
 import numpy as np
 from astropy import units
+from astropy.time import Time
 
 from . import polarization, loader_core, sky_model
 
@@ -42,6 +43,11 @@ def _unique(seq):
     """
     data = sorted(seq)
     return [key for key, group in itertools.groupby(data)]
+
+
+def _timestamp_to_fits(timestamp):
+    """Convert :class:`katdal.Timestamp` or UNIX time to FITS header format."""
+    return Time(float(timestamp), format='unix').utc.isot
 
 
 class LoaderKatdal(loader_core.LoaderBase):
@@ -306,11 +312,35 @@ class LoaderKatdal(loader_core.LoaderBase):
             source.telstate, source.capture_block_id, None, self._target))
 
     def extra_fits_headers(self):
+        timestamps = self._file.timestamps
+        if not len(timestamps):
+            avg = self._file.start_time.secs
+        else:
+            avg = np.mean(timestamps)
+            return Time(avg, format='unix', scale='utc')
+
         headers = {
-            'OBJECT': self._target.name
+            'OBJECT': (self._target.name, self._target.description),
+            'SPECSYS': 'TOPOCENT',
+            # SSYSOBS is not needed because it defaults to TOPOCENT
+            'DATE-OBS': _timestamp_to_fits(self._file.start_time),
+            'DATE-AVG': _timestamp_to_fits(avg),
+            'EXPOSURE': len(timestamps) * f.dump_period
         }
         if self._file.observer:
             headers['OBSERVER'] = self._file.observer
+
+        try:
+            array_ant = self._file.sensors['Antennas/array/antenna'][0]
+            array_pos = array_ant.position_ecef
+            headers.update({
+                'OBSGEO-X': array_pos[0],
+                'OBSGEO-Y': array_pos[1],
+                'OBSGEO-Z': array_pos[2]
+            })
+        except (KeyError, IndexError):
+            pass
+
         return headers
 
     @property
