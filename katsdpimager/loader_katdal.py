@@ -319,7 +319,7 @@ class LoaderKatdal(loader_core.LoaderBase):
             avg = np.mean(timestamps)
 
         headers = {
-            'OBJECT': self._target.name
+            'OBJECT': self._target.name,
             'SPECSYS': 'TOPOCENT',
             # SSYSOBS is not needed because it defaults to TOPOCENT
             'DATE-OBS': _timestamp_to_fits(self._file.start_time),
