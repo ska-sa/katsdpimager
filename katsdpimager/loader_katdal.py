@@ -317,21 +317,20 @@ class LoaderKatdal(loader_core.LoaderBase):
             avg = self._file.start_time.secs
         else:
             avg = np.mean(timestamps)
-            return Time(avg, format='unix', scale='utc')
 
         headers = {
-            'OBJECT': (self._target.name, self._target.description),
+            'OBJECT': self._target.name
             'SPECSYS': 'TOPOCENT',
             # SSYSOBS is not needed because it defaults to TOPOCENT
             'DATE-OBS': _timestamp_to_fits(self._file.start_time),
             'DATE-AVG': _timestamp_to_fits(avg),
-            'EXPOSURE': len(timestamps) * f.dump_period
+            'EXPOSURE': len(timestamps) * self._file.dump_period
         }
         if self._file.observer:
             headers['OBSERVER'] = self._file.observer
 
         try:
-            array_ant = self._file.sensors['Antennas/array/antenna'][0]
+            array_ant = self._file.sensor['Antennas/array/antenna'][0]
             array_pos = array_ant.position_ecef
             headers.update({
                 'OBSGEO-X': array_pos[0],

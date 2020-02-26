@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+from contextlib import closing
 
 import casacore.tables
 import casacore.quanta
@@ -292,6 +293,7 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         else:
             self._antenna_angle = None
         self._average_time = None     # Will be set by data_iter
+        self._observation_ids = set()
 
     @classmethod
     def match(cls, filename):
@@ -325,7 +327,39 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         return self._feed_angle_correction
 
     def extra_fits_headers(self):
-        return {}     # TODO
+        obsgeo = np.mean(self.antenna_positions().to_value(units.m), axis=0)
+        obsgeo_comment = 'Average of antenna positions'
+        headers = {
+            'OBSGEO-X': (obsgeo[0], obsgeo_comment),
+            'OBSGEO-Y': (obsgeo[1], obsgeo_comment),
+            'OBSGEO-Z': (obsgeo[2], obsgeo_comment)
+        }
+
+        if self._average_time is not None:
+            headers['DATE-AVG'] = self._average_time.utc.isot
+
+        meas_freq_ref = self._spectral_window.getcell('MEAS_FREQ_REF', self._spectral_window_id)
+        if meas_freq_ref in _MEAS_FREQ_REF_MAP:
+            headers['SPECSYS'] = _MEAS_FREQ_REF_MAP[meas_freq_ref]
+
+        if len(self._observation_ids) == 1:
+            row = list(self._observation_ids)[0]
+            table = casacore.tables.table(self._main.getkeyword('OBSERVATION'), ack=False)
+            with closing(table):
+                time_range = _getcell(table, 'TIME_RANGE', row,
+                                      's', None, 'epoch', 'UTC')
+                observer = table.getcell('OBSERVER', row)
+                telescope = table.getcell('TELESCOPE_NAME', row)
+            start_time = astropy.time.Time(time_range[0] / 86400.0, format='mjd', scale='utc')
+            headers.update({
+                'DATE-OBS': start_time.utc.isot,
+                'TELESCOP': telescope,
+                'OBSERVER': observer
+            })
+        elif len(self._observation_ids) > 1:
+            _logger.warning('Multiple OBSERVATION_IDs; will not add FITS headers for observation')
+
+        return headers
 
     def data_iter(self, start_channel, stop_channel, max_chunk_vis=None):
         if max_chunk_vis is None:
@@ -357,10 +391,12 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             data_desc_id = _getcol(self._main, 'DATA_DESC_ID', start, nrows)
             antenna1 = _getcol(self._main, 'ANTENNA1', start, nrows)
             antenna2 = _getcol(self._main, 'ANTENNA2', start, nrows)
+            observation_id = _getcol(self._main, 'OBSERVATION_ID', start, nrows)
             valid = np.logical_not(flag_row)
             valid = np.logical_and(valid, field_id == self._field_id)
             valid = np.logical_and(valid, data_desc_id == self._data_desc_id)
             valid = np.logical_and(valid, antenna1 != antenna2)
+            self._observation_ids.update(observation_id)
             antenna1 = antenna1[valid]
             antenna2 = antenna2[valid]
             data = _getcolchannels(self._main, self._data_col, start_channel, stop_channel,
