@@ -8,8 +8,10 @@ from astropy.wcs import WCS
 import astropy.io.fits as fits
 import matplotlib
 matplotlib.use('Agg')     # noqa: E402
+import matplotlib.axes
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import katsdpsigproc.zscale as zscale
 
@@ -78,8 +80,12 @@ def write_movie(files, output_file, width=1024, height=768, fps=5.0):
             extent = [corners_data[0, 0], corners_data[1, 0],
                       corners_data[0, 1], corners_data[1, 1]]
             if not ax.images:
-                ax.imshow(data, origin='lower', cmap='afmhot', aspect='equal',
-                          vmin=vmin, vmax=vmax, extent=extent)
+                im = ax.imshow(data, origin='lower', cmap='afmhot', aspect='equal',
+                               vmin=vmin, vmax=vmax, extent=extent)
+                divider = make_axes_locatable(ax)
+                cax = divider.append_axes('right', pad='3%', size='5%', axes_class=matplotlib.axes.Axes)
+                cbar = fig.colorbar(im, cax=cax, orientation='vertical')
+                cbar.set_label('Jy/beam')
             else:
                 im = ax.images[0]
                 im.set_data(data)
