@@ -156,6 +156,8 @@ def write_fits_image(dataset, image, image_parameters, filename, channel,
         header['BMIN'] = minor.to(units.deg).value
         header['BPA'] = beam.theta.to(units.deg).value
     _fits_polarizations(header, 3, image_parameters.polarizations)
+    header['DATAMIN'] = float(np.nanmin(image))
+    header['DATAMAX'] = float(np.nanmax(image))
 
     header.update(dataset.extra_fits_headers())
 

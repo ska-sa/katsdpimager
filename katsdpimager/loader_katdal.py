@@ -121,6 +121,7 @@ class LoaderKatdal(loader_core.LoaderBase):
             raise ValueError('Subarray {} is out of range'.format(args.subarray))
         if args.spw < 0 or args.spw >= len(self._file.spectral_windows):
             raise ValueError('Spectral window {} is out of range'.format(args.spw))
+        self._spectral_window = self._file.spectral_windows[args.spw]
         target_idx = self._find_target(args.target)
         self._file.select(subarray=args.subarray, spw=args.spw,
                           targets=[target_idx], scans=['track'],
@@ -328,6 +329,8 @@ class LoaderKatdal(loader_core.LoaderBase):
         }
         if self._file.observer:
             headers['OBSERVER'] = self._file.observer
+        if self._spectral_window.product:
+            headers['INSTRUME'] = self._spectral_window.product
 
         try:
             array_ant = self._file.sensor['Antennas/array/antenna'][0]
