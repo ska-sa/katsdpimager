@@ -73,7 +73,7 @@ setup(
         'ms': ['python-casacore'],
         'katdal': ['katdal', 'scipy>=0.17'],
         'benchmark': ['katpoint'],
-        'pipeline': ['katsdpservices']
+        'pipeline': ['katsdpservices', 'matplotlib']
     },
     use_katversion=True,
     classifiers=[
