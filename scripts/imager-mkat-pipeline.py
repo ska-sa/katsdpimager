@@ -83,9 +83,9 @@ class Writer(frontend.Writer):
             with progress.step('Write {}'.format(description)):
                 io.write_fits_image(dataset, image, image_parameters, filename,
                                     channel, beam, bunit)
-            with progress.step('Write PNG file for {}'.format(description)):
+            with progress.step('Write PNG'):
                 render.write_image(filename, filename + '.png', width=5000, height=5000)
-            with progress.step('Write thumbname for {}'.format(description)):
+            with progress.step('Write thumbnail'):
                 render.write_image(filename, filename + '.tnail.png', width=500, height=500)
             with open(os.path.join(tmp_dir, 'metadata.json'), 'w') as f:
                 json.dump(metadata, f, allow_nan=False, indent=2)
