@@ -325,7 +325,8 @@ class LoaderKatdal(loader_core.LoaderBase):
             # SSYSOBS is not needed because it defaults to TOPOCENT
             'DATE-OBS': _timestamp_to_fits(self._file.start_time),
             'DATE-AVG': _timestamp_to_fits(avg),
-            'EXPOSURE': len(timestamps) * self._file.dump_period
+            'ONTIME': (len(timestamps) * self._file.dump_period,
+                       '[s] Time tracking the target')
         }
         if self._file.observer:
             headers['OBSERVER'] = self._file.observer
