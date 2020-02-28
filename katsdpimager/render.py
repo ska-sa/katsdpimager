@@ -28,12 +28,13 @@ def write_movie(files, output_file, width=1024, height=768, fps=5.0):
     ensuring that the frame is filled in all the images (with pixels
     clipped from the channels with a wider field of view).
 
-    Note that matplotlib currently uses ffmpeg (the program) to write a video.
+    Note that matplotlib currently uses ffmpeg (the program) to write a video,
+    so it needs to be installed.
 
     Parameters
     ----------
-    files : Sequence[Tuple[int, str]]
-        Pairs of channel number (for caption) and filename.
+    files : Sequence[Tuple[Optional[str], str]]
+        Pairs of caption and filename.
     output_file : str
         Output filename, including extension.
     width, height : int
@@ -43,14 +44,14 @@ def write_movie(files, output_file, width=1024, height=768, fps=5.0):
         Frames per second in the written video.
     """
     DPI = 64
-    # Load the last channel to get its WCS
+    # Load the last image to get its WCS
     with fits.open(files[-1][1]) as hdus:
         common_wcs = WCS(hdus[0])
         dims = (hdus[0].header['NAXIS1'], hdus[0].header['NAXIS2'])
     # Sample all the images to choose data bounds
     samples = []
     n_samples = 1000000 // len(files) + 1
-    for channel, filename in files:
+    for caption, filename in files:
         with fits.open(filename, memmap=True) as hdus:
             s = zscale.sample_image(hdus[0].data[0, 0], max_samples=n_samples, random_offsets=True)
             samples.append(s)
@@ -64,8 +65,8 @@ def write_movie(files, output_file, width=1024, height=768, fps=5.0):
     ax.set_xlim(-0.5, dims[0] - 0.5)
     ax.set_ylim(-0.5, dims[1] - 0.5)
 
-    def render_channel(channel_filename):
-        channel, filename = channel_filename
+    def render_channel(caption_filename):
+        caption, filename = caption_filename
         with fits.open(filename) as hdus:
             wcs = WCS(hdus[0])
             data = hdus[0].data[0, 0, :, :]
@@ -92,7 +93,10 @@ def write_movie(files, output_file, width=1024, height=768, fps=5.0):
                 im.set_extent(extent)
             freq = corners_world[0][3] * units.Unit(hdus[0].header['CUNIT4'])
             freq = freq.to(units.MHz)
-            ax.set_title(f'Channel {channel}, frequency {freq:.3f}')
+            if caption:
+                ax.set_title(f'{caption} ({freq:.3f})')
+            else:
+                ax.set_title(f'{freq:.3f}')
 
     ani = animation.FuncAnimation(fig, render_channel, files, cache_frame_data=False)
     ani.save(output_file, fps=fps)

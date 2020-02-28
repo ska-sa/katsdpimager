@@ -56,7 +56,7 @@ setup(
     url="https://github.com/ska-sa/katsdpimager/",
     packages=find_packages(),
     package_data={'': ['imager_kernels/*.mako', 'imager_kernels/*/*.mako']},
-    scripts=["scripts/imager.py", "scripts/imager-mkat-pipeline.py"],
+    scripts=["scripts/imager.py", "scripts/imager-mkat-pipeline.py", "scripts/fits-video.py"],
     ext_package='katsdpimager',
     ext_modules=extensions,
     python_requires='>=3.5',       # Somewhat arbitrary choice; only tested with 3.6+
