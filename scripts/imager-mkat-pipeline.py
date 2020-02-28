@@ -14,7 +14,7 @@ import katsdpservices
 import katdal
 from katsdpsigproc import accel
 
-from katsdpimager import frontend, loader, io, progress
+from katsdpimager import frontend, loader, io, progress, render
 
 
 logger = logging.getLogger()
@@ -71,6 +71,8 @@ class Writer(frontend.Writer):
         metadata = {
             **self.common_metadata,
             'FITSImageFilename': [base_filename],
+            'PNGImageFileName': [base_filename + '.png'],
+            'PNGThumbNailFileName': [base_filename + '.tnail.png'],
             'CenterFrequency': freq,
             'MinFreq': freq - 0.5 * channel_width,
             'MaxFreq': freq + 0.5 * channel_width,
@@ -81,6 +83,10 @@ class Writer(frontend.Writer):
             with progress.step('Write {}'.format(description)):
                 io.write_fits_image(dataset, image, image_parameters, filename,
                                     channel, beam, bunit)
+            with progress.step('Write PNG file for {}'.format(description)):
+                render.write_image(filename, filename + '.png', width=5000, height=5000)
+            with progress.step('Write thumbname for {}'.format(description)):
+                render.write_image(filename, filename + '.tnail.png', width=500, height=500)
             with open(os.path.join(tmp_dir, 'metadata.json'), 'w') as f:
                 json.dump(metadata, f, allow_nan=False, indent=2)
             os.rename(tmp_dir, output_dir)
