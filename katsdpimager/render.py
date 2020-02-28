@@ -43,7 +43,7 @@ def write_movie(files, output_file, width=1024, height=768, fps=5.0):
     fps : float
         Frames per second in the written video.
     """
-    DPI = 64
+    DPI = 96
     # Load the last image to get its WCS
     with fits.open(files[-1][1]) as hdus:
         common_wcs = WCS(hdus[0])
