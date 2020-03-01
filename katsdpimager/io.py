@@ -7,6 +7,7 @@ from astropy import units
 import astropy.io.fits as fits
 from astropy.time import Time
 
+import katsdpimager
 import katsdpimager.polarization as polarization
 
 
@@ -115,6 +116,7 @@ def write_fits_image(dataset, image, image_parameters, filename, channel,
     if bunit is not None:
         header['BUNIT'] = bunit
     header['ORIGIN'] = 'katsdpimager'
+    header['HISTORY'] = f'Created by katsdpimager {katsdpimager.__version__}'
     header['TIMESYS'] = 'UTC'
     header['DATE'] = Time.now().utc.isot
 
