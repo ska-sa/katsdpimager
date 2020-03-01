@@ -327,7 +327,7 @@ class LoaderKatdal(loader_core.LoaderBase):
         headers['DATE-OBS'] = _timestamp_to_fits(self._file.start_time)
         headers['DATE-AVG'] = _timestamp_to_fits(avg)
         headers['ONTIME'] = (len(timestamps) * self._file.dump_period,
-                            '[s] Time tracking the target')
+                             '[s] Time tracking the target')
         if self._file.observer:
             headers['OBSERVER'] = self._file.observer
         if self._spectral_window.product:
