@@ -18,6 +18,7 @@ from katdal.lazy_indexer import DaskLazyIndexer
 import numpy as np
 from astropy import units
 from astropy.time import Time
+import astropy.io.fits
 
 from . import polarization, loader_core, sky_model
 
@@ -313,21 +314,20 @@ class LoaderKatdal(loader_core.LoaderBase):
             source.telstate, source.capture_block_id, None, self._target))
 
     def extra_fits_headers(self):
+        headers = astropy.io.fits.Header()
         timestamps = self._file.timestamps
         if not len(timestamps):
             avg = self._file.start_time.secs
         else:
             avg = np.mean(timestamps)
 
-        headers = {
-            'OBJECT': self._target.name,
-            'SPECSYS': 'TOPOCENT',
-            # SSYSOBS is not needed because it defaults to TOPOCENT
-            'DATE-OBS': _timestamp_to_fits(self._file.start_time),
-            'DATE-AVG': _timestamp_to_fits(avg),
-            'ONTIME': (len(timestamps) * self._file.dump_period,
-                       '[s] Time tracking the target')
-        }
+        headers['OBJECT'] = self._target.name
+        headers['SPECSYS'] = 'TOPOCENT'
+        # SSYSOBS is not needed because it defaults to TOPOCENT
+        headers['DATE-OBS'] = _timestamp_to_fits(self._file.start_time)
+        headers['DATE-AVG'] = _timestamp_to_fits(avg)
+        headers['ONTIME'] = (len(timestamps) * self._file.dump_period,
+                            '[s] Time tracking the target')
         if self._file.observer:
             headers['OBSERVER'] = self._file.observer
         if self._spectral_window.product:
@@ -336,12 +336,19 @@ class LoaderKatdal(loader_core.LoaderBase):
         try:
             array_ant = self._file.sensor['Antennas/array/antenna'][0]
             array_pos = array_ant.position_ecef
-            headers.update({
-                'OBSGEO-X': array_pos[0],
-                'OBSGEO-Y': array_pos[1],
-                'OBSGEO-Z': array_pos[2]
-            })
+            headers['OBSGEO-X'] = array_pos[0]
+            headers['OBSGEO-Y'] = array_pos[1]
+            headers['OBSGEO-Z'] = array_pos[2]
         except (KeyError, IndexError):
+            pass
+
+        try:
+            headers['HISTORY'] = f'Capture block id: {self._file.source.capture_block_id}'
+        except AttributeError:
+            pass
+        try:
+            headers['HISTORY'] = f'Stream name: {self._file.source.stream_name}'
+        except AttributeError:
             pass
 
         return headers

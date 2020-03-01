@@ -10,6 +10,7 @@ import numpy as np
 from astropy import units
 import astropy.time
 import astropy.coordinates
+import astropy.io.fits
 
 import katsdpimager.loader_core
 
@@ -327,13 +328,12 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         return self._feed_angle_correction
 
     def extra_fits_headers(self):
+        headers = astropy.io.fits.Header()
         obsgeo = np.mean(self.antenna_positions().to_value(units.m), axis=0)
         obsgeo_comment = 'Average of antenna positions'
-        headers = {
-            'OBSGEO-X': (obsgeo[0], obsgeo_comment),
-            'OBSGEO-Y': (obsgeo[1], obsgeo_comment),
-            'OBSGEO-Z': (obsgeo[2], obsgeo_comment)
-        }
+        headers['OBSGEO-X'] = (obsgeo[0], obsgeo_comment)
+        headers['OBSGEO-Y'] = (obsgeo[1], obsgeo_comment)
+        headers['OBSGEO-Z'] = (obsgeo[2], obsgeo_comment)
 
         if self._average_time is not None:
             headers['DATE-AVG'] = self._average_time.utc.isot
@@ -351,11 +351,9 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
                 observer = table.getcell('OBSERVER', row)
                 telescope = table.getcell('TELESCOPE_NAME', row)
             start_time = astropy.time.Time(time_range[0] / 86400.0, format='mjd', scale='utc')
-            headers.update({
-                'DATE-OBS': start_time.utc.isot,
-                'TELESCOP': telescope,
-                'OBSERVER': observer
-            })
+            headers['DATE-OBS'] = start_time.utc.isot
+            headers['TELESCOP'] = telescope
+            headers['OBSERVER'] = observer
         elif len(self._observation_ids) > 1:
             _logger.warning('Multiple OBSERVATION_IDs; will not add FITS headers for observation')
 

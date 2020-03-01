@@ -3,6 +3,7 @@
 """Base classes used by loader modules"""
 import numpy as np
 from astropy import units
+import astropy.io.fits
 
 from . import parameters, sky_model
 
@@ -184,12 +185,12 @@ class LoaderBase:
 
         Returns
         -------
-        headers : dict
+        headers : astropy.io.fits.Header
             Extra FITS headers to insert into output files. The headers are passed
             to :py:class:`astropy.io.fits.Header`, so for example the value can be
             a (value, comment) tuple.
         """
-        return {}
+        return astropy.io.fits.Header()
 
     @property
     def raw_data(self):
