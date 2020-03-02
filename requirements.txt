@@ -3,8 +3,9 @@ appdirs                   # via katsdpsigproc
 argparse                  # via python-casacore
 astropy==3.1.2
 botocore                  # for S3 authentication in katdal
-chardet                   # via requests
 certifi                   # via requests
+chardet                   # via requests
+cityhash                  # via katdal
 dask                      # via katdal
 decorator                 # via pycuda, katsdpsigproc
 defusedxml                # via katdal
