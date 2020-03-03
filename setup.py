@@ -59,7 +59,7 @@ setup(
     scripts=["scripts/imager.py", "scripts/imager-mkat-pipeline.py"],
     ext_package='katsdpimager',
     ext_modules=extensions,
-    python_requires='>=3.5',       # Somewhat arbitrary choice; only tested with 3.6+
+    python_requires='>=3.6',
     install_requires=[
         'numpy>=1.10.0', 'katsdpsigproc', 'katpoint', 'astropy>=1.3', 'progress',
         'pycuda', 'scikit-cuda', 'h5py', 'ansicolors'

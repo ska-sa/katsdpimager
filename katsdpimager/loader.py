@@ -23,7 +23,8 @@ def data_iter(dataset, vis_limit, vis_load, start_channel, stop_channel):
     command line.
     """
     N = vis_limit
-    for chunk in dataset.data_iter(start_channel, stop_channel, vis_load):
+    it = dataset.data_iter(start_channel, stop_channel, vis_load)
+    for chunk in it:
         if N is not None:
             if N < len(chunk['uvw']):
                 for key in ['uvw', 'baselines']:
@@ -37,6 +38,7 @@ def data_iter(dataset, vis_limit, vis_load, start_channel, stop_channel):
         if N is not None:
             N -= len(chunk['uvw'])
             if N == 0:
+                it.close()
                 return
 
 
