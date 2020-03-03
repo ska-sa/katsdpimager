@@ -1,7 +1,5 @@
 """Render images using matplotlib."""
 
-import logging
-
 import numpy as np
 from astropy import units
 from astropy.wcs import WCS
