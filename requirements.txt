@@ -8,7 +8,6 @@ chardet                   # via requests
 cityhash                  # via katdal
 dask                      # via katdal
 decorator                 # via pycuda, katsdpsigproc
-defusedxml                # via katdal
 docutils                  # via botocore
 future                    # via katdal, katpoint
 futures                   # via katsdpsigsproc
