@@ -3,7 +3,7 @@ ARG KATSDPDOCKERBASE_REGISTRY=sdp-docker-registry.kat.ac.za:5000
 FROM $KATSDPDOCKERBASE_REGISTRY/docker-base-gpu-build as build
 
 # Build ffmpeg from source. The Ubuntu package has all sorts of dependencies
-# (including X11) that we're rather avoid. We can also build a minimal ffmpeg
+# (including X11) that we'd rather avoid. We can also build a minimal ffmpeg
 # that just does the encoding we want.
 USER root
 RUN apt-get update && apt-get -y install nasm libx264-dev
