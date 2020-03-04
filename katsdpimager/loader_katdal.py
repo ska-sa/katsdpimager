@@ -17,6 +17,8 @@ import katdal
 from katdal.lazy_indexer import DaskLazyIndexer
 import numpy as np
 from astropy import units
+from astropy.time import Time
+import astropy.io.fits
 
 from . import polarization, loader_core, sky_model
 
@@ -42,6 +44,11 @@ def _unique(seq):
     """
     data = sorted(seq)
     return [key for key, group in itertools.groupby(data)]
+
+
+def _timestamp_to_fits(timestamp):
+    """Convert :class:`katdal.Timestamp` or UNIX time to FITS header format."""
+    return Time(float(timestamp), format='unix').utc.isot
 
 
 class LoaderKatdal(loader_core.LoaderBase):
@@ -115,6 +122,7 @@ class LoaderKatdal(loader_core.LoaderBase):
             raise ValueError('Subarray {} is out of range'.format(args.subarray))
         if args.spw < 0 or args.spw >= len(self._file.spectral_windows):
             raise ValueError('Spectral window {} is out of range'.format(args.spw))
+        self._spectral_window = self._file.spectral_windows[args.spw]
         target_idx = self._find_target(args.target)
         self._file.select(subarray=args.subarray, spw=args.spw,
                           targets=[target_idx], scans=['track'],
@@ -304,6 +312,46 @@ class LoaderKatdal(loader_core.LoaderBase):
 
         return sky_model.KatpointSkyModel(sky_model.catalogue_from_telstate(
             source.telstate, source.capture_block_id, None, self._target))
+
+    def extra_fits_headers(self):
+        headers = astropy.io.fits.Header()
+        timestamps = self._file.timestamps
+        if not len(timestamps):
+            avg = self._file.start_time.secs
+        else:
+            avg = np.mean(timestamps)
+
+        headers['OBJECT'] = self._target.name
+        headers['SPECSYS'] = 'TOPOCENT'
+        # SSYSOBS is not needed because it defaults to TOPOCENT
+        headers['DATE-OBS'] = _timestamp_to_fits(self._file.start_time)
+        headers['DATE-AVG'] = _timestamp_to_fits(avg)
+        headers['ONTIME'] = (len(timestamps) * self._file.dump_period,
+                             '[s] Time tracking the target')
+        if self._file.observer:
+            headers['OBSERVER'] = self._file.observer
+        if self._spectral_window.product:
+            headers['INSTRUME'] = self._spectral_window.product
+
+        try:
+            array_ant = self._file.sensor['Antennas/array/antenna'][0]
+            array_pos = array_ant.position_ecef
+            headers['OBSGEO-X'] = array_pos[0]
+            headers['OBSGEO-Y'] = array_pos[1]
+            headers['OBSGEO-Z'] = array_pos[2]
+        except (KeyError, IndexError):
+            pass
+
+        try:
+            headers['HISTORY'] = f'Capture block id: {self._file.source.capture_block_id}'
+        except AttributeError:
+            pass
+        try:
+            headers['HISTORY'] = f'Stream name: {self._file.source.stream_name}'
+        except AttributeError:
+            pass
+
+        return headers
 
     @property
     def raw_data(self):

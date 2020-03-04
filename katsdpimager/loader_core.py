@@ -3,6 +3,7 @@
 """Base classes used by loader modules"""
 import numpy as np
 from astropy import units
+import astropy.io.fits
 
 from . import parameters, sky_model
 
@@ -160,7 +161,7 @@ class LoaderBase:
         raise NotImplementedError('Abstract base class')
 
     def sky_model(self):
-        """Get the stored sky model, if any
+        """Get the stored sky model, if any.
 
         Returns
         -------
@@ -174,9 +175,26 @@ class LoaderBase:
         """
         return sky_model.NoSkyModelError('This input format does not support sky models')
 
+    def extra_fits_headers(self):
+        """Get loader-specific FITS headers to add to the output.
+
+        This is only called after iterating over the data with
+        :meth:`data_iter`, so it is possible for :meth:`data_iter` to compute
+        data that will be used here. However, note that when :opt:`--vis-limit`
+        is specified the data iterator will be closed early.
+
+        Returns
+        -------
+        headers : astropy.io.fits.Header
+            Extra FITS headers to insert into output files. The headers are passed
+            to :py:class:`astropy.io.fits.Header`, so for example the value can be
+            a (value, comment) tuple.
+        """
+        return astropy.io.fits.Header()
+
     @property
     def raw_data(self):
-        """Return a handle to the the underlying class-specific data set"""
+        """Return a handle to the the underlying class-specific data set."""
         raise NotImplementedError('Abstract base class')
 
     def close(self):
