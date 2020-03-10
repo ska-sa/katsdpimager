@@ -16,6 +16,12 @@ six
 snowballstemmer
 sphinx-rtd-theme
 sphinx
+sphinxcontrib-applehelp
+sphinxcontrib-devhelp
+sphinxcontrib-htmlhelp
+sphinxcontrib-jsmath
+sphinxcontrib-qthelp
+sphinxcontrib-serializinghtml
 sphinxcontrib-tikz==0.4.6
 sphinxcontrib-websupport
 urllib3
