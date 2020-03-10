@@ -22,6 +22,6 @@ sphinxcontrib-htmlhelp
 sphinxcontrib-jsmath
 sphinxcontrib-qthelp
 sphinxcontrib-serializinghtml
-sphinxcontrib-tikz==0.4.6
+sphinxcontrib-tikz==0.4.8
 sphinxcontrib-websupport
 urllib3
