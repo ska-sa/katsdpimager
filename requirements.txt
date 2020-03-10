@@ -11,7 +11,6 @@ dask                      # via katdal
 decorator                 # via pycuda, katsdpsigproc
 docutils                  # via botocore
 future                    # via katdal, katpoint
-futures                   # via katsdpsigsproc
 h5py                      # via katdal
 idna                      # via requests
 jmespath                  # via botocore
