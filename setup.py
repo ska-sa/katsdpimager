@@ -56,7 +56,7 @@ setup(
     url="https://github.com/ska-sa/katsdpimager/",
     packages=find_packages(),
     package_data={'': ['imager_kernels/*.mako', 'imager_kernels/*/*.mako']},
-    scripts=["scripts/imager.py", "scripts/imager-mkat-pipeline.py"],
+    scripts=["scripts/imager.py", "scripts/imager-mkat-pipeline.py", "scripts/fits-video.py"],
     ext_package='katsdpimager',
     ext_modules=extensions,
     python_requires='>=3.6',
@@ -73,7 +73,7 @@ setup(
         'ms': ['python-casacore'],
         'katdal': ['katdal', 'scipy>=0.17'],
         'benchmark': ['katpoint'],
-        'pipeline': ['katsdpservices']
+        'pipeline': ['katsdpservices', 'matplotlib']
     },
     use_katversion=True,
     classifiers=[

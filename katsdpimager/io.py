@@ -84,7 +84,7 @@ def _fits_polarizations(header, axis, polarizations):
 
 
 def write_fits_image(dataset, image, image_parameters, filename, channel,
-                     beam=None, bunit='JY/BEAM'):
+                     beam=None, bunit='Jy/beam'):
     """Write an image to a FITS file.
 
     Parameters
