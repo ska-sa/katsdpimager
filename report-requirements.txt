@@ -1,9 +1,10 @@
 aplpy==2.0.3
-astropy==3.1.2            # via aplpy
+astropy                   # via aplpy
 astropy-healpix==0.4      # via reproject
 cycler                    # via matplotlib
-cython                    # via pyregion
+cython==0.29.15           # via pyregion
 imageio==2.5.0            # via scikit-image
+kiwisolver                # via matplotlib
 mako
 markupsafe                # via mako
 matplotlib
