@@ -221,7 +221,9 @@ class LoaderKatdal(loader_core.LoaderBase):
         return True
 
     def data_iter(self, start_channel, stop_channel, max_chunk_vis=None):
+        self._file.select(reset='F')
         n_file_times, n_file_chans, n_file_cp = self._file.shape
+        self._file.select(channels=np.s_[start_channel : stop_channel])
         assert 0 <= start_channel < stop_channel <= n_file_chans
         n_chans = stop_channel - start_channel
         n_pols = len(self._polarizations)
@@ -252,7 +254,7 @@ class LoaderKatdal(loader_core.LoaderBase):
             # Load a chunk from the lazy indexer, then reindex to order
             # the baselines as desired.
             _logger.debug('Loading dumps %d:%d', start, end)
-            select = np.s_[start:end, start_channel:stop_channel, :]
+            select = np.s_[start:end, :, :]
             fix = np.s_[:, :, self._corr_product_permutation]
             if isinstance(self._file.vis, DaskLazyIndexer):
                 vis, weights, flags = DaskLazyIndexer.get(
