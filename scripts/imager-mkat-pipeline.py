@@ -7,6 +7,7 @@ import shutil
 import json
 from datetime import datetime
 from contextlib import closing
+import gc
 
 from astropy import units
 from astropy.coordinates import Angle
@@ -96,6 +97,11 @@ class Writer(frontend.Writer):
             # Make a best effort to clean up
             shutil.rmtree(tmp_dir, ignore_errors=True)
             raise
+        finally:
+            # Something in the PNG writing causes memory to not get freed,
+            # and the garbage collector is not kicking in properly on its
+            # own.
+            gc.collect()
 
     def write_fits_grid(self, name, description, fftshift, grid_data, image_parameters, channel):
         pass
