@@ -11,7 +11,7 @@ from astropy import units
 import numpy as np
 
 import katsdpimager.types
-from . import clean, weight
+from . import clean, weight, primary_beam
 
 
 def is_smooth(x):
@@ -35,8 +35,9 @@ class ArrayParameters:
 
 
 class ImageParameters:
-    """Physical properties associated with an image. At present, only
-    single-frequency images are supported.
+    """Physical properties associated with an image.
+
+    At present, only single-frequency images are supported.
 
     Parameters
     ----------
@@ -214,9 +215,11 @@ class GridParameters:
         Number of UV cells corresponding to the combined W+antialias kernel.
     degrid : bool, optional
         If true, use degridding, otherwise use direct prediction.
+    beams : :class:`primary_beam.BeamModelSet`, optional
+        Primary beam models for correction.
     """
     def __init__(self, antialias_width, oversample, image_oversample,
-                 w_slices, w_planes, max_w, kernel_width, degrid=False):
+                 w_slices, w_planes, max_w, kernel_width, degrid=False, beams=None):
         if max_w.unit.physical_type != 'length':
             raise TypeError('max W must be specified as a length')
         self.antialias_width = antialias_width
@@ -227,9 +230,11 @@ class GridParameters:
         self.max_w = max_w
         self.kernel_width = kernel_width
         self.degrid = degrid
+        self.beams = beams
 
     def __str__(self):
         prediction = 'degridding' if self.degrid else 'direct'
+        beam_correction = 'yes' if self.beams else 'no'
         return """\
 Grid oversampling: {self.oversample}
 Image oversample: {self.image_oversample}
@@ -238,7 +243,8 @@ W planes per slice: {self.w_planes}
 Maximum W: {self.max_w:.3f}
 Antialiasing support: {self.antialias_width} cells
 Kernel support: {self.kernel_width} cells
-Prediction: {prediction}""".format(self=self, prediction=prediction)
+Prediction: {prediction}
+Primary beam correction: {beam_correction}""".format(**locals())
 
 
 class CleanParameters:
