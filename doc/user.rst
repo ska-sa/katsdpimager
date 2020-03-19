@@ -118,6 +118,9 @@ Input selection options
            only needed if there were multiple continuum imager configurations
            run on this data set.
 
+   The fluxes must be *apparent* fluxes i.e., modulated by the
+   primary beam. That may change in future versions.
+
 .. option:: -i <KEY>=<VALUE>, --input-option <KEY>=<VALUE>
 
    Passes an option to an input backend. The MS backend supports the following
@@ -220,6 +223,12 @@ Imaging control options
 .. option:: --robustness <N>
 
    Robustness parameter for robust weighting.
+
+.. option:: --primary-beam {meerkat,none}
+
+   Specify a primary beam model. At present only a built-in MeerKAT model is
+   available, and it is a simple circularly-symmetric, amplitude-only,
+   dish-independent model.
 
 Quality options
 ^^^^^^^^^^^^^^^
