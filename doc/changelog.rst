@@ -1,6 +1,13 @@
 Changelog
 =========
 
+.. rubric:: 1.2
+
+- Add extra FITS headers to the output; particularly those needed to compute
+  Doppler corrections.
+- Improve performance when loading data from katdal datasets.
+- Add script to generate a video from FITS files.
+
 .. rubric:: 1.1
 
 - Use direct prediction for the measurement equation, rather than FFT and
