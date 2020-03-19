@@ -14,6 +14,7 @@ Submodules
    katsdpimager.test.test_polarization
    katsdpimager.test.test_predict
    katsdpimager.test.test_preprocess
+   katsdpimager.test.test_sky_model
    katsdpimager.test.test_weight
    katsdpimager.test.utils
 
@@ -21,6 +22,6 @@ Module contents
 ---------------
 
 .. automodule:: katsdpimager.test
-    :members:
-    :undoc-members:
-    :show-inheritance:
+   :members:
+   :undoc-members:
+   :show-inheritance:

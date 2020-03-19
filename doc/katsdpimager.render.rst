@@ -1,7 +1,7 @@
-katsdpimager.loader module
+katsdpimager.render module
 ==========================
 
-.. automodule:: katsdpimager.loader
+.. automodule:: katsdpimager.render
    :members:
    :undoc-members:
    :show-inheritance:

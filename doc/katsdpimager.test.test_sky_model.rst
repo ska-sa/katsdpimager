@@ -1,7 +1,7 @@
-katsdpimager.test.test\_preprocess module
+katsdpimager.test.test\_sky\_model module
 =========================================
 
-.. automodule:: katsdpimager.test.test_preprocess
+.. automodule:: katsdpimager.test.test_sky_model
    :members:
    :undoc-members:
    :show-inheritance:

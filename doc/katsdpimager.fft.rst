@@ -2,6 +2,6 @@ katsdpimager.fft module
 =======================
 
 .. automodule:: katsdpimager.fft
-    :members:
-    :undoc-members:
-    :show-inheritance:
+   :members:
+   :undoc-members:
+   :show-inheritance:

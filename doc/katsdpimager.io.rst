@@ -2,6 +2,6 @@ katsdpimager.io module
 ======================
 
 .. automodule:: katsdpimager.io
-    :members:
-    :undoc-members:
-    :show-inheritance:
+   :members:
+   :undoc-members:
+   :show-inheritance:
