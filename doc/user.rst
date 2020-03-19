@@ -296,3 +296,20 @@ yourself to remove the dependencies.
 .. option:: --host
 
    Perform all computations on the CPU.
+
+Generating a video
+==================
+While serious investigation of the outputs should be done with dedicated FITS
+viewing tools, a script called :program:`fits-video.py` is provided that can
+combine a number of FITS files produced by katsdpimager into a video file (in
+``.mp4`` format). Run it with :option:`-h` for usage instructions.
+
+In addition to the normal requirements of katsdpimager, this script requires
+:mod:`matplotib`.
+
+.. note::
+
+   It is only designed to work with FITS files produced by katsdpimager,
+   ideally with the same parameters and on the same field, and makes
+   assumptions about units, axis ordering etc. It might or might not work with
+   other FITS files.
