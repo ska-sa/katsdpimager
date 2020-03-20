@@ -1,12 +1,17 @@
 """Primary beam models and correction."""
 
 from abc import ABC, abstractmethod
+import math
 from typing import Optional, Sequence, Mapping, Any
 
 import numpy as np
 import h5py
 import pkg_resources
 import astropy.units as units
+
+
+class BeamRangeError(ValueError):
+    """Requested data lies outside the beam model."""
 
 
 class Parameter:
@@ -98,6 +103,11 @@ class BeamModel(ABC):
         frequencies
             1D array of frequencies.
 
+        Raises
+        ------
+        BeamRangeError
+            If the requested sampling falls beyond the range of the model.
+
         Returns
         -------
         beam
@@ -153,8 +163,14 @@ class BeamModelSet(ABC):
 
 
 class MeerkatBeamModel1(BeamModel):
-    def __init__(self) -> None:
-        filename = pkg_resources.resource_filename('katsdpimager', 'models/meerkat/v1/beam.hdf5')
+    BANDS = {'L'}
+
+    def __init__(self, band: str) -> None:
+        if band not in self.BANDS:
+            raise ValueError(f'band ({band}) must be one of {self.BANDS}')
+        filename = pkg_resources.resource_filename(
+            'katsdpimager',
+            f'models/meerkat/v1/beam_{band}.hdf5')
         group = h5py.File(filename, 'r')
         self._frequencies = group['frequencies'] << units.Hz
         self._step = group.attrs['step']
@@ -169,8 +185,38 @@ class MeerkatBeamModel1(BeamModel):
                az_step: float, az_samples: int,
                el_step: float, el_samples: int,
                frequencies: units.Quantity) -> np.ndarray:
-        # TODO: resample the beam according to the above.
-        pass
+        # Compute coordinates for az and el
+        az = (np.arange(az_samples) - (az_samples - 1) / 2) * az_step
+        el = (np.arange(el_samples) - (el_samples - 1) / 2) * el_step
+        # Check ranges
+        max_radius = math.sqrt(az[0] * az[0] + el[0] * el[0])
+        allowed_sin = self._step * self._beam.shape[0]
+        if max_radius > allowed_sin:
+            allowed_angle = (math.asin(allowed_sin) * units.rad).to(units.deg)
+            raise BeamRangeError(f'Requested grid is more than {allowed_angle} from the centre')
+        if min(frequencies) < self._frequencies[0] or max(frequencies) > self._frequencies[-1]:
+            raise BeamRangeError(f'Requested frequencies lie outside '
+                                 f'[{self._frequencies[0]}, {self._frequencies[-1]}]')
+
+        # Reorder arguments to match what apply_along_axis will use
+        def interp(fp, x, xp):
+            return np.interp(x, xp, fp)
+
+        # Interpolate the original data to the new frequencies
+        beam = np.apply_along_axis(interp, 0, self._beam, frequencies, self._frequencies)
+        # Interpolate by radius
+        radii = np.arange(beam.shape[1]) * self._step
+        az = az[np.newaxis, :]
+        el = el[:, np.newaxis]
+        eval_radii = np.sqrt(np.square(az) + np.square(el))
+        # Create model with axes for frequency, el, az
+        model = np.apply_along_axis(interp, 1, beam, eval_radii, radii)
+
+        # Add polarization dimensions
+        out = np.zeros((2, 2) + model.shape, model.dtype)
+        out[0, 0] = model
+        out[1, 1] = model
+        return out
 
 
 class MeerkatBeamModelSet1(BeamModelSet):
@@ -184,8 +230,8 @@ class MeerkatBeamModelSet1(BeamModelSet):
     - polarization-independent (assumes no leakage and same response in H and V)
     """
 
-    def __init__(self) -> None:
-        self._model = MeerkatBeamModel1()
+    def __init__(self, band: str) -> None:
+        self._model = MeerkatBeamModel1(band)
 
     @property
     def parameters(self) -> Sequence[Parameter]:
