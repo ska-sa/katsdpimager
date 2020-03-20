@@ -1,7 +1,7 @@
 """Primary beam models and correction."""
 
 from abc import ABC, abstractmethod
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Mapping, Any
 
 import numpy as np
 import h5py
@@ -31,8 +31,10 @@ class Parameter:
         self.description = description
         self.unit = unit
 
-    ANTENNA = Parameter('antenna', 'Name of the antenna')
-    ELEVATION = Parameter('elevation', 'Elevation at which the antenna is pointing', units.rad)
+
+Parameter.ANTENNA = Parameter('antenna', 'Name of the antenna')
+Parameter.ELEVATION = Parameter('elevation', 'Elevation at which the antenna is pointing',
+                                units.rad)
 
 
 class BeamModel(ABC):
@@ -70,8 +72,8 @@ class BeamModel(ABC):
     even number of samples then there will be no sample at the centre.
     """
 
-    @abstractmethod
     @property
+    @abstractmethod
     def parameter_values(self) -> Mapping[str, Any]:
         """Get the parameter values for which this model has been specialised."""
 
@@ -118,8 +120,8 @@ class BeamModelSet(ABC):
     describe a whole telescope for an observation.
     """
 
-    @abstractmethod
     @property
+    @abstractmethod
     def parameters(self) -> Sequence[Parameter]:
         """Describes the variables by which the general model is parametrized."""
 
