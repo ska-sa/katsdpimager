@@ -1,7 +1,7 @@
 """Primary beam models and correction."""
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, Sequence
 
 import numpy as np
 import h5py
@@ -9,17 +9,44 @@ import pkg_resources
 import astropy.units as units
 
 
+class Parameter:
+    """A parameter on which a `BeamModelSet` is parametrised.
+
+    Some parameters are standardized: refer to the constants in this class.
+
+    Parameters
+    ----------
+    name
+        Short name of the parameter, which must be a valid Python identifier.
+    description
+        Human-readable description of the parameter.
+    unit
+        Units in which the parameter should be specified (or a compatible
+        unit). If ``None``, the parameter is not numeric (for a unit-less
+        numeric quantity, use ``units.dimensionless_unscaled``).
+    """
+
+    def __init__(self, name: str, description: str, unit: Optional[units.Unit] = None) -> None:
+        self.name = name
+        self.description = description
+        self.unit = unit
+
+    ANTENNA = Parameter('antenna', 'Name of the antenna')
+    ELEVATION = Parameter('elevation', 'Elevation at which the antenna is pointing', units.rad)
+
+
 class BeamModel(ABC):
     r"""Model of an antenna primary beam.
 
     This is a model that describes the response of an antenna in a particular
-    direction relative to nominal pointing direction, for each polarization.
+    direction relative to nominal pointing direction, for each polarization
+    and for a range of frequencies.
 
-    It is most likely frequency-dependent and may also be specific
-    to an antenna, elevation, or other variables. However, it is specified in
-    a frame oriented to the dish rather than the sky, so remains valid with
-    parallactic angle rotation. Description of the mount type (e.g. Alt-Az versus
-    equatorial or 3-axis) is currently beyond the scope of this class.
+    It is most likely specific to an antenna, elevation, or other variables.
+    However, it is specified in a frame oriented to the dish rather than the
+    sky, so remains valid with parallactic angle rotation. Description of the
+    mount type (e.g. Alt-Az versus equatorial or 3-axis) is currently beyond
+    the scope of this class.
 
     The phase of the electric field at a point increases with time i.e., the
     phasor is
@@ -34,33 +61,51 @@ class BeamModel(ABC):
     directions of positive horizontal and vertical polarization respectively
     (the absolute signs don't matter but the signs relative to each other do
     for cross-hand terms).
+
+    The grid is regularly sampled in azimuth and elevation, but may be
+    irregularly sampled in frequency. The samples are ordered in increasing
+    order of azimuth (north to east) and elevation (horizon to zenith). Note
+    that this system has the opposite handedness to RA/Dec. The samples are
+    placed symmetrically around the direction of pointing; if there are an
+    even number of samples then there will be no sample at the centre.
     """
 
     @abstractmethod
-    def sample(self, step: float, samples: int) -> np.ndarray:
-        """Generate a 2D grid of samples.
+    @property
+    def parameter_values(self) -> Mapping[str, Any]:
+        """Get the parameter values for which this model has been specialised."""
+
+    @abstractmethod
+    @units.quantity_input(frequencies=units.Hz, equivalencies=units.spectral())
+    def sample(self,
+               az_step: float, az_samples: int,
+               el_step: float, el_samples: int,
+               frequencies: units.Quantity) -> np.ndarray:
+        """Generate a grid of samples.
 
         Parameters
         ----------
-        step
-            Distance between samples, in SIN projection. Note that if `step`
-            is even then there won't be a sample for the centre of the beam,
-            but rather a middle two samples places just either side.
-        samples
-            Number of samples along each dimension. The samples will be placed
-            symmetrically. The beam is normalised so that the the centre of the
-            beam has a value of 1.
+        az_step
+            Step between samples in the azimuth direction (in the SIN projection).
+        az_samples
+            Number of samples in the azimuth direction.
+        el_step
+            Step between samples in the elevation direction (in the SIN projection).
+        el_samples
+            Number of samples in the elevation direction.
+        frequencies
+            1D array of frequencies.
 
         Returns
         -------
         beam
-            A 4D array. The first axis selects the feed (0=horizontal,
-            1=vertical). The second axis selects the polarization of the
-            signal (again, 0=horizontal). The third axis is vertical angle,
-            going upwards as one looks at the sky. The last axis is the
-            horizontal angle, going left-to-right as one looks at the sky
-            (which is the *opposite* to the direction in which right ascension
-            increases).
+            A 5D array. The axes are:
+
+              1. The feed (0=horizontal, 1=vertical).
+              2. The polarization of the signal (0=horizontal, 1=vertical).
+              3. Frequency (indexed as per `frequencies`).
+              4. Elevation (of the source relative to the dish).
+              5. Azimuth (of the source relative to the dish).
         """
         pass
 
@@ -74,25 +119,55 @@ class BeamModelSet(ABC):
     """
 
     @abstractmethod
-    @units.quantity_input(frequency=units.Hz, equivalencies=units.spectral())
-    def sample(self, frequency: units.Quantity,
-               antenna: Optional[str] = None,
-               elevation: Optional[units.Quantity] = None) -> BeamModel:
+    @property
+    def parameters(self) -> Sequence[Parameter]:
+        """Describes the variables by which the general model is parametrized."""
+
+    @abstractmethod
+    def sample(self, **kwargs) -> BeamModel:
         """Obtain a specific model.
 
         It is expected that this may be an expensive function and the caller
         should cache the result if appropriate.
 
-        If either `antenna` or `elevation` is not specified, returns a
-        compromise value that should give reasonable results across all
-        antennas / a range of typical elevations.
+        Where parameters are omitted, the implementation should return a
+        model that is suitable for the typical range of the parameter. Extra
+        parameters are ignored. Thus, calling code can always safely supply
+        the parameters is knows about, without needing to check
+        :attr:`parameters`.
+
+        Parameters
+        ----------
+        **kwargs
+            Parameter values to specialize on.
 
         Raises
         ------
         ValueError
-            if `antenna` is not a known antenna (implementations that do not
-            model individual antennas may instead return an array average).
+            if the value of any parameter is out of range of the model (optional).
+        TypeError
+            if the type of any parameter is inappropriate (optional).
         """
+
+
+class MeerkatBeamModel1(BeamModel):
+    def __init__(self) -> None:
+        filename = pkg_resources.resource_filename('katsdpimager', 'models/meerkat/v1/beam.hdf5')
+        group = h5py.File(filename, 'r')
+        self._frequencies = group['frequencies'] << units.Hz
+        self._step = group.attrs['step']
+        self._beam = group.attrs['beam']
+
+    @property
+    def parameter_values(self) -> Mapping[str, Any]:
+        return {}
+
+    @units.quantity_input(frequencies=units.Hz, equivalencies=units.spectral())
+    def sample(self,
+               az_step: float, az_samples: int,
+               el_step: float, el_samples: int,
+               frequencies: units.Quantity) -> np.ndarray:
+        # TODO: resample the beam according to the above.
         pass
 
 
@@ -108,18 +183,11 @@ class MeerkatBeamModelSet1(BeamModelSet):
     """
 
     def __init__(self) -> None:
-        filename = pkg_resources.resource_filename('katsdpimager', 'models/meerkat/v1/beam.hdf5')
-        group = h5py.File(filename, 'r')
-        self._freqs = group['frequencies'] << units.Hz
-        self._step = group.attrs['step'] * units.rad
-        self._beam = group.attrs['beam']
+        self._model = MeerkatBeamModel1()
 
-    @units.quantity_input(frequency=units.Hz, equivalencies=units.spectral())
-    def sample(self, frequency: units.Quantity,
-               antenna: Optional[str] = None,
-               elevation: Optional[units.Quantity] = None) -> BeamModel:
-        # Just to ensure that an exception gets raised if the units are wrong
-        if elevation is not None:
-            elevation = elevation.to(units.deg)
-        # Interpolate in frequency
-        np.apply_along_axis = TODO
+    @property
+    def parameters(self) -> Sequence[Parameter]:
+        return []
+
+    def sample(self, **kwargs) -> BeamModel:
+        return self._model
