@@ -203,9 +203,13 @@ class ChannelParameters:
         else:
             raise ValueError('--w-step must be dimensionless or a length')
         w_planes = int(np.ceil(w_planes / w_slices))
+        if args.primary_beam in {'meerkat', 'meerkat:1'}:
+            beams = primary_beam.MeerkatBeamModelSet1()
+        else:
+            beams = None
         self.grid_p = parameters.GridParameters(
             args.aa_width, args.grid_oversample, args.kernel_image_oversample,
-            w_slices, w_planes, max_w, args.kernel_width, args.degrid)
+            w_slices, w_planes, max_w, args.kernel_width, args.degrid, beams)
         if args.clean_mode == 'I':
             clean_mode = clean.CLEAN_I
         elif args.clean_mode == 'IQUV':
@@ -277,6 +281,8 @@ def add_options(parser):
                        help='Level at which to truncate W kernel [%(default)s]')
     group.add_argument('--degrid', action='store_true',
                        help='Use degridding rather than direct prediction (less accurate)')
+    group.add_argument('--primary-beam', choices=['meerkat', 'meerkat:1', 'none'], default='none',
+                       help='Primary beam model for the telescope')
 
     group = parser.add_argument_group('Cleaning options')
     group.add_argument('--psf-cutoff', type=float, default=0.01,

@@ -224,11 +224,13 @@ Imaging control options
 
    Robustness parameter for robust weighting.
 
-.. option:: --primary-beam {meerkat,none}
+.. option:: --primary-beam {meerkat,meerkat:1,none}
 
    Specify a primary beam model. At present only a built-in MeerKAT model is
    available, and it is a simple circularly-symmetric, amplitude-only,
-   dish-independent model.
+   dish-independent model. The name ``meerkat:1`` will continue to refer to
+   this specific model in future versions, so can be used in scripts that need
+   to have reproducible results.
 
 Quality options
 ^^^^^^^^^^^^^^^

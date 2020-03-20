@@ -1,12 +1,15 @@
 """Primary beam models and correction."""
 
+from abc import ABC, abstractmethod
 from typing import Optional
 
 import numpy as np
+import h5py
+import pkg_resources
 import astropy.units as units
 
 
-class BeamModel:
+class BeamModel(ABC):
     r"""Model of an antenna primary beam.
 
     This is a model that describes the response of an antenna in a particular
@@ -33,13 +36,14 @@ class BeamModel:
     for cross-hand terms).
     """
 
-    def sample(self, spacing: float, samples: int) -> np.ndarray:
+    @abstractmethod
+    def sample(self, step: float, samples: int) -> np.ndarray:
         """Generate a 2D grid of samples.
 
         Parameters
         ----------
-        spacing
-            Distance between samples, in SIN projection. Note that if `spacing`
+        step
+            Distance between samples, in SIN projection. Note that if `step`
             is even then there won't be a sample for the centre of the beam,
             but rather a middle two samples places just either side.
         samples
@@ -61,7 +65,7 @@ class BeamModel:
         pass
 
 
-class BeamModelSet:
+class BeamModelSet(ABC):
     """Generator for beam models.
 
     The interface is relatively general and allows models to be specialised for
@@ -69,6 +73,7 @@ class BeamModelSet:
     describe a whole telescope for an observation.
     """
 
+    @abstractmethod
     @units.quantity_input(frequency=units.Hz, equivalencies=units.spectral())
     def sample(self, frequency: units.Quantity,
                antenna: Optional[str] = None,
@@ -89,3 +94,32 @@ class BeamModelSet:
             model individual antennas may instead return an array average).
         """
         pass
+
+
+class MeerkatBeamModelSet1(BeamModelSet):
+    """A very simple model of the MeerKAT dish beam.
+
+    It is
+    - radially symmetric
+    - antenna-independent
+    - elevation-independent
+    - real-valued
+    - polarization-independent (assumes no leakage and same response in H and V)
+    """
+
+    def __init__(self) -> None:
+        filename = pkg_resources.resource_filename('katsdpimager', 'models/meerkat/v1/beam.hdf5')
+        group = h5py.File(filename, 'r')
+        self._freqs = group['frequencies'] << units.Hz
+        self._step = group.attrs['step'] * units.rad
+        self._beam = group.attrs['beam']
+
+    @units.quantity_input(frequency=units.Hz, equivalencies=units.spectral())
+    def sample(self, frequency: units.Quantity,
+               antenna: Optional[str] = None,
+               elevation: Optional[units.Quantity] = None) -> BeamModel:
+        # Just to ensure that an exception gets raised if the units are wrong
+        if elevation is not None:
+            elevation = elevation.to(units.deg)
+        # Interpolate in frequency
+        np.apply_along_axis = TODO
