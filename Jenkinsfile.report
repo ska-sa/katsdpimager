@@ -24,7 +24,7 @@ catchError {
                 sh 'rm -r simple.ms/ANTENNA && cp -a MeerKAT64_ANTENNAS simple.ms/ANTENNA'
                 sh 'meqtree-pipeliner.py -c batch.tdlconf "[turbo-sim]" ms_sel.msname=simple.ms /usr/lib/python2.7/dist-packages/Cattery/Siamese/turbo-sim.py =_tdl_job_1_simulate_MS'
             }
-            katsdp.virtualenv('venv3') {
+            katsdp.virtualenv('venv') {
                 katsdp.installRequirements('git/report-requirements.txt')
                 sh 'pip install --no-deps -v ./git[report]'
                 sh 'pip check'
