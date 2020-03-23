@@ -83,7 +83,6 @@ class BeamModel(ABC):
         """Get the parameter values for which this model has been specialised."""
 
     @abstractmethod
-    @units.quantity_input(frequencies=units.Hz, equivalencies=units.spectral())
     def sample(self,
                az_step: float, az_samples: int,
                el_step: float, el_samples: int,
@@ -162,25 +161,27 @@ class BeamModelSet(ABC):
         """
 
 
-class MeerkatBeamModel1(BeamModel):
-    BANDS = {'L'}
+class TrivialBeamModel(BeamModel):
+    """The simplest possible beam model.
 
-    def __init__(self, band: str) -> None:
-        if band not in self.BANDS:
-            raise ValueError(f'band ({band}) must be one of {self.BANDS}')
-        filename = pkg_resources.resource_filename(
-            'katsdpimager',
-            f'models/meerkat/v1/beam_{band}.hdf5')
+    It is
+    - radially symmetric
+    - antenna-independent
+    - elevation-independent
+    - real-valued
+    - polarization-independent (assumes no leakage and same response in H and V)
+    """
+
+    def __init__(self, filename: str) -> None:
         group = h5py.File(filename, 'r')
-        self._frequencies = group['frequencies'] << units.Hz
-        self._step = group.attrs['step']
-        self._beam = group.attrs['beam']
+        self._frequencies = group['frequencies'][:] << units.Hz
+        self._step = group['beam'].attrs['step']
+        self._beam = group['beam'][:]
 
     @property
     def parameter_values(self) -> Mapping[str, Any]:
         return {}
 
-    @units.quantity_input(frequencies=units.Hz, equivalencies=units.spectral())
     def sample(self,
                az_step: float, az_samples: int,
                el_step: float, el_samples: int,
@@ -190,7 +191,7 @@ class MeerkatBeamModel1(BeamModel):
         el = (np.arange(el_samples) - (el_samples - 1) / 2) * el_step
         # Check ranges
         max_radius = math.sqrt(az[0] * az[0] + el[0] * el[0])
-        allowed_sin = self._step * self._beam.shape[0]
+        allowed_sin = self._step * self._beam.shape[1]
         if max_radius > allowed_sin:
             allowed_angle = (math.asin(allowed_sin) * units.rad).to(units.deg)
             raise BeamRangeError(f'Requested grid is more than {allowed_angle} from the centre')
@@ -220,18 +221,17 @@ class MeerkatBeamModel1(BeamModel):
 
 
 class MeerkatBeamModelSet1(BeamModelSet):
-    """A very simple model of the MeerKAT dish beam.
+    """A very simple model of the MeerKAT dish beam."""
 
-    It is
-    - radially symmetric
-    - antenna-independent
-    - elevation-independent
-    - real-valued
-    - polarization-independent (assumes no leakage and same response in H and V)
-    """
+    BANDS = {'L'}
 
     def __init__(self, band: str) -> None:
-        self._model = MeerkatBeamModel1(band)
+        if band not in self.BANDS:
+            raise ValueError(f'band ({band}) must be one of {self.BANDS}')
+        filename = pkg_resources.resource_filename(
+            'katsdpimager',
+            f'models/beams/meerkat/v1/beam_{band}.h5')
+        self._model = TrivialBeamModel(band)
 
     @property
     def parameters(self) -> Sequence[Parameter]:
