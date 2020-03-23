@@ -55,7 +55,7 @@ setup(
     author_email="sdpdev+katsdpimager@ska.ac.za",
     url="https://github.com/ska-sa/katsdpimager/",
     packages=find_packages(),
-    package_data={'': ['imager_kernels/*.mako', 'imager_kernels/*/*.mako']},
+    package_data={'': ['imager_kernels/*.mako', 'imager_kernels/*/*.mako', 'models']},
     scripts=["scripts/imager.py", "scripts/imager-mkat-pipeline.py", "scripts/fits-video.py"],
     ext_package='katsdpimager',
     ext_modules=extensions,
