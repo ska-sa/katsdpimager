@@ -1,12 +1,17 @@
 """Primary beam models and correction."""
 
 from abc import ABC, abstractmethod
+import math
 from typing import Optional, Sequence, Mapping, Any
 
 import numpy as np
 import h5py
 import pkg_resources
 import astropy.units as units
+
+
+class BeamRangeError(ValueError):
+    """Requested data lies outside the beam model."""
 
 
 class Parameter:
@@ -30,6 +35,9 @@ class Parameter:
         self.name = name
         self.description = description
         self.unit = unit
+
+    ANTENNA: 'Parameter'
+    ELEVATION: 'Parameter'
 
 
 Parameter.ANTENNA = Parameter('antenna', 'Name of the antenna')
@@ -67,9 +75,7 @@ class BeamModel(ABC):
     The grid is regularly sampled in azimuth and elevation, but may be
     irregularly sampled in frequency. The samples are ordered in increasing
     order of azimuth (north to east) and elevation (horizon to zenith). Note
-    that this system has the opposite handedness to RA/Dec. The samples are
-    placed symmetrically around the direction of pointing; if there are an
-    even number of samples then there will be no sample at the centre.
+    that this system has the opposite handedness to RA/Dec.
     """
 
     @property
@@ -78,25 +84,33 @@ class BeamModel(ABC):
         """Get the parameter values for which this model has been specialised."""
 
     @abstractmethod
-    @units.quantity_input(frequencies=units.Hz, equivalencies=units.spectral())
     def sample(self,
-               az_step: float, az_samples: int,
-               el_step: float, el_samples: int,
+               az_start: float, az_step: float, az_samples: int,
+               el_start: float, el_step: float, el_samples: int,
                frequencies: units.Quantity) -> np.ndarray:
         """Generate a grid of samples.
 
         Parameters
         ----------
+        az_start
+            Relative azimuth of the first sample (in the SIN projection).
         az_step
             Step between samples in the azimuth direction (in the SIN projection).
         az_samples
             Number of samples in the azimuth direction.
+        el_start
+            Relative elevation of the first sample (in the SIN projection).
         el_step
             Step between samples in the elevation direction (in the SIN projection).
         el_samples
             Number of samples in the elevation direction.
         frequencies
             1D array of frequencies.
+
+        Raises
+        ------
+        BeamRangeError
+            If the requested sampling falls beyond the range of the model.
 
         Returns
         -------
@@ -152,29 +166,8 @@ class BeamModelSet(ABC):
         """
 
 
-class MeerkatBeamModel1(BeamModel):
-    def __init__(self) -> None:
-        filename = pkg_resources.resource_filename('katsdpimager', 'models/meerkat/v1/beam.hdf5')
-        group = h5py.File(filename, 'r')
-        self._frequencies = group['frequencies'] << units.Hz
-        self._step = group.attrs['step']
-        self._beam = group.attrs['beam']
-
-    @property
-    def parameter_values(self) -> Mapping[str, Any]:
-        return {}
-
-    @units.quantity_input(frequencies=units.Hz, equivalencies=units.spectral())
-    def sample(self,
-               az_step: float, az_samples: int,
-               el_step: float, el_samples: int,
-               frequencies: units.Quantity) -> np.ndarray:
-        # TODO: resample the beam according to the above.
-        pass
-
-
-class MeerkatBeamModelSet1(BeamModelSet):
-    """A very simple model of the MeerKAT dish beam.
+class TrivialBeamModel(BeamModel):
+    """The simplest possible beam model.
 
     It is
     - radially symmetric
@@ -184,8 +177,72 @@ class MeerkatBeamModelSet1(BeamModelSet):
     - polarization-independent (assumes no leakage and same response in H and V)
     """
 
-    def __init__(self) -> None:
-        self._model = MeerkatBeamModel1()
+    def __init__(self, filename: str) -> None:
+        group = h5py.File(filename, 'r')
+        self._frequencies = group['frequencies'][:] << units.Hz
+        self._step = group['beam'].attrs['step']
+        self._beam = group['beam'][:]
+
+    @property
+    def parameter_values(self) -> Mapping[str, Any]:
+        return {}
+
+    def sample(self,
+               az_start: float, az_step: float, az_samples: int,
+               el_start: float, el_step: float, el_samples: int,
+               frequencies: units.Quantity) -> np.ndarray:
+        # Compute coordinates for az and el
+        az = np.arange(az_samples) * az_step + az_start
+        el = np.arange(el_samples) * el_step + el_start
+        # Check ranges
+        max_abs_az = max(abs(az[0]), abs(az[-1]))
+        max_abs_el = max(abs(el[0]), abs(el[-1]))
+        max_radius = math.sqrt(max_abs_az * max_abs_az + max_abs_el * max_abs_el)
+        allowed_sin = self._step * self._beam.shape[1]
+        if max_radius > allowed_sin:
+            allowed_angle = (math.asin(allowed_sin) * units.rad).to(units.deg)
+            raise BeamRangeError(f'Requested grid is more than {allowed_angle} from the centre')
+        # Ensure we have units of frequency (not e.g. wavelength)
+        frequencies = units.Quantity(frequencies, copy=False)
+        if frequencies.unit.physical_type != 'frequency':
+            frequencies = frequencies.to(units.Hz, equivalencies=units.spectral())
+        if min(frequencies) < self._frequencies[0] or max(frequencies) > self._frequencies[-1]:
+            raise BeamRangeError(f'Requested frequencies lie outside '
+                                 f'[{self._frequencies[0]}, {self._frequencies[-1]}]')
+
+        # Reorder arguments to match what apply_along_axis will use
+        def interp(fp, x, xp):
+            return np.interp(x, xp, fp)
+
+        # Interpolate the original data to the new frequencies
+        beam = np.apply_along_axis(interp, 0, self._beam, frequencies, self._frequencies)
+        # Interpolate by radius
+        radii = np.arange(beam.shape[1]) * self._step
+        az = az[np.newaxis, :]
+        el = el[:, np.newaxis]
+        eval_radii = np.sqrt(np.square(az) + np.square(el))
+        # Create model with axes for frequency, el, az
+        model = np.apply_along_axis(interp, 1, beam, eval_radii, radii)
+
+        # Add polarization dimensions
+        out = np.zeros((2, 2) + model.shape, model.dtype)
+        out[0, 0] = model
+        out[1, 1] = model
+        return out
+
+
+class MeerkatBeamModelSet1(BeamModelSet):
+    """A very simple model of the MeerKAT dish beam."""
+
+    BANDS = {'L'}
+
+    def __init__(self, band: str) -> None:
+        if band not in self.BANDS:
+            raise ValueError(f'band ({band}) must be one of {self.BANDS}')
+        filename = pkg_resources.resource_filename(
+            'katsdpimager',
+            f'models/beams/meerkat/v1/beam_{band}.h5')
+        self._model = TrivialBeamModel(filename)
 
     @property
     def parameters(self) -> Sequence[Parameter]:
