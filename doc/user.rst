@@ -232,6 +232,18 @@ Imaging control options
    this specific model in future versions, so can be used in scripts that need
    to have reproducible results.
 
+.. option:: --primary-beam-cutoff <VALUE>
+
+   In the final image, pixels corresponding to points in the primary beam with
+   less than this amount of power are discarded when using
+   :opt:`--primary-beam`. This avoids polluting the image with high levels of
+   noise from the null of the primary beam. Note that this only affects the
+   output; sufficiently bright sources in the null will still be cleaned.
+
+   At present this will only remove the nulls and may leave side-lobes (if
+   they have more power than the cutoff), but in future that may change so
+   that only the main lobe is preserved.
+
 Quality options
 ^^^^^^^^^^^^^^^
 

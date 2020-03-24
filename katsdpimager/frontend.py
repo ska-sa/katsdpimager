@@ -2,6 +2,7 @@ import tempfile
 import os
 import atexit
 import logging
+import math
 from abc import abstractmethod
 
 import numpy as np
@@ -289,6 +290,8 @@ def add_options(parser):
                        help='Use degridding rather than direct prediction (less accurate)')
     group.add_argument('--primary-beam', choices=['meerkat', 'meerkat:1', 'none'], default='none',
                        help='Primary beam model for the telescope')
+    group.add_argument('--primary-beam-cutoff', type=float, default=0.1,
+                       help='Primary beam power level below which output pixels are discarded')
 
     group = parser.add_argument_group('Cleaning options')
     group.add_argument('--psf-cutoff', type=float, default=0.01,
@@ -460,6 +463,9 @@ def process_channel(dataset, args, start_channel,
         # Ignore polarization and length-1 frequency axis; square to
         # convert voltage to power.
         pbeam = np.square(np.abs(pbeam[0, 0, 0]))
+        # Where the primary beam power is low, just mask the result rather
+        # than emitting massively scaled noise.
+        pbeam[pbeam < args.primary_beam_cutoff] = math.nan
         corrected_model = model / pbeam
         dirty /= pbeam
     else:
