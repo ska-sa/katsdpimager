@@ -452,15 +452,14 @@ def process_channel(dataset, args, start_channel,
         pbeam_model = grid_p.beams.sample()
         # Sample beam model at the pixel grid. It's circularly symmetric, so
         # we don't need to worry about parallactic angle rotations or the
-        # different sign conventions for azimuth versus RA, but the phase
-        # centre is at a pixel centre rather than the true centre of the
-        # image so we need to generate an extra pixel then throw it out.
-        pbeam = pbeam_model.sample(image_p.pixel_size, image_p.pixels + 1,
-                                   image_p.pixel_size, image_p.pixels + 1,
+        # different sign conventions for azimuth versus RA.
+        start = -image_p.pixels / 2 * image_p.pixel_size
+        pbeam = pbeam_model.sample(start, image_p.pixel_size, image_p.pixels,
+                                   start, image_p.pixel_size, image_p.pixels,
                                    [image_p.wavelength])
         # Ignore polarization and length-1 frequency axis; square to
         # convert voltage to power.
-        pbeam = np.square(np.abs(pbeam[0, 0, 0, :-1, :-1]))
+        pbeam = np.square(np.abs(pbeam[0, 0, 0]))
         corrected_model = model / pbeam
         dirty /= pbeam
     else:

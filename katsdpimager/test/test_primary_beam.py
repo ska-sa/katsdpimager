@@ -21,16 +21,16 @@ class TestTrivialBeamModel:
         freqs = units.Quantity([1.4], units.GHz)
         # Azimuth out of range
         with assert_raises(primary_beam.BeamRangeError):
-            self.model.sample(0.01, 100, 0.01, 1, freqs)
+            self.model.sample(-0.5, 0.01, 100, 0.0, 0.01, 1, freqs)
         # Elevation out of range
         with assert_raises(primary_beam.BeamRangeError):
-            self.model.sample(0.01, 1, 0.01, 100, freqs)
+            self.model.sample(0.0, 0.01, 1, -0.5, 0.01, 100, freqs)
         # Frequency too low
         with assert_raises(primary_beam.BeamRangeError):
-            self.model.sample(0.01, 1, 0.01, 1, units.Quantity([0.5], units.GHz))
+            self.model.sample(0.0, 0.01, 1, 0.0, 0.01, 1, units.Quantity([0.5], units.GHz))
         # Frequency too high
         with assert_raises(primary_beam.BeamRangeError):
-            self.model.sample(0.01, 1, 0.01, 1, units.Quantity([3], units.GHz))
+            self.model.sample(0.0, 0.01, 1, 0.0, 0.01, 1, units.Quantity([3], units.GHz))
 
     def test_parameter_values(self) -> None:
         assert_equal(dict(self.model.parameter_values), {})
@@ -56,26 +56,44 @@ class TestTrivialBeamModel:
     def test_given_frequency(self) -> None:
         """Sample at frequency already present in the model."""
         N = 101
-        beam = self.model.sample(0.001, N, 0.001, N, [1284] * units.MHz)
+        STEP = 0.001
+        beam = self.model.sample(-STEP * (N // 2), STEP, N,
+                                 -STEP * (N // 2), STEP, N,
+                                 [1284] * units.MHz)
         assert_equal(beam.shape, (2, 2, 1, N, N))
         self._check_scalar(beam)
         # Should be unity at the centre of the beam
         np.testing.assert_allclose(beam[0, 0, 0, N // 2, N // 2], 1.0, rtol=1e-2)
         # If it fails due to code/model changes, uncomment to inspect visually:
         # self._show_beam(beam)
-        assert_equal(hashlib.md5(beam[0, 0, 0]).hexdigest(), 'f51d39325c4af073680aa3196389b5ee')
+        assert_equal(hashlib.md5(beam[0, 0, 0]).hexdigest(), 'fd407f122008010016c4a4b1aa1a668f')
 
     def test_interpolated_frequency(self) -> None:
         """Sample at frequency not present in the model."""
         N = 101
+        STEP = 0.001
         # Outer two are frequencies in the model
         freqs = [856, 856.41796875, 856.8359375] * units.MHz
-        beam = self.model.sample(0.001, N, 0.001, N, freqs)
+        beam = self.model.sample(-STEP * (N // 2), STEP, N,
+                                 -STEP * (N // 2), STEP, N,
+                                 freqs)
         assert_equal(beam.shape, (2, 2, 3, N, N))
         self._check_scalar(beam)
         # If it fails due to code/model changes, uncomment to inspect visually:
         # self._show_beam(beam)
-        assert_equal(hashlib.md5(beam[0, 0, 1]).hexdigest(), '60ef7c6718087c37cf27c8af61d07647')
+        assert_equal(hashlib.md5(beam[0, 0, 1]).hexdigest(), '888e843c2841e625c000494087867440')
+
+    def test_offset(self) -> None:
+        N = 128
+        STEP = 1 / 2048
+        freqs = [1284] * units.MHz
+        full = self.model.sample(-STEP * (N // 2), STEP, N,
+                                 -STEP * (N // 2), STEP, N,
+                                 freqs)
+        part = self.model.sample(-STEP * (N // 2), STEP, N // 2,
+                                 0, STEP, N // 4,
+                                 freqs)
+        np.testing.assert_array_equal(part, full[..., 64:96, 0:64])
 
 
 class TestMeerkatBeamModelSet1:

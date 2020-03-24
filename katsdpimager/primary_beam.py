@@ -75,9 +75,7 @@ class BeamModel(ABC):
     The grid is regularly sampled in azimuth and elevation, but may be
     irregularly sampled in frequency. The samples are ordered in increasing
     order of azimuth (north to east) and elevation (horizon to zenith). Note
-    that this system has the opposite handedness to RA/Dec. The samples are
-    placed symmetrically around the direction of pointing; if there are an
-    even number of samples then there will be no sample at the centre.
+    that this system has the opposite handedness to RA/Dec.
     """
 
     @property
@@ -87,17 +85,21 @@ class BeamModel(ABC):
 
     @abstractmethod
     def sample(self,
-               az_step: float, az_samples: int,
-               el_step: float, el_samples: int,
+               az_start: float, az_step: float, az_samples: int,
+               el_start: float, el_step: float, el_samples: int,
                frequencies: units.Quantity) -> np.ndarray:
         """Generate a grid of samples.
 
         Parameters
         ----------
+        az_start
+            Relative azimuth of the first sample (in the SIN projection).
         az_step
             Step between samples in the azimuth direction (in the SIN projection).
         az_samples
             Number of samples in the azimuth direction.
+        el_start
+            Relative elevation of the first sample (in the SIN projection).
         el_step
             Step between samples in the elevation direction (in the SIN projection).
         el_samples
@@ -186,14 +188,16 @@ class TrivialBeamModel(BeamModel):
         return {}
 
     def sample(self,
-               az_step: float, az_samples: int,
-               el_step: float, el_samples: int,
+               az_start: float, az_step: float, az_samples: int,
+               el_start: float, el_step: float, el_samples: int,
                frequencies: units.Quantity) -> np.ndarray:
         # Compute coordinates for az and el
-        az = (np.arange(az_samples) - (az_samples - 1) / 2) * az_step
-        el = (np.arange(el_samples) - (el_samples - 1) / 2) * el_step
+        az = np.arange(az_samples) * az_step + az_start
+        el = np.arange(el_samples) * el_step + el_start
         # Check ranges
-        max_radius = math.sqrt(az[0] * az[0] + el[0] * el[0])
+        max_abs_az = max(abs(az[0]), abs(az[-1]))
+        max_abs_el = max(abs(el[0]), abs(el[-1]))
+        max_radius = math.sqrt(max_abs_az * max_abs_az + max_abs_el * max_abs_el)
         allowed_sin = self._step * self._beam.shape[1]
         if max_radius > allowed_sin:
             allowed_angle = (math.asin(allowed_sin) * units.rad).to(units.deg)
