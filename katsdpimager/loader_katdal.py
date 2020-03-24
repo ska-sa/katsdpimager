@@ -204,6 +204,9 @@ class LoaderKatdal(loader_core.LoaderBase):
     def frequency(self, channel):
         return self._file.freqs[channel] * units.Hz
 
+    def band(self):
+        return self._spectral_window.band
+
     def phase_centre(self):
         ra, dec = self._target.astrometric_radec()
         return units.Quantity([ra, dec], unit=units.rad)

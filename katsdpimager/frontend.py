@@ -10,7 +10,7 @@ import katsdpsigproc.accel as accel
 
 from . import \
     loader, parameters, polarization, preprocess, clean, weight, sky_model, \
-    imaging, progress, beam
+    imaging, progress, beam, primary_beam
 
 
 logger = logging.getLogger(__name__)
@@ -204,9 +204,15 @@ class ChannelParameters:
             raise ValueError('--w-step must be dimensionless or a length')
         w_planes = int(np.ceil(w_planes / w_slices))
         if args.primary_beam in {'meerkat', 'meerkat:1'}:
-            beams = primary_beam.MeerkatBeamModelSet1()
-        else:
+            band = dataset.band()
+            if band is None:
+                raise ValueError(
+                    'Data set does not specify a band, so --primary-beam cannot be used')
+            beams = primary_beam.MeerkatBeamModelSet1(band)
+        elif args.primary_beam == 'none':
             beams = None
+        else:
+            raise ValueError(f'Unexpected value {args.primary_beam} for --primary-beam')
         self.grid_p = parameters.GridParameters(
             args.aa_width, args.grid_oversample, args.kernel_image_oversample,
             w_slices, w_planes, max_w, args.kernel_width, args.degrid, beams)
@@ -441,7 +447,26 @@ def process_channel(dataset, args, start_channel,
                     break
         queue.finish()
 
-    writer.write_fits_image('model', 'model', dataset, model, image_p, channel)
+    # Scale by primary beam
+    if grid_p.beams:
+        pbeam_model = grid_p.beams.sample()
+        # Sample beam model at the pixel grid. It's circularly symmetric, so
+        # we don't need to worry about parallactic angle rotations or the
+        # different sign conventions for azimuth versus RA, but the phase
+        # centre is at a pixel centre rather than the true centre of the
+        # image so we need to generate an extra pixel then throw it out.
+        pbeam = pbeam_model.sample(image_p.pixel_size, image_p.pixels + 1,
+                                   image_p.pixel_size, image_p.pixels + 1,
+                                   [image_p.wavelength])
+        # Ignore polarization and length-1 frequency axis; square to
+        # convert voltage to power.
+        pbeam = np.square(np.abs(pbeam[0, 0, 0, :-1, :-1]))
+        corrected_model = model / pbeam
+        dirty /= pbeam
+    else:
+        corrected_model = model
+
+    writer.write_fits_image('model', 'model', dataset, corrected_model, image_p, channel)
     writer.write_fits_image('residuals', 'residuals', dataset, dirty, image_p,
                             channel, restoring_beam)
 
@@ -465,6 +490,8 @@ def process_channel(dataset, args, start_channel,
             restore_image.copy_region(queue, model, (), np.s_[pol])
         queue.finish()
 
+    if grid_p.beams:
+        model /= pbeam
     model += dirty
     writer.write_fits_image('clean', 'clean image', dataset, model, image_p,
                             channel, restoring_beam)

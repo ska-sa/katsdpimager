@@ -198,6 +198,10 @@ class TrivialBeamModel(BeamModel):
         if max_radius > allowed_sin:
             allowed_angle = (math.asin(allowed_sin) * units.rad).to(units.deg)
             raise BeamRangeError(f'Requested grid is more than {allowed_angle} from the centre')
+        # Ensure we have units of frequency (not e.g. wavelength)
+        frequencies = units.Quantity(frequencies, copy=False)
+        if frequencies.unit.physical_type != 'frequency':
+            frequencies = frequencies.to(units.Hz, equivalencies=units.spectral())
         if min(frequencies) < self._frequencies[0] or max(frequencies) > self._frequencies[-1]:
             raise BeamRangeError(f'Requested frequencies lie outside '
                                  f'[{self._frequencies[0]}, {self._frequencies[-1]}]')
