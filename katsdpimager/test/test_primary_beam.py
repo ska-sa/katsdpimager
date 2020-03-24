@@ -1,0 +1,90 @@
+"""Tests for :py:mod:`katsdpimager.primary_beam`."""
+
+import hashlib
+
+import pkg_resources
+import numpy as np
+import astropy.units as units
+from nose.tools import assert_raises, assert_equal
+
+from .. import primary_beam
+
+
+class TestTrivialBeamModel:
+    def setup(self) -> None:
+        filename = pkg_resources.resource_filename(
+            'katsdpimager',
+            'models/beams/meerkat/v1/beam_L.h5')
+        self.model = primary_beam.TrivialBeamModel(filename)
+
+    def test_out_of_range(self) -> None:
+        freqs = units.Quantity([1.4], units.GHz)
+        # Azimuth out of range
+        with assert_raises(primary_beam.BeamRangeError):
+            self.model.sample(0.01, 100, 0.01, 1, freqs)
+        # Elevation out of range
+        with assert_raises(primary_beam.BeamRangeError):
+            self.model.sample(0.01, 1, 0.01, 100, freqs)
+        # Frequency too low
+        with assert_raises(primary_beam.BeamRangeError):
+            self.model.sample(0.01, 1, 0.01, 1, units.Quantity([0.5], units.GHz))
+        # Frequency too high
+        with assert_raises(primary_beam.BeamRangeError):
+            self.model.sample(0.01, 1, 0.01, 1, units.Quantity([3], units.GHz))
+
+    def test_parameter_values(self) -> None:
+        assert_equal(dict(self.model.parameter_values), {})
+
+    def _check_scalar(self, beam: np.ndarray) -> None:
+        """Validate that the beam has no leakage and same H and V response."""
+        np.testing.assert_array_equal(beam[1, 0], beam[0, 1])
+        np.testing.assert_array_equal(beam[0, 0], beam[1, 1])
+        np.testing.assert_array_equal(beam[0, 1], np.zeros_like(beam[0, 1]))
+
+    def _show_beam(self, beam: np.ndarray) -> None:
+        """Debug function to plot a beam (should not be any calls checked in)."""
+        import matplotlib.pyplot as plt
+        rows = 1 if beam.shape[2] == 1 else 2
+        fig, axs = plt.subplots(rows, beam.shape[2], sharex=True, sharey=True, squeeze=False)
+        for channel in range(beam.shape[2]):
+            axs[0][channel].imshow(beam[0, 0, channel], vmin=0, vmax=1.01)
+            if channel > 0:
+                delta = beam[0, 0, channel] - beam[0, 0, 0]
+                axs[1, channel].imshow(delta, vmin=-0.01, vmax=0.01)
+        plt.show()
+
+    def test_given_frequency(self) -> None:
+        """Sample at frequency already present in the model."""
+        N = 101
+        beam = self.model.sample(0.001, N, 0.001, N, [1284] * units.MHz)
+        assert_equal(beam.shape, (2, 2, 1, N, N))
+        self._check_scalar(beam)
+        # Should be unity at the centre of the beam
+        np.testing.assert_allclose(beam[0, 0, 0, N // 2, N // 2], 1.0, rtol=1e-2)
+        # If it fails due to code/model changes, uncomment to inspect visually:
+        # self._show_beam(beam)
+        assert_equal(hashlib.md5(beam[0, 0, 0]).hexdigest(), 'f51d39325c4af073680aa3196389b5ee')
+
+    def test_interpolated_frequency(self) -> None:
+        """Sample at frequency not present in the model."""
+        N = 101
+        # Outer two are frequencies in the model
+        freqs = [856, 856.41796875, 856.8359375] * units.MHz
+        beam = self.model.sample(0.001, N, 0.001, N, freqs)
+        assert_equal(beam.shape, (2, 2, 3, N, N))
+        self._check_scalar(beam)
+        # If it fails due to code/model changes, uncomment to inspect visually:
+        # self._show_beam(beam)
+        assert_equal(hashlib.md5(beam[0, 0, 1]).hexdigest(), '60ef7c6718087c37cf27c8af61d07647')
+
+
+class TestMeerkatBeamModelSet1:
+    def test_load(self):
+        """Smoke test to check that the file can be found."""
+        models = primary_beam.MeerkatBeamModelSet1('L')
+        models.sample()
+        assert_equal(models.parameters, [])
+
+    def test_bad_band(self):
+        with assert_raises(ValueError):
+            primary_beam.MeerkatBeamModelSet1('Z')
