@@ -11,7 +11,7 @@ from astropy import units
 import numpy as np
 
 import katsdpimager.types
-from . import clean, weight, primary_beam
+from . import clean, weight
 
 
 def is_smooth(x):

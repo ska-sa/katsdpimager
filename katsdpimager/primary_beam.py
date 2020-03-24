@@ -36,6 +36,9 @@ class Parameter:
         self.description = description
         self.unit = unit
 
+    ANTENNA: 'Parameter'
+    ELEVATION: 'Parameter'
+
 
 Parameter.ANTENNA = Parameter('antenna', 'Name of the antenna')
 Parameter.ELEVATION = Parameter('elevation', 'Elevation at which the antenna is pointing',
@@ -231,7 +234,7 @@ class MeerkatBeamModelSet1(BeamModelSet):
         filename = pkg_resources.resource_filename(
             'katsdpimager',
             f'models/beams/meerkat/v1/beam_{band}.h5')
-        self._model = TrivialBeamModel(band)
+        self._model = TrivialBeamModel(filename)
 
     @property
     def parameters(self) -> Sequence[Parameter]:
