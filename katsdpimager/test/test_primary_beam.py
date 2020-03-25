@@ -98,10 +98,11 @@ class TestTrivialBeamModel:
 
 class TestMeerkatBeamModelSet1:
     def test_load(self):
-        """Smoke test to check that the file can be found."""
-        models = primary_beam.MeerkatBeamModelSet1('L')
-        models.sample()
-        assert_equal(models.parameters, [])
+        """Smoke test to check that the files can be found."""
+        for band in primary_beam.MeerkatBeamModelSet1.BANDS:
+            models = primary_beam.MeerkatBeamModelSet1(band)
+            models.sample()
+            assert_equal(models.parameters, [])
 
     def test_bad_band(self):
         with assert_raises(ValueError):

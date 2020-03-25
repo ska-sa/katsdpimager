@@ -234,7 +234,7 @@ class TrivialBeamModel(BeamModel):
 class MeerkatBeamModelSet1(BeamModelSet):
     """A very simple model of the MeerKAT dish beam."""
 
-    BANDS = {'L'}
+    BANDS = {'L', 'UHF'}
 
     def __init__(self, band: str) -> None:
         if band not in self.BANDS:
