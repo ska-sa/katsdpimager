@@ -66,7 +66,7 @@ class TestTrivialBeamModel:
         np.testing.assert_allclose(beam[0, 0, 0, N // 2, N // 2], 1.0, rtol=1e-2)
         # If it fails due to code/model changes, uncomment to inspect visually:
         # self._show_beam(beam)
-        assert_equal(hashlib.md5(beam[0, 0, 0]).hexdigest(), 'fd407f122008010016c4a4b1aa1a668f')
+        assert_equal(hashlib.md5(beam[0, 0, 0]).hexdigest(), '8c3ff23e1b8fb76e8b3efd5a88cbf632')
 
     def test_interpolated_frequency(self) -> None:
         """Sample at frequency not present in the model."""
@@ -81,7 +81,7 @@ class TestTrivialBeamModel:
         self._check_scalar(beam)
         # If it fails due to code/model changes, uncomment to inspect visually:
         # self._show_beam(beam)
-        assert_equal(hashlib.md5(beam[0, 0, 1]).hexdigest(), '888e843c2841e625c000494087867440')
+        assert_equal(hashlib.md5(beam[0, 0, 1]).hexdigest(), '2d000becd61f51fda0f38a0163ac99a7')
 
     def test_offset(self) -> None:
         N = 128
