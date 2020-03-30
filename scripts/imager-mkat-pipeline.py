@@ -57,7 +57,7 @@ class Writer(frontend.Writer):
         }
 
     def write_fits_image(self, name, description, dataset, image, image_parameters, channel,
-                         beam=None, bunit='JY/BEAM'):
+                         beam=None, bunit='Jy/beam'):
         if name != 'clean':
             return
         # Add a unique component to the directory name so that it will be

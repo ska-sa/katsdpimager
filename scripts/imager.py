@@ -19,7 +19,7 @@ class Writer(frontend.Writer):
         self.args = args
 
     def write_fits_image(self, name, description, dataset, image, image_parameters, channel,
-                         beam=None, bunit='JY/BEAM'):
+                         beam=None, bunit='Jy/beam'):
         if name == 'clean':
             filename = self.args.output_file
         else:
