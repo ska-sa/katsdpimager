@@ -1,5 +1,5 @@
 aplpy==2.0.3
-astropy                   # via aplpy
+astropy==4.0.1            # via aplpy
 astropy-healpix==0.4      # via reproject
 cycler                    # via matplotlib
 cython==0.29.15           # via pyregion
