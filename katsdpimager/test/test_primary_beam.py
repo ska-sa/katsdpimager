@@ -5,7 +5,7 @@ import hashlib
 import pkg_resources
 import numpy as np
 import astropy.units as units
-from nose.tools import assert_raises, assert_equal
+from nose.tools import assert_raises, assert_equal, assert_true
 
 from .. import primary_beam
 
@@ -20,17 +20,19 @@ class TestTrivialBeamModel:
     def test_out_of_range(self) -> None:
         freqs = units.Quantity([1.4], units.GHz)
         # Azimuth out of range
-        with assert_raises(primary_beam.BeamRangeError):
-            self.model.sample(-0.5, 0.01, 100, 0.0, 0.01, 1, freqs)
+        beam = self.model.sample(-0.5, 0.01, 100, 0.0, 0.01, 1, freqs)
+        assert_true(np.isnan(beam[0, 0, 0, 0, 0]))
         # Elevation out of range
-        with assert_raises(primary_beam.BeamRangeError):
-            self.model.sample(0.0, 0.01, 1, -0.5, 0.01, 100, freqs)
+        beam = self.model.sample(0.0, 0.01, 1, -0.5, 0.01, 100, freqs)
+        assert_true(np.isnan(beam[0, 0, 0, 0, 0]))
         # Frequency too low
-        with assert_raises(primary_beam.BeamRangeError):
-            self.model.sample(0.0, 0.01, 1, 0.0, 0.01, 1, units.Quantity([0.5], units.GHz))
+        beam = self.model.sample(0.0, 0.01, 1, 0.0, 0.01, 1, units.Quantity([0.5], units.GHz))
+        assert_true(np.all(np.isnan(beam[0, 0])))
+        assert_true(np.all(np.isnan(beam[1, 1])))
         # Frequency too high
-        with assert_raises(primary_beam.BeamRangeError):
-            self.model.sample(0.0, 0.01, 1, 0.0, 0.01, 1, units.Quantity([3], units.GHz))
+        beam = self.model.sample(0.0, 0.01, 1, 0.0, 0.01, 1, units.Quantity([3], units.GHz))
+        assert_true(np.all(np.isnan(beam[0, 0])))
+        assert_true(np.all(np.isnan(beam[1, 1])))
 
     def test_parameter_values(self) -> None:
         assert_equal(dict(self.model.parameter_values), {})

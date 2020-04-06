@@ -10,10 +10,6 @@ import pkg_resources
 import astropy.units as units
 
 
-class BeamRangeError(ValueError):
-    """Requested data lies outside the beam model."""
-
-
 class Parameter:
     """A parameter on which a `BeamModelSet` is parametrised.
 
@@ -90,6 +86,9 @@ class BeamModel(ABC):
                frequencies: units.Quantity) -> np.ndarray:
         """Generate a grid of samples.
 
+        Samples that fall outside the support of the beam model will be filled
+        with NaNs.
+
         Parameters
         ----------
         az_start
@@ -106,11 +105,6 @@ class BeamModel(ABC):
             Number of samples in the elevation direction.
         frequencies
             1D array of frequencies.
-
-        Raises
-        ------
-        BeamRangeError
-            If the requested sampling falls beyond the range of the model.
 
         Returns
         -------
@@ -194,25 +188,14 @@ class TrivialBeamModel(BeamModel):
         # Compute coordinates for az and el
         az = np.arange(az_samples) * az_step + az_start
         el = np.arange(el_samples) * el_step + el_start
-        # Check ranges
-        max_abs_az = max(abs(az[0]), abs(az[-1]))
-        max_abs_el = max(abs(el[0]), abs(el[-1]))
-        max_radius = math.sqrt(max_abs_az * max_abs_az + max_abs_el * max_abs_el)
-        allowed_sin = self._step * self._beam.shape[1]
-        if max_radius > allowed_sin:
-            allowed_angle = (math.asin(allowed_sin) * units.rad).to(units.deg)
-            raise BeamRangeError(f'Requested grid is more than {allowed_angle} from the centre')
         # Ensure we have matching units, so that versions of numpy prior to NEP 18
         # will do the right thing in np.interp.
         frequencies = units.Quantity(frequencies, copy=False)
         frequencies = frequencies.to(self._frequencies.unit, equivalencies=units.spectral())
-        if min(frequencies) < self._frequencies[0] or max(frequencies) > self._frequencies[-1]:
-            raise BeamRangeError(f'Requested frequencies lie outside '
-                                 f'[{self._frequencies[0]}, {self._frequencies[-1]}]')
 
         # Reorder arguments to match what apply_along_axis will use
         def interp(fp, x, xp):
-            return np.interp(x, xp, fp)
+            return np.interp(x, xp, fp, left=np.nan, right=np.nan)
 
         # Interpolate the original data to the new frequencies
         beam = np.apply_along_axis(interp, 0, self._beam, frequencies, self._frequencies)
