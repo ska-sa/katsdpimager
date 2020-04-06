@@ -1,7 +1,6 @@
 """Primary beam models and correction."""
 
 from abc import ABC, abstractmethod
-import math
 from typing import Optional, Sequence, Mapping, Any
 
 import numpy as np
