@@ -1,9 +1,10 @@
 aplpy==2.0.3
-astropy==3.1.2            # via aplpy
+astropy==4.0.1            # via aplpy
 astropy-healpix==0.4      # via reproject
 cycler                    # via matplotlib
-cython                    # via pyregion
+cython==0.29.15           # via pyregion
 imageio==2.5.0            # via scikit-image
+kiwisolver                # via matplotlib
 mako
 markupsafe                # via mako
 matplotlib
@@ -16,7 +17,7 @@ pyregion==2.0             # via aplpy
 python-dateutil           # via matplotlib
 pytz                      # via matplotlib
 pywavelets==1.0.3         # via scikit-image
-reproject==0.4            # via aplpy
+reproject==0.7            # via aplpy
 scikit-image==0.15.0      # via aplpy
 shapely==1.6.4.post2      # via aplpy
 six                       # via cycler, python-dateutil
