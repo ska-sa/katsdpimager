@@ -466,12 +466,10 @@ def process_channel(dataset, args, start_channel,
         # Where the primary beam power is low, just mask the result rather
         # than emitting massively scaled noise.
         pbeam[pbeam < args.primary_beam_cutoff] = math.nan
-        corrected_model = model / pbeam
+        model /= pbeam
         dirty /= pbeam
-    else:
-        corrected_model = model
 
-    writer.write_fits_image('model', 'model', dataset, corrected_model, image_p, channel)
+    writer.write_fits_image('model', 'model', dataset, model, image_p, channel)
     writer.write_fits_image('residuals', 'residuals', dataset, dirty, image_p,
                             channel, restoring_beam)
 
@@ -480,6 +478,11 @@ def process_channel(dataset, args, start_channel,
     del psf
     del imager
 
+    # NaNs in the model will mess up the convolution, so zero them. They will
+    # become NaNs again when the residuals are added (assuming the NaNs are
+    # due to the primary beam mask).
+    if grid_p.beams:
+        model[np.isnan(model)] = 0.0
     # Convolve with restoring beam, and add residuals back in
     if args.host:
         beam.convolve_beam(model, restoring_beam, model)
@@ -495,8 +498,6 @@ def process_channel(dataset, args, start_channel,
             restore_image.copy_region(queue, model, (), np.s_[pol])
         queue.finish()
 
-    if grid_p.beams:
-        model /= pbeam
     model += dirty
     writer.write_fits_image('clean', 'clean image', dataset, model, image_p,
                             channel, restoring_beam)
