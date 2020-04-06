@@ -68,6 +68,8 @@ def get_parser():
                        help='Write model image to FITS file')
     group.add_argument('--write-residuals', metavar='FILE',
                        help='Write image residuals to FITS file')
+    group.add_argument('--write-primary-beam', metavar='FILE',
+                       help='Write primary beam model to FITS file')
     group.add_argument('--vis-limit', type=int, metavar='N',
                        help='Use only the first N visibilities')
     return parser
