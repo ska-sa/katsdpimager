@@ -228,9 +228,15 @@ Imaging control options
 
    Specify a primary beam model. At present only a built-in MeerKAT model is
    available, and it is a simple circularly-symmetric, amplitude-only,
-   dish-independent model. The name ``meerkat:1`` will continue to refer to
-   this specific model in future versions, so can be used in scripts that need
-   to have reproducible results.
+   dish-independent, polarization-independent model. Note that this is too
+   simplistic to properly model the MeerKAT primary beam: it can introduce
+   flux errors of up to 20% towards the edges of the main lobe (particularly in
+   short observations which span a narrow range of parallactic angles), and it
+   only accounts for Stokes I response to unpolarized emission.
+
+   The name ``meerkat:1`` will continue to refer to this specific model in
+   future versions, so can be used in scripts that need to have reproducible
+   results.
 
 .. option:: --primary-beam-cutoff <VALUE>
 
