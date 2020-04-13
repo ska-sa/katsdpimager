@@ -118,6 +118,9 @@ Input selection options
            only needed if there were multiple continuum imager configurations
            run on this data set.
 
+   The fluxes must be *apparent* fluxes i.e., modulated by the
+   primary beam. That may change in future versions.
+
 .. option:: -i <KEY>=<VALUE>, --input-option <KEY>=<VALUE>
 
    Passes an option to an input backend. The MS backend supports the following
@@ -220,6 +223,32 @@ Imaging control options
 .. option:: --robustness <N>
 
    Robustness parameter for robust weighting.
+
+.. option:: --primary-beam {meerkat,meerkat:1,none}
+
+   Specify a primary beam model. At present only a built-in MeerKAT model is
+   available, and it is a simple circularly-symmetric, amplitude-only,
+   dish-independent, polarization-independent model. Note that this is too
+   simplistic to properly model the MeerKAT primary beam: it can introduce
+   flux errors of up to 20% towards the edges of the main lobe (particularly in
+   short observations which span a narrow range of parallactic angles), and it
+   only accounts for Stokes I response to unpolarized emission.
+
+   The name ``meerkat:1`` will continue to refer to this specific model in
+   future versions, so can be used in scripts that need to have reproducible
+   results.
+
+.. option:: --primary-beam-cutoff <VALUE>
+
+   In the final image, pixels corresponding to points in the primary beam with
+   less than this amount of power are discarded when using
+   :opt:`--primary-beam`. This avoids polluting the image with high levels of
+   noise from the null of the primary beam. Note that this only affects the
+   output; sufficiently bright sources in the null will still be cleaned.
+
+   At present this will only remove the nulls and may leave side-lobes (if
+   they have more power than the cutoff), but in future that may change so
+   that only the main lobe is preserved.
 
 Quality options
 ^^^^^^^^^^^^^^^

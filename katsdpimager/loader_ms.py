@@ -321,6 +321,12 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
         return _getcell(self._spectral_window, 'CHAN_FREQ', self._spectral_window_id,
                         'Hz', units.Hz)[channel]
 
+    def band(self):
+        name = self._spectral_window.getcell('NAME', self._spectral_window_id)
+        if not name or name.lower() == 'none':
+            return None
+        return name
+
     def polarizations(self):
         return _getcell(self._polarization, 'CORR_TYPE', self._polarization_id)
 

@@ -2,6 +2,7 @@ import tempfile
 import os
 import atexit
 import logging
+import math
 from abc import abstractmethod
 
 import numpy as np
@@ -10,7 +11,7 @@ import katsdpsigproc.accel as accel
 
 from . import \
     loader, parameters, polarization, preprocess, clean, weight, sky_model, \
-    imaging, progress, beam
+    imaging, progress, beam, primary_beam
 
 
 logger = logging.getLogger(__name__)
@@ -203,9 +204,19 @@ class ChannelParameters:
         else:
             raise ValueError('--w-step must be dimensionless or a length')
         w_planes = int(np.ceil(w_planes / w_slices))
+        if args.primary_beam in {'meerkat', 'meerkat:1'}:
+            band = dataset.band()
+            if band is None:
+                raise ValueError(
+                    'Data set does not specify a band, so --primary-beam cannot be used')
+            beams = primary_beam.MeerkatBeamModelSet1(band)
+        elif args.primary_beam == 'none':
+            beams = None
+        else:
+            raise ValueError(f'Unexpected value {args.primary_beam} for --primary-beam')
         self.grid_p = parameters.GridParameters(
             args.aa_width, args.grid_oversample, args.kernel_image_oversample,
-            w_slices, w_planes, max_w, args.kernel_width, args.degrid)
+            w_slices, w_planes, max_w, args.kernel_width, args.degrid, beams)
         if args.clean_mode == 'I':
             clean_mode = clean.CLEAN_I
         elif args.clean_mode == 'IQUV':
@@ -277,6 +288,10 @@ def add_options(parser):
                        help='Level at which to truncate W kernel [%(default)s]')
     group.add_argument('--degrid', action='store_true',
                        help='Use degridding rather than direct prediction (less accurate)')
+    group.add_argument('--primary-beam', choices=['meerkat', 'meerkat:1', 'none'], default='none',
+                       help='Primary beam model for the telescope')
+    group.add_argument('--primary-beam-cutoff', type=float, default=0.1,
+                       help='Primary beam power level below which output pixels are discarded')
 
     group = parser.add_argument_group('Cleaning options')
     group.add_argument('--psf-cutoff', type=float, default=0.01,
@@ -435,15 +450,43 @@ def process_channel(dataset, args, start_channel,
                     break
         queue.finish()
 
+    # Scale by primary beam
+    if grid_p.beams:
+        pbeam_model = grid_p.beams.sample()
+        # Sample beam model at the pixel grid. It's circularly symmetric, so
+        # we don't need to worry about parallactic angle rotations or the
+        # different sign conventions for azimuth versus RA.
+        start = -image_p.pixels / 2 * image_p.pixel_size
+        pbeam = pbeam_model.sample(start, image_p.pixel_size, image_p.pixels,
+                                   start, image_p.pixel_size, image_p.pixels,
+                                   [image_p.wavelength])
+        # Ignore polarization and length-1 frequency axis; square to
+        # convert voltage to power.
+        pbeam = np.square(np.abs(pbeam[0, 0, 0]))
+        # Where the primary beam power is low, just mask the result rather
+        # than emitting massively scaled noise.
+        pbeam[pbeam < args.primary_beam_cutoff] = math.nan
+        model /= pbeam
+        dirty /= pbeam
+        writer.write_fits_image(
+            'primary_beam', 'primary beam', dataset,
+            np.broadcast_to(pbeam, model.shape), image_p, channel)
+
     writer.write_fits_image('model', 'model', dataset, model, image_p, channel)
     writer.write_fits_image('residuals', 'residuals', dataset, dirty, image_p,
                             channel, restoring_beam)
 
     # Try to free up memory for the beam convolution
+    del pbeam
     del grid_data
     del psf
     del imager
 
+    # NaNs in the model will mess up the convolution, so zero them. They will
+    # become NaNs again when the residuals are added (assuming the NaNs are
+    # due to the primary beam mask).
+    if grid_p.beams:
+        model[np.isnan(model)] = 0.0
     # Convolve with restoring beam, and add residuals back in
     if args.host:
         beam.convolve_beam(model, restoring_beam, model)

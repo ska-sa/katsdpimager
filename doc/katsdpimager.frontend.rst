@@ -1,7 +1,7 @@
-katsdpimager.progress module
+katsdpimager.frontend module
 ============================
 
-.. automodule:: katsdpimager.progress
+.. automodule:: katsdpimager.frontend
    :members:
    :undoc-members:
    :show-inheritance:

@@ -6,7 +6,7 @@ Subpackages
 
 .. toctree::
 
-    katsdpimager.test
+   katsdpimager.test
 
 Submodules
 ----------
@@ -16,6 +16,7 @@ Submodules
    katsdpimager.beam
    katsdpimager.clean
    katsdpimager.fft
+   katsdpimager.frontend
    katsdpimager.grid
    katsdpimager.image
    katsdpimager.imaging
@@ -29,7 +30,9 @@ Submodules
    katsdpimager.polarization
    katsdpimager.predict
    katsdpimager.preprocess
+   katsdpimager.primary_beam
    katsdpimager.progress
+   katsdpimager.render
    katsdpimager.sky_model
    katsdpimager.types
    katsdpimager.weight
@@ -38,6 +41,6 @@ Module contents
 ---------------
 
 .. automodule:: katsdpimager
-    :members:
-    :undoc-members:
-    :show-inheritance:
+   :members:
+   :undoc-members:
+   :show-inheritance:

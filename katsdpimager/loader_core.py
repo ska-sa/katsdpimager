@@ -77,6 +77,14 @@ class LoaderBase:
         """
         raise NotImplementedError('Abstract base class')
 
+    def band(self):
+        """Return name for the frequency band in use.
+
+        This is used for looking up externally-defined beam models. If the
+        band name is not known, return None.
+        """
+        raise NotImplementedError('Abstract base class')
+
     def phase_centre(self):
         """Return direction corresponding to l=0, m=0.
 
