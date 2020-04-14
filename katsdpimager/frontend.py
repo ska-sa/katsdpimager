@@ -471,6 +471,8 @@ def process_channel(dataset, args, start_channel,
         writer.write_fits_image(
             'primary_beam', 'primary beam', dataset,
             np.broadcast_to(pbeam, model.shape), image_p, channel)
+    else:
+        pbeam = None
 
     writer.write_fits_image('model', 'model', dataset, model, image_p, channel)
     writer.write_fits_image('residuals', 'residuals', dataset, dirty, image_p,
