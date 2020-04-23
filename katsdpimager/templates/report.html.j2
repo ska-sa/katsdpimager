@@ -10,10 +10,12 @@
 {% for target in targets %}
     <h1>{{ target.name }}</h1>
     <p>{{ target.description }}</p>
-    <p>Total channels: {{ common.channels | length }}</p>
-    <p>Successful channels: {{ target.status.values()|select("equalto", "complete")|list|count }}</p>
-    <p>Flagged channels: {{ target.status.values()|select("equalto", "no-data")|list|count }}</p>
+    <p>Total channels: {{ common.channels }}</p>
+    <p>Computed channels: {{ common.output_channels | length }}</p>
+    <p>Successful channels: {{ target.status|select("equalto", "complete")|list|count }}</p>
+    <p>Flagged channels: {{ target.status|select("equalto", "no-data")|list|count }}</p>
     {{ target.plots['status'] | safe | indent(4) }}
+    {{ target.plots['peak'] | safe | indent(4) }}
 {% endfor %}
   </body>
 </html>

@@ -3,6 +3,7 @@ import argparse
 import os
 import json
 import shutil
+import math
 from datetime import datetime
 from typing import List, Dict, Tuple
 
@@ -18,13 +19,19 @@ import bokeh.model
 import bokeh.resources
 
 
+FREQUENCY_PLOT_UNIT = u.MHz
+FLUX_PLOT_UNIT = u.mJy / u.beam
+
+
 class CommonStats:
     """Information extracted from the dataset, independent of target."""
 
     def __init__(self, dataset: katdal.DataSet, telstate: katsdptelstate.TelescopeState) -> None:
+        self.output_channels: List[int] = telstate['output_channels']
         self.spw = dataset.spectral_windows[dataset.spw]
-        self.channels: List[int] = telstate['output_channels']
-        self.frequencies = [self.spw.channel_freqs[channel] for channel in self.channels] * u.Hz
+        self.channels: int = self.spw.num_chans
+        self.channel_width = self.spw.channel_width * u.Hz
+        self.frequencies: u.Quantity = self.spw.channel_freqs * u.Hz
 
 
 class TargetStats:
@@ -33,8 +40,16 @@ class TargetStats:
     def __init__(self, common: CommonStats, target: katpoint.Target) -> None:
         self.common = common
         self.target = target
-        self.status: Dict[int, str] = {}    # Status string for each channel
+        # Status string for each channel
+        self.status: List[str] = ['masked'] * common.channels
+        # Peak flux per channel (NaN where missing)
+        self.peak: u.Quantity = [math.nan] * common.channels * (u.Jy / u.beam)
         self.plots: Dict[str, str] = {}     # Divs to insert for plots returned by make_plots
+        self.frequency_range = bokeh.models.Range1d(
+            self.common.frequencies[0].to_value(FREQUENCY_PLOT_UNIT),
+            self.common.frequencies[-1].to_value(FREQUENCY_PLOT_UNIT)
+        )
+        self.channel_range = bokeh.models.Range1d(0, self.common.spw.num_chans - 1)
 
     @property
     def name(self) -> str:
@@ -44,22 +59,44 @@ class TargetStats:
     def description(self) -> str:
         return self.target.description
 
+    def _add_channel_range(self, fig: bokeh.plotting.Figure) -> None:
+        fig.extra_x_ranges = {'channel': self.channel_range}
+        fig.add_layout(bokeh.models.LinearAxis(x_range_name='channel', axis_label='Channel'),
+                       'above')
+
     def make_plot_status(self) -> bokeh.model.Model:
         fig = bokeh.plotting.figure(
-            title='Successful channels',
-            x_axis_label='Frequency (MHz)',
-            y_axis_label='Present')
-        fig.vbar(x=self.common.frequencies.to_value(u.MHz),
-                 width=self.common.spw.channel_width * 0.8e-6,  # e-6 to convert to MHz
+            title='Status',
+            x_axis_label=f'Frequency ({FREQUENCY_PLOT_UNIT})',
+            y_axis_label='Status',
+            x_range=self.frequency_range,
+            y_range=['masked', 'missing', 'no-data', 'complete']
+        )
+        fig.vbar(x=self.common.frequencies.to_value(FREQUENCY_PLOT_UNIT),
+                 width=0.8 * self.common.channel_width.to_value(FREQUENCY_PLOT_UNIT),
                  bottom=0,
-                 top=[int(self.status.get(channel) == 'complete')
-                      for channel in self.common.channels])
+                 top=self.status)
+        self._add_channel_range(fig)
+        return fig
+
+    def make_plot_peak(self) -> bokeh.model.Model:
+        fig = bokeh.plotting.figure(
+            title='Peak flux',
+            x_axis_label=f'Frequency ({FREQUENCY_PLOT_UNIT})',
+            y_axis_label=f'Flux ({FLUX_PLOT_UNIT})',
+            x_range=self.frequency_range,
+            y_range=bokeh.models.DataRange1d(start=0.0)
+        )
+        fig.line(self.common.frequencies.to_value(FREQUENCY_PLOT_UNIT),
+                 self.peak.to_value(FLUX_PLOT_UNIT))
+        self._add_channel_range(fig)
         return fig
 
     def make_plots(self) -> Dict[str, bokeh.model.Model]:
         """Generate Bokeh figures for the plots."""
         return {
-            'status': self.make_plot_status()
+            'status': self.make_plot_status(),
+            'peak': self.make_plot_peak()
         }
 
 
@@ -71,6 +108,8 @@ def get_stats(dataset: katdal.DataSet,
     stats_lookup = {target.description: target for target in stats}
     for ((target_desc, channel), status) in telstate.get('status', {}).items():
         stats_lookup[target_desc].status[channel] = status
+    for ((target_desc, channel), peak) in telstate.get('peak', {}).items():
+        stats_lookup[target_desc].peak[channel] = peak * (u.Jy / u.beam)
     return common, stats
 
 
