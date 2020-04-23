@@ -48,5 +48,5 @@ urllib3                   # via requests
 katdal @ git+https://github.com/ska-sa/katdal
 katpoint @ git+https://github.com/ska-sa/katpoint
 katsdpsigproc @ git+https://github.com/ska-sa/katsdpsigproc
-katsdptelstate @ git+https://github.com/ska-sa/katsdptelstate
+katsdptelstate @ git+https://github.com/ska-sa/katsdptelstate@indexed-immutable
 katsdpservices @ git+https://github.com/ska-sa/katsdpservices
