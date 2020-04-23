@@ -22,10 +22,9 @@ class CommonStats:
     """Information extracted from the dataset, independent of target."""
 
     def __init__(self, dataset: katdal.DataSet, telstate: katsdptelstate.TelescopeState) -> None:
-        # TODO: have master controller write the output channel range
-        spw = dataset.spectral_windows[dataset.spw]
-        self.channels = range(dataset.spectral_windows[dataset.spw].num_chans)
-        self.frequencies = [spw.channel_freqs[channel] for channel in self.channels] * u.Hz
+        self.spw = dataset.spectral_windows[dataset.spw]
+        self.channels: List[int] = telstate['output_channels']
+        self.frequencies = [self.spw.channel_freqs[channel] for channel in self.channels] * u.Hz
 
 
 class TargetStats:
@@ -48,10 +47,13 @@ class TargetStats:
     def make_plot_status(self) -> bokeh.model.Model:
         fig = bokeh.plotting.figure(
             title='Successful channels',
-            x_axis_label='Channel',
+            x_axis_label='Frequency (MHz)',
             y_axis_label='Present')
-        fig.line(self.common.channels,
-                 [int(self.status.get(channel) == 'complete') for channel in self.common.channels])
+        fig.vbar(x=self.common.frequencies.to_value(u.MHz),
+                 width=self.common.spw.channel_width * 0.8e-6,  # e-6 to convert to MHz
+                 bottom=0,
+                 top=[int(self.status.get(channel) == 'complete')
+                      for channel in self.common.channels])
         return fig
 
     def make_plots(self) -> Dict[str, bokeh.model.Model]:

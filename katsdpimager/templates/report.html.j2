@@ -10,7 +10,6 @@
 {% for target in targets %}
     <h1>{{ target.name }}</h1>
     <p>{{ target.description }}</p>
-{# TODO: use the output channel range for the spectral stream #}
     <p>Total channels: {{ common.channels | length }}</p>
     <p>Successful channels: {{ target.status.values()|select("equalto", "complete")|list|count }}</p>
     <p>Flagged channels: {{ target.status.values()|select("equalto", "no-data")|list|count }}</p>
