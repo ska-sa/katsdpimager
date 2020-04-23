@@ -9,6 +9,7 @@ from datetime import datetime
 from contextlib import closing
 import gc
 
+import numpy as np
 from astropy import units
 from astropy.coordinates import Angle
 import katsdpservices
@@ -99,6 +100,7 @@ class Writer(frontend.Writer):
                 json.dump(metadata, f, allow_nan=False, indent=2)
             os.rename(tmp_dir, output_dir)
             sub_key = (dataset.raw_target.description, channel)
+            self.telstate.set_indexed('peak', sub_key, float(np.nanmax(image)))
             self.telstate.set_indexed('status', sub_key, 'complete')
         except Exception:
             # Make a best effort to clean up
