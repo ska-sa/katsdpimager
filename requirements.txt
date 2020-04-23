@@ -14,6 +14,7 @@ ephem                     # via pyephem
 future                    # via katdal, katpoint
 h5py                      # via katdal
 idna                      # via requests
+jinja2
 jmespath                  # via botocore
 kiwisolver==1.1.0         # via matplotlib
 llvmlite                  # via numba

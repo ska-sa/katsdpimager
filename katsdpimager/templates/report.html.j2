@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Spectral imager report</title>
+  </head>
+  <body>
+{% for target in targets %}
+    <h1>{{ target.name }}</h1>
+    <p>{{ target.description }}</p>
+{# TODO: use the output channel range for the spectral stream #}
+    <p>Total channels: {{ dataset.spectral_windows[dataset.spw].num_chans }}</p>
+    <p>Successful channels: {{ target.status.values()|select("equalto", "complete")|list|count }}</p>
+    <p>Flagged channels: {{ target.status.values()|select("equalto", "no-data")|list|count }}</p>
+{% endfor %}
+  </body>
+</html>

@@ -98,7 +98,7 @@ class Writer(frontend.Writer):
             with open(os.path.join(tmp_dir, 'metadata.json'), 'w') as f:
                 json.dump(metadata, f, allow_nan=False, indent=2)
             os.rename(tmp_dir, output_dir)
-            sub_key = (channel, dataset.raw_target.description)
+            sub_key = (dataset.raw_target.description, channel)
             self.telstate.set_indexed('status', sub_key, 'complete')
         except Exception:
             # Make a best effort to clean up
