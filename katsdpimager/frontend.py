@@ -329,6 +329,7 @@ def add_options(parser):
 
 class Writer:
     """Abstract class that handles writing grids/images to files"""
+
     @abstractmethod
     def write_fits_image(self, name, description, dataset, image, image_parameters, channel,
                          beam=None, bunit='JY/BEAM'):
@@ -348,6 +349,9 @@ class Writer:
         true, the data needs to be fft-shifted on the u and v axes. The other
         arguments have the same meaning as for :meth:`.io.write_fits_grid`.
         """
+
+    def skip_channel(self, dataset, image_parameters, channel):
+        """Called to indicate that a channel was skipped due to lack of data."""
 
 
 def process_channel(dataset, args, start_channel,
@@ -397,6 +401,7 @@ def process_channel(dataset, args, start_channel,
     psf_peak = dirty[..., dirty.shape[1] // 2, dirty.shape[2] // 2]
     if np.any(psf_peak == 0):
         logger.info('Skipping channel %d which has no usable data', channel)
+        wrapper.skip_channel(dataset, image_p, channel)
         return
     scale = np.reciprocal(psf_peak)
     imager.scale_dirty(scale)

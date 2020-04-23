@@ -55,6 +55,11 @@ class Writer(frontend.Writer):
             # katdal gives dump period in seconds, metadata value needs to be in hours
             'IntegrationTime': [raw_data.dump_period * len(raw_data.dumps) / 3600.0]
         }
+        # katdal's TelstateToStr doesn't support indexed keys yet.
+        # The .wrapped can be removed once it does.
+        telstate = raw_data.source.telstate.wrapped.root()
+        namespace = telstate.join(raw_data.source.capture_block_id, args.stream)
+        self.telstate = telstate.view(namespace)
 
     def write_fits_image(self, name, description, dataset, image, image_parameters, channel,
                          beam=None, bunit='Jy/beam'):
@@ -93,6 +98,8 @@ class Writer(frontend.Writer):
             with open(os.path.join(tmp_dir, 'metadata.json'), 'w') as f:
                 json.dump(metadata, f, allow_nan=False, indent=2)
             os.rename(tmp_dir, output_dir)
+            sub_key = (channel, dataset.raw_target.description)
+            self.telstate.set_indexed('status', sub_key, 'complete')
         except Exception:
             # Make a best effort to clean up
             shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -106,6 +113,10 @@ class Writer(frontend.Writer):
     def write_fits_grid(self, name, description, fftshift, grid_data, image_parameters, channel):
         pass
 
+    def skip_channel(self, dataset, image_parameters, channel):
+        sub_key = (channel, dataset.raw_target.description)
+        self.telstate.set_indexed('status', sub_key, 'no-data')
+
 
 def get_parser():
     parser = argparse.ArgumentParser()
@@ -115,6 +126,8 @@ def get_parser():
                         help='Parent directory for output')
     parser.add_argument('prefix', type=str,
                         help='Prefix for output directories and filenames')
+    parser.add_argument('stream', type=str,
+                        help='Stream name for telescope state outputs')
     parser.add_argument('--log-level', type=str, metavar='LEVEL',
                         help='Logging level [INFO]')
 
