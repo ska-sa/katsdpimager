@@ -3,15 +3,18 @@
   <head>
     <meta charset="utf-8">
     <title>Spectral imager report</title>
+    {{ resources | safe | indent(8) }}
+    {{ script | safe | indent(8) }}
   </head>
   <body>
 {% for target in targets %}
     <h1>{{ target.name }}</h1>
     <p>{{ target.description }}</p>
 {# TODO: use the output channel range for the spectral stream #}
-    <p>Total channels: {{ dataset.spectral_windows[dataset.spw].num_chans }}</p>
+    <p>Total channels: {{ common.channels | length }}</p>
     <p>Successful channels: {{ target.status.values()|select("equalto", "complete")|list|count }}</p>
     <p>Flagged channels: {{ target.status.values()|select("equalto", "no-data")|list|count }}</p>
+    {{ target.plots['status'] | safe | indent(4) }}
 {% endfor %}
   </body>
 </html>

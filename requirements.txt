@@ -2,6 +2,7 @@ ansicolors
 appdirs                   # via katsdpsigproc
 argparse                  # via python-casacore
 astropy==3.1.2
+bokeh
 botocore                  # for S3 authentication in katdal
 certifi                   # via requests
 chardet                   # via requests
@@ -25,24 +26,28 @@ msgpack                   # via katsdptelstate
 netifaces                 # via katsdptelstate
 numba
 numpy
+packaging                 # via bokeh
 pandas                    # via katsdpsigproc
+pillow                    # via bokeh
 progress==1.2
 pycuda
 pyephem                   # via katpoint
 pygelf                    # via katsdpservices
 pyjwt                     # via katdal
 python-casacore==3.1.1
-python-dateutil           # via pandas, botocore
+python-dateutil           # via pandas, botocore, bokeh
 python-lzf                # via katsdptelstate
 pytools                   # via pycuda
 pytz                      # via pandas
+pyyaml                    # via bokeh
 rdbtools                  # via katsdptelstate
 redis                     # via katsdptelstate
 requests                  # via katdal
 scikit-cuda
 scipy                     # via katdal (its fallback interpolation behaves differently)
-six                       # via pytools, python-dateutil
+six                       # via pytools, python-dateutil, bokeh
 toolz                     # via dask[array]
+tornado                   # via bokeh
 typing_extensions         # via katsdpsigproc
 urllib3                   # via requests
 
