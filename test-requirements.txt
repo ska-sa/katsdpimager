@@ -1,5 +1,6 @@
 coverage
 fakeredis
+lupa==1.9                   # via fakeredis[lua]
 nose
 six
 sortedcontainers            # via fakeredis
