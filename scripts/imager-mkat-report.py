@@ -4,12 +4,15 @@ import os
 import json
 import shutil
 import math
+import logging
+import uuid
 from typing import List, Dict, Tuple
 
 import jinja2
 import katpoint
 import katdal
 import katsdptelstate
+import katsdpservices
 import astropy.units as u
 
 import bokeh.embed
@@ -22,6 +25,9 @@ import katsdpimager.metadata
 
 FREQUENCY_PLOT_UNIT = u.MHz
 FLUX_PLOT_UNIT = u.mJy / u.beam
+
+
+logger = logging.getLogger()
 
 
 class CommonStats:
@@ -170,23 +176,32 @@ def write_metadata(dataset: katdal.DataSet,
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument('output_dir', type=str)
-    parser.add_argument('dataset', type=str)
-    parser.add_argument('stream', type=str)
+    parser.add_argument('dataset', type=str, help='Input dataset')
+    parser.add_argument('output_dir', type=str, help='Parent directory for output')
+    parser.add_argument('prefix', type=str, help='Prefix for output directories and filenames')
+    parser.add_argument('stream', type=str, help='Stream name for telescope state inputs')
+    parser.add_argument('--log-level', type=str, metavar='LEVEL',
+                        help='Logging level [INFO]')
     args = parser.parse_args()
+    katsdpservices.setup_logging()
+    if args.log_level is not None:
+        logger.setLevel(args.log_level.upper())
 
     dataset = katdal.open(args.dataset, chunk_store=None, upgrade_flags=False)
     telstate = dataset.source.telstate.wrapped.root()
     telstate = telstate.view(telstate.join(dataset.source.capture_block_id, args.stream))
 
+    output_dir = '{}_{}'.format(args.prefix, uuid.uuid4())
+    output_dir = os.path.join(args.output_dir, output_dir)
+    filename = args.prefix + '_report.html'
+    tmp_dir = output_dir + '.writing'
+    os.mkdir(tmp_dir)
     try:
-        tmp_dir = args.output_dir + '.writing'
-        os.mkdir(tmp_dir)
         common_stats, target_stats = get_stats(dataset, telstate)
-        write_report(common_stats, target_stats, os.path.join(tmp_dir, 'report.html'))
+        write_report(common_stats, target_stats, os.path.join(tmp_dir, filename))
         write_metadata(dataset, common_stats, target_stats,
                        os.path.join(tmp_dir, 'metadata.json'))
-        os.rename(tmp_dir, args.output_dir)
+        os.rename(tmp_dir, output_dir)
     except Exception:
         # Make a best effort to clean up
         shutil.rmtree(tmp_dir, ignore_errors=True)

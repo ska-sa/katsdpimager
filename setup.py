@@ -56,7 +56,7 @@ setup(
     url="https://github.com/ska-sa/katsdpimager/",
     packages=find_packages(),
     package_data={'': ['imager_kernels/*.mako', 'imager_kernels/*/*.mako',
-                       'models/*/*/*/*.h5']},
+                       'models/*/*/*/*.h5', 'templates/*']},
     scripts=["scripts/imager.py",
              "scripts/imager-mkat-pipeline.py",
              "scripts/imager-mkat-report.py",
