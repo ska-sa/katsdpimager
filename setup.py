@@ -78,7 +78,7 @@ setup(
         'ms': ['python-casacore'],
         'katdal': ['katdal', 'scipy>=0.17'],
         'benchmark': ['katpoint'],
-        'pipeline': ['katsdpservices', 'matplotlib', 'jinja2', 'bokeh']
+        'pipeline': ['katsdpservices', 'matplotlib', 'jinja2>=2.11', 'bokeh']
     },
     use_katversion=True,
     classifiers=[
