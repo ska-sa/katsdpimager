@@ -401,7 +401,7 @@ def process_channel(dataset, args, start_channel,
     psf_peak = dirty[..., dirty.shape[1] // 2, dirty.shape[2] // 2]
     if np.any(psf_peak == 0):
         logger.info('Skipping channel %d which has no usable data', channel)
-        wrapper.skip_channel(dataset, image_p, channel)
+        writer.skip_channel(dataset, image_p, channel)
         return
     scale = np.reciprocal(psf_peak)
     imager.scale_dirty(scale)

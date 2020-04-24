@@ -1,0 +1,51 @@
+"""Create partial metadata.json for katsdptransfer"""
+
+from datetime import datetime
+from typing import Sequence, Dict
+
+import numpy as np
+import katpoint
+import katdal
+
+
+def make_metadata(dataset: katdal.DataSet, targets: Sequence[katpoint.Target],
+                  channels: int,
+                  description: str) -> Dict[str, object]:
+    obs_params = dataset.obs_params
+    # Find dumps that track the targets. Based on katdal.DataSet.select, but
+    # we don't actually use select because we don't want to modify the
+    # dataset.
+    scan_sensor = dataset.sensor['Observation/scan_state']
+    track_mask = (scan_sensor == 'track')
+    target_index_sensor = dataset.sensor['Observation/target_index']
+    int_time = []
+    for target in targets:
+        target_index = dataset.catalogue.targets.index(target)
+        mask = (target_index_sensor == target_index) & track_mask
+        n_dumps = np.sum(mask)
+        # katdal gives dump period in seconds, metadata value needs to be in hours
+        int_time.append(dataset.dump_period * n_dumps / 3600.0)
+
+    return {
+        'CaptureBlockId': dataset.source.capture_block_id,
+        'ScheduleBlockIdCode': obs_params.get('sb_id_code', 'UNKNOWN'),
+        'Description': obs_params.get('description', 'UNKNOWN') + ': ' + description,
+        'ProposalId': obs_params.get('proposal_id', 'UNKNOWN'),
+        'Observer': obs_params.get('observer', 'UNKNOWN'),
+        # Solr doesn't accept +00:00, only Z, so we can't just format a timezone-aware value
+        'StartTime': datetime.utcnow().isoformat() + 'Z',
+        'Bandwidth': dataset.channel_width * channels,
+        'ChannelWidth': dataset.channel_width,
+        'NumFreqChannels': channels,
+        'RightAscension': [str(target.radec()[0]) for target in targets],
+        'Declination': [str(target.radec()[1]) for target in targets],
+        # JSON schema limits format to fixed-point with at most 10 decimal places
+        'DecRa': [
+            ','.join('{:.10f}'.format(a) for a in np.rad2deg(target.radec())[::-1])
+            for target in targets
+        ],
+        'Targets': [target.name for target in targets],
+        'KatpointTargets': [target.description for target in targets],
+        # katdal gives dump period in seconds, metadata value needs to be in hours
+        'IntegrationTime': int_time
+    }

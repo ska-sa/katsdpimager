@@ -4,7 +4,6 @@ import os
 import json
 import shutil
 import math
-from datetime import datetime
 from typing import List, Dict, Tuple
 
 import jinja2
@@ -18,6 +17,8 @@ import bokeh.plotting
 import bokeh.model
 import bokeh.resources
 
+import katsdpimager.metadata
+
 
 FREQUENCY_PLOT_UNIT = u.MHz
 FLUX_PLOT_UNIT = u.mJy / u.beam
@@ -28,10 +29,9 @@ class CommonStats:
 
     def __init__(self, dataset: katdal.DataSet, telstate: katsdptelstate.TelescopeState) -> None:
         self.output_channels: List[int] = telstate['output_channels']
-        self.spw = dataset.spectral_windows[dataset.spw]
-        self.channels: int = self.spw.num_chans
-        self.channel_width = self.spw.channel_width * u.Hz
-        self.frequencies: u.Quantity = self.spw.channel_freqs * u.Hz
+        self.channels: int = len(dataset.channels)
+        self.channel_width = dataset.channel_width * u.Hz
+        self.frequencies: u.Quantity = dataset.freqs * u.Hz
 
 
 class TargetStats:
@@ -49,7 +49,7 @@ class TargetStats:
             self.common.frequencies[0].to_value(FREQUENCY_PLOT_UNIT),
             self.common.frequencies[-1].to_value(FREQUENCY_PLOT_UNIT)
         )
-        self.channel_range = bokeh.models.Range1d(0, self.common.spw.num_chans - 1)
+        self.channel_range = bokeh.models.Range1d(0, self.common.channels - 1)
 
     @property
     def name(self) -> str:
@@ -146,32 +146,26 @@ def write_report(common_stats: CommonStats, target_stats: List[TargetStats],
 
 
 def write_metadata(dataset: katdal.DataSet,
-                   telstate: katsdptelstate.TelescopeState,
                    common_stats: CommonStats,
                    target_stats: List[TargetStats],
                    filename: str) -> None:
-    # TODO: check if all parameters are needed
-    # TODO refactor to share code with imager-mkat-pipeline.py
-    obs_params = dataset.obs_params
-
+    half_channel = 0.5 * common_stats.channel_width
     metadata = {
         'ProductType': {
             'ProductTypeName': 'MeerKATReductionProduct',
             'ReductionName': 'Spectral Imager Report'
         },
-        'CaptureBlockId': dataset.source.capture_block_id,
-        'ScheduleBlockIdCode': obs_params.get('sb_id_code', 'UNKNOWN'),
-        'Description': obs_params.get('description', 'UNKNOWN') + ': Spectral-line imaging report',
-        'ProposalId': obs_params.get('proposal_id', 'UNKNOWN'),
-        'Observer': obs_params.get('observer', 'UNKNOWN'),
-        # Solr doesn't accept +00:00, only Z, so we can't just format a timezone-aware value
-        'StartTime': datetime.utcnow().isoformat() + 'Z',
-        'ChannelWidth': dataset.channel_width,
-        'Targets': [target.name for target in target_stats],
-        'KatpointTargets': [target.description for target in target_stats]
+        **katsdpimager.metadata.make_metadata(
+            dataset, [target.target for target in target_stats],
+            len(common_stats.output_channels),
+            'Spectral-line imaging report'
+        ),
+        'MinFreq': (common_stats.frequencies[0] - half_channel).to_value(u.Hz),
+        'MaxFreq': (common_stats.frequencies[-1] + half_channel).to_value(u.Hz),
+        'Run': 0
     }
     with open(filename, 'w') as f:
-        json.dump(metadata, f, indent=2, sort_keys=True)
+        json.dump(metadata, f, allow_nan=False, indent=2)
 
 
 def main() -> None:
@@ -190,7 +184,7 @@ def main() -> None:
         os.mkdir(tmp_dir)
         common_stats, target_stats = get_stats(dataset, telstate)
         write_report(common_stats, target_stats, os.path.join(tmp_dir, 'report.html'))
-        write_metadata(dataset, telstate, common_stats, target_stats,
+        write_metadata(dataset, common_stats, target_stats,
                        os.path.join(tmp_dir, 'metadata.json'))
         os.rename(tmp_dir, args.output_dir)
     except Exception:

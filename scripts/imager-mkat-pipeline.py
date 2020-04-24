@@ -5,18 +5,16 @@ import os
 import uuid
 import shutil
 import json
-from datetime import datetime
 from contextlib import closing
 import gc
 
 import numpy as np
 from astropy import units
-from astropy.coordinates import Angle
 import katsdpservices
 import katdal
 from katsdpsigproc import accel
 
-from katsdpimager import frontend, loader, io, progress, render
+from katsdpimager import frontend, loader, io, progress, render, metadata
 
 
 logger = logging.getLogger()
@@ -30,31 +28,13 @@ class Writer(frontend.Writer):
         raw_data = dataset.raw_data
         if not isinstance(raw_data, katdal.DataSet):
             raise RuntimeError('Only katdal data sets are supported')
-        radec_deg = dataset.phase_centre().to(units.deg)
-        obs_params = raw_data.obs_params
         self.common_metadata = {
             'ProductType': {
                 'ProductTypeName': 'FITSImageProduct',
                 'ReductionName': 'Spectral Image'
             },
-            'CaptureBlockId': raw_data.source.capture_block_id,
-            'ScheduleBlockIdCode': obs_params.get('sb_id_code', 'UNKNOWN'),
-            'Description': obs_params.get('description', 'UNKNOWN') + ': Spectral-line image',
-            'ProposalId': obs_params.get('proposal_id', 'UNKNOWN'),
-            'Observer': obs_params.get('observer', 'UNKNOWN'),
-            # Solr doesn't accept +00:00, only Z, so we can't just format a timezone-aware value
-            'StartTime': datetime.utcnow().isoformat() + 'Z',
-            'Bandwidth': raw_data.channel_width,
-            'ChannelWidth': raw_data.channel_width,
-            'NumFreqChannels': 1,
-            'RightAscension': [Angle(radec_deg[0]).to_string(units.hour, sep=':', pad=True)],
-            'Declination': [Angle(radec_deg[1]).to_string(units.deg, sep=':', pad=True)],
-            # JSON schema limits format to fixed-point with at most 10 decimal places
-            'DecRa': [','.join('{:.10f}'.format(angle) for angle in radec_deg.value[::-1])],
-            'Targets': [dataset.raw_target.name],
-            'KatpointTargets': [dataset.raw_target.description],
-            # katdal gives dump period in seconds, metadata value needs to be in hours
-            'IntegrationTime': [raw_data.dump_period * len(raw_data.dumps) / 3600.0]
+            **metadata.make_metadata(raw_data, [dataset.raw_target], 1,
+                                     'Spectral-line image')
         }
         # katdal's TelstateToStr doesn't support indexed keys yet.
         # The .wrapped can be removed once it does.
