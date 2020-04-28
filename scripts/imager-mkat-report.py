@@ -105,7 +105,12 @@ class TargetStats:
             y_axis_label=f'Flux ({FLUX_PLOT_UNIT})',
             x_range=self.frequency_range,
             y_range=bokeh.models.DataRange1d(start=0.0),
-            sizing_mode='stretch_width'
+            sizing_mode='stretch_width',
+            tooltips=[
+                ('Frequency', f'$x {FREQUENCY_PLOT_UNIT}'),
+                ('Channel', '$index'),
+                ('Flux', f'$y {FLUX_PLOT_UNIT}')
+            ]
         )
         fig.line(x='frequency', y='peak', source=source,
                  line_color=PALETTE[0], legend_label='Peak')

@@ -17,10 +17,15 @@
       <div class="row">
         <div class="col">
           <h1>{{ target.name }}</h1>
-          <p>{{ target.description }}</p>
-          <div class="card" style="max-width: 20em">
+          <div class="card">
+            <h5 class="card-header">Description</h5>
+            <div class="card-body">
+              <p class="card-text">{{ target.description }}</p>
+            </div>
+          </div>
+          <div class="card">
             <h5 class="card-header">Channels</h5>
-            <table class="table">
+            <table class="table" style="max-width: 20em">
               <tbody>
                 <tr>
                   <th scope="row">Successful</th>
@@ -46,7 +51,7 @@
             </table>
           </div>
           <div class="card">
-            <h5 class="card-header">Status</h5>
+            <h5 class="card-header">Processing status</h5>
             {{ target.plots['status'] | safe | indent(12) }}
           </div>
           <div class="card">
