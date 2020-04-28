@@ -96,8 +96,12 @@ class Writer(frontend.Writer):
         pass
 
     def skip_channel(self, dataset, image_parameters, channel):
-        sub_key = (channel, dataset.raw_target.description)
+        sub_key = (dataset.raw_target.description, channel)
         self.telstate.set_indexed('status', sub_key, 'no-data')
+
+    def statistics(self, dataset, image_parameters, channel, **kwargs):
+        sub_key = (dataset.raw_target.description, channel)
+        self.telstate.set_indexed('noise', sub_key, kwargs['noise'])
 
 
 def get_parser():

@@ -16,8 +16,10 @@ import katsdpservices
 import astropy.units as u
 
 import bokeh.embed
+import bokeh.palettes
 import bokeh.plotting
 import bokeh.model
+import bokeh.models
 import bokeh.resources
 
 import katsdpimager.metadata
@@ -25,6 +27,7 @@ import katsdpimager.metadata
 
 FREQUENCY_PLOT_UNIT = u.MHz
 FLUX_PLOT_UNIT = u.mJy / u.beam
+PALETTE = bokeh.palettes.colorblind['Colorblind'][8]
 
 
 logger = logging.getLogger()
@@ -50,6 +53,8 @@ class TargetStats:
         self.status: List[str] = ['masked'] * common.channels
         # Peak flux per channel (NaN where missing)
         self.peak: u.Quantity = [math.nan] * common.channels * (u.Jy / u.beam)
+        # Noise per channel (NaN where missing)
+        self.noise: u.Quantity = [math.nan] * common.channels * (u.Jy / u.beam)
         self.plots: Dict[str, str] = {}     # Divs to insert for plots returned by make_plots
         self.frequency_range = bokeh.models.Range1d(
             self.common.frequencies[0].to_value(FREQUENCY_PLOT_UNIT),
@@ -70,7 +75,16 @@ class TargetStats:
         fig.add_layout(bokeh.models.LinearAxis(x_range_name='channel', axis_label='Channel'),
                        'above')
 
-    def make_plot_status(self) -> bokeh.model.Model:
+    def make_data_source(self) -> bokeh.models.ColumnDataSource:
+        data = {
+            'frequency': self.common.frequencies.to_value(FREQUENCY_PLOT_UNIT),
+            'status': self.status,
+            'noise': self.noise.to_value(FLUX_PLOT_UNIT),
+            'peak': self.peak.to_value(FLUX_PLOT_UNIT)
+        }
+        return bokeh.models.ColumnDataSource(data)
+
+    def make_plot_status(self, source: bokeh.models.ColumnDataSource) -> bokeh.model.Model:
         fig = bokeh.plotting.figure(
             title='Status',
             x_axis_label=f'Frequency ({FREQUENCY_PLOT_UNIT})',
@@ -78,31 +92,31 @@ class TargetStats:
             x_range=self.frequency_range,
             y_range=['masked', 'missing', 'no-data', 'complete']
         )
-        fig.vbar(x=self.common.frequencies.to_value(FREQUENCY_PLOT_UNIT),
-                 width=0.8 * self.common.channel_width.to_value(FREQUENCY_PLOT_UNIT),
-                 bottom=0,
-                 top=self.status)
+        fig.cross(x='frequency', y='status', source=source, color=PALETTE[0])
         self._add_channel_range(fig)
         return fig
 
-    def make_plot_peak(self) -> bokeh.model.Model:
+    def make_plot_flux(self, source: bokeh.models.ColumnDataSource) -> bokeh.model.Model:
         fig = bokeh.plotting.figure(
-            title='Peak flux',
+            title='Flux density',
             x_axis_label=f'Frequency ({FREQUENCY_PLOT_UNIT})',
             y_axis_label=f'Flux ({FLUX_PLOT_UNIT})',
             x_range=self.frequency_range,
             y_range=bokeh.models.DataRange1d(start=0.0)
         )
-        fig.line(self.common.frequencies.to_value(FREQUENCY_PLOT_UNIT),
-                 self.peak.to_value(FLUX_PLOT_UNIT))
+        fig.line(x='frequency', y='peak', source=source,
+                 line_color=PALETTE[0], legend_label='Peak')
+        fig.line(x='frequency', y='noise', source=source,
+                 line_color=PALETTE[1], legend_label='Noise')
         self._add_channel_range(fig)
         return fig
 
     def make_plots(self) -> Dict[str, bokeh.model.Model]:
         """Generate Bokeh figures for the plots."""
+        source = self.make_data_source()
         return {
-            'status': self.make_plot_status(),
-            'peak': self.make_plot_peak()
+            'status': self.make_plot_status(source),
+            'flux': self.make_plot_flux(source)
         }
 
 
@@ -116,6 +130,8 @@ def get_stats(dataset: katdal.DataSet,
         stats_lookup[target_desc].status[channel] = status
     for ((target_desc, channel), peak) in telstate.get('peak', {}).items():
         stats_lookup[target_desc].peak[channel] = peak * (u.Jy / u.beam)
+    for ((target_desc, channel), noise) in telstate.get('noise', {}).items():
+        stats_lookup[target_desc].noise[channel] = noise * (u.Jy / u.beam)
     return common, stats
 
 

@@ -353,6 +353,15 @@ class Writer:
     def skip_channel(self, dataset, image_parameters, channel):
         """Called to indicate that a channel was skipped due to lack of data."""
 
+    def statistics(self, dataset, image_parameters, channel, **kwargs):
+        """Report statistics of the image or imaging process.
+
+        The statistics reported will evolve over time. Currently, they are
+
+        noise
+          Estimated noise in the residual image, in Jy/beam
+        """
+
 
 def process_channel(dataset, args, start_channel,
                     context, queue, reader, writer, channel_p, array_p, weight_p,
@@ -453,6 +462,9 @@ def process_channel(dataset, args, start_channel,
                 value = imager.clean_cycle(psf_patch, threshold_metric)
                 if value is None:
                     break
+        if i == args.major - 1:
+            # Update the noise estimate for output stats
+            noise = imager.noise_est()
         queue.finish()
 
     # Scale by primary beam
@@ -512,6 +524,7 @@ def process_channel(dataset, args, start_channel,
     model += dirty
     writer.write_fits_image('clean', 'clean image', dataset, model, image_p,
                             channel, restoring_beam)
+    writer.statistics(dataset, image_p, channel, noise=noise)
 
 
 def run(args, context, queue, dataset, writer):

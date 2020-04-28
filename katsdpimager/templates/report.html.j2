@@ -15,7 +15,7 @@
     <p>Successful channels: {{ target.status|select("equalto", "complete")|list|count }}</p>
     <p>Flagged channels: {{ target.status|select("equalto", "no-data")|list|count }}</p>
     {{ target.plots['status'] | safe | indent(4) }}
-    {{ target.plots['peak'] | safe | indent(4) }}
+    {{ target.plots['flux'] | safe | indent(4) }}
 {% endfor %}
   </body>
 </html>
