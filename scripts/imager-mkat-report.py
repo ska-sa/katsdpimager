@@ -51,6 +51,8 @@ class TargetStats:
         self.target = target
         # Status string for each channel
         self.status: List[str] = ['masked'] * common.channels
+        for channel in common.output_channels:
+            self.status[channel] = 'failed'
         # Peak flux per channel (NaN where missing)
         self.peak: u.Quantity = [math.nan] * common.channels * (u.Jy / u.beam)
         # Noise per channel (NaN where missing)
@@ -90,7 +92,7 @@ class TargetStats:
             x_axis_label=f'Frequency ({FREQUENCY_PLOT_UNIT})',
             y_axis_label='Status',
             x_range=self.frequency_range,
-            y_range=['masked', 'missing', 'no-data', 'complete']
+            y_range=['masked', 'failed', 'no-data', 'complete']
         )
         fig.cross(x='frequency', y='status', source=source, color=PALETTE[0])
         self._add_channel_range(fig)
