@@ -8,6 +8,7 @@ import logging
 import uuid
 from typing import List, Dict, Tuple
 
+import pkg_resources
 import jinja2
 import katpoint
 import katdal
@@ -88,11 +89,11 @@ class TargetStats:
 
     def make_plot_status(self, source: bokeh.models.ColumnDataSource) -> bokeh.model.Model:
         fig = bokeh.plotting.figure(
-            title='Status',
             x_axis_label=f'Frequency ({FREQUENCY_PLOT_UNIT})',
             y_axis_label='Status',
             x_range=self.frequency_range,
-            y_range=['masked', 'failed', 'no-data', 'complete']
+            y_range=['masked', 'failed', 'no-data', 'complete'],
+            sizing_mode='stretch_width'
         )
         fig.cross(x='frequency', y='status', source=source, color=PALETTE[0])
         self._add_channel_range(fig)
@@ -100,11 +101,11 @@ class TargetStats:
 
     def make_plot_flux(self, source: bokeh.models.ColumnDataSource) -> bokeh.model.Model:
         fig = bokeh.plotting.figure(
-            title='Flux density',
             x_axis_label=f'Frequency ({FREQUENCY_PLOT_UNIT})',
             y_axis_label=f'Flux ({FLUX_PLOT_UNIT})',
             x_range=self.frequency_range,
-            y_range=bokeh.models.DataRange1d(start=0.0)
+            y_range=bokeh.models.DataRange1d(start=0.0),
+            sizing_mode='stretch_width'
         )
         fig.line(x='frequency', y='peak', source=source,
                  line_color=PALETTE[0], legend_label='Peak')
@@ -159,11 +160,16 @@ def write_report(common_stats: CommonStats, target_stats: List[TargetStats],
             i += 1
 
     resources = bokeh.resources.INLINE.render()
+    static = {}
+    for f in pkg_resources.resource_listdir('katsdpimager', 'static'):
+        content = pkg_resources.resource_string('katsdpimager', 'static/' + f)
+        static[f] = content.decode('utf-8')
     context = {
         'common': common_stats,
         'targets': target_stats,
         'resources': resources,
-        'script': script
+        'script': script,
+        'static': static
     }
     template = env.get_template('report.html.j2')
     template.stream(context).dump(filename)

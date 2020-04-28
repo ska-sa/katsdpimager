@@ -2,41 +2,60 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <!-- <link rel="stylesheet" href="bootstrap-4.4.1.min.css"> -->
     <title>Spectral imager report</title>
-    {{ resources | safe | indent(8) }}
-    {{ script | safe | indent(8) }}
+    {{ resources | safe | indent(4) }}
+    {{ script | safe | indent(4) }}
+    <style>
+      {{ static["bootstrap-4.4.1.min.css"] | indent(6) }}
+    </style>
   </head>
   <body>
+    <div class="container-fluid">
 {% for target in targets %}
-    <h1>{{ target.name }}</h1>
-    <p>{{ target.description }}</p>
-    <table>
-      <caption>Channels</caption>
-      <tbody>
-        <tr>
-          <th scope="row">Successful</th>
-          <td>{{ target.status|select("equalto", "complete")|list|count }}</td>
-        </tr>
-        <tr>
-          <th scope="row">Flagged</th>
-          <td>{{ target.status|select("equalto", "no-data")|list|count }}</td>
-        </tr>
-        <tr>
-          <th scope="row">Masked</th>
-          <td>{{ target.status|select("equalto", "masked")|list|count }}</td>
-        </tr>
-        <tr>
-          <th scope="row">Failed</th>
-          <td>{{ target.status|select("equalto", "failed")|list|count }}</td>
-        </tr>
-        <tr>
-          <th scope="row">Total</th>
-          <td>{{ common.channels }}</td>
-        </tr>
-      </tbody>
-    </table>
-    {{ target.plots['status'] | safe | indent(4) }}
-    {{ target.plots['flux'] | safe | indent(4) }}
+      <div class="row">
+        <div class="col">
+          <h1>{{ target.name }}</h1>
+          <p>{{ target.description }}</p>
+          <div class="card" style="max-width: 20em">
+            <h5 class="card-header">Channels</h5>
+            <table class="table">
+              <tbody>
+                <tr>
+                  <th scope="row">Successful</th>
+                  <td>{{ target.status|select("equalto", "complete")|list|count }}</td>
+                </tr>
+                <tr>
+                  <th scope="row">Flagged</th>
+                  <td>{{ target.status|select("equalto", "no-data")|list|count }}</td>
+                </tr>
+                <tr>
+                  <th scope="row">Masked</th>
+                  <td>{{ target.status|select("equalto", "masked")|list|count }}</td>
+                </tr>
+                <tr>
+                  <th scope="row">Failed</th>
+                  <td>{{ target.status|select("equalto", "failed")|list|count }}</td>
+                </tr>
+                <tr>
+                  <th scope="row">Total</th>
+                  <td>{{ common.channels }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h5 class="card-header">Status</h5>
+            {{ target.plots['status'] | safe | indent(12) }}
+          </div>
+          <div class="card">
+            <h5 class="card-header">Flux density</h5>
+            {{ target.plots['flux'] | safe | indent(12) }}
+          </div>
+        </div>
+      </div>
 {% endfor %}
+    </div>
   </body>
 </html>
