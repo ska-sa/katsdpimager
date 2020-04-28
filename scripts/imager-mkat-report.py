@@ -42,12 +42,14 @@ class CommonStats:
         self.channels: int = len(dataset.channels)
         self.channel_width = dataset.channel_width * u.Hz
         self.frequencies: u.Quantity = dataset.freqs * u.Hz
+        self.antennas = dataset.ants
 
 
 class TargetStats:
     """Collect all the statistics for a single target."""
 
-    def __init__(self, common: CommonStats, target: katpoint.Target) -> None:
+    def __init__(self, dataset: katdal.DataSet,
+                 common: CommonStats, target: katpoint.Target) -> None:
         self.common = common
         self.target = target
         # Status string for each channel
@@ -65,6 +67,7 @@ class TargetStats:
             bounds='auto'
         )
         self.channel_range = bokeh.models.Range1d(0, self.common.channels - 1, bounds='auto')
+        self.time_on_target = katsdpimager.metadata.time_on_target(dataset, target)
 
     @property
     def name(self) -> str:
@@ -134,7 +137,7 @@ class TargetStats:
 def get_stats(dataset: katdal.DataSet,
               telstate: katsdptelstate.TelescopeState) -> Tuple[CommonStats, List[TargetStats]]:
     common = CommonStats(dataset, telstate)
-    stats = [TargetStats(common, katpoint.Target(target))
+    stats = [TargetStats(dataset, common, katpoint.Target(target))
              for target in telstate.get('targets', {})]
     stats_lookup = {target.description: target for target in stats}
     for ((target_desc, channel), status) in telstate.get('status', {}).items():
@@ -146,6 +149,11 @@ def get_stats(dataset: katdal.DataSet,
     return common, stats
 
 
+def format_duration(duration: u.Quantity) -> str:
+    seconds = int(round(duration.to_value(u.s)))
+    return '{}:{:02}:{:02}s'.format(seconds // 3600, seconds // 60 % 60, seconds % 60)
+
+
 def write_report(common_stats: CommonStats, target_stats: List[TargetStats],
                  filename: str) -> None:
     env = jinja2.Environment(
@@ -153,6 +161,7 @@ def write_report(common_stats: CommonStats, target_stats: List[TargetStats],
         autoescape=True,
         undefined=jinja2.StrictUndefined
     )
+    env.filters['duration'] = format_duration
 
     plots = [target.make_plots() for target in target_stats]
     # Flatten all plots into one list to pass to bokeh

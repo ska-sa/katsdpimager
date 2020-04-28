@@ -17,16 +17,35 @@
       <div class="row">
         <div class="col">
           <h1>{{ target.name }}</h1>
+        </div>
+      </div>
+      <div class="row">
+        <div class="col-auto">
           <div class="card">
-            <h5 class="card-header">Description</h5>
-            <div class="card-body">
-              <p class="card-text">{{ target.description }}</p>
-            </div>
+            <h5 class="card-header">Properties</h5>
+            <table class="table">
+              <tbody>
+                <tr>
+                  <td>Description</td>
+                  <td>{{ target.description }}</td>
+                </tr>
+                <tr>
+                  <td>Antennas</td>
+                  <td>{{ common.antennas | count }}</td>
+                </tr>
+                <tr>
+                  <td>Time on target</td>
+                  <td>{{ target.time_on_target | duration }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
+        </div>
+        <div class="col-auto">
           <div class="card">
             <h5 class="card-header">Channels</h5>
             <table class="table">
-              <colgroup><col style="width: 10em"><col></colgroup>
+              <!-- <colgroup><col style="width: 10em"><col></colgroup> -->
               <tbody>
                 <tr>
                   <td>Successful</td>
@@ -51,6 +70,10 @@
               </tbody>
             </table>
           </div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="col">
           <div class="card">
             <h5 class="card-header">Processing status</h5>
             {{ target.plots['status'] | safe | indent(12) }}

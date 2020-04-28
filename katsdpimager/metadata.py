@@ -6,26 +6,26 @@ from typing import Sequence, Dict
 import numpy as np
 import katpoint
 import katdal
+import astropy.units as u
+
+
+def time_on_target(dataset: katdal.DataSet, target: katpoint.Target) -> u.Quantity:
+    # Find dumps that track the target. Based on katdal.DataSet.select, but
+    # we don't actually use select because we don't want to modify the
+    # dataset.
+    scan_sensor = dataset.sensor['Observation/scan_state']
+    track_mask = (scan_sensor == 'track')
+    target_index_sensor = dataset.sensor['Observation/target_index']
+    target_index = dataset.catalogue.targets.index(target)
+    mask = (target_index_sensor == target_index) & track_mask
+    n_dumps = np.sum(mask)
+    return dataset.dump_period * n_dumps * u.s
 
 
 def make_metadata(dataset: katdal.DataSet, targets: Sequence[katpoint.Target],
                   channels: int,
                   description: str) -> Dict[str, object]:
     obs_params = dataset.obs_params
-    # Find dumps that track the targets. Based on katdal.DataSet.select, but
-    # we don't actually use select because we don't want to modify the
-    # dataset.
-    scan_sensor = dataset.sensor['Observation/scan_state']
-    track_mask = (scan_sensor == 'track')
-    target_index_sensor = dataset.sensor['Observation/target_index']
-    int_time = []
-    for target in targets:
-        target_index = dataset.catalogue.targets.index(target)
-        mask = (target_index_sensor == target_index) & track_mask
-        n_dumps = np.sum(mask)
-        # katdal gives dump period in seconds, metadata value needs to be in hours
-        int_time.append(dataset.dump_period * n_dumps / 3600.0)
-
     return {
         'CaptureBlockId': dataset.source.capture_block_id,
         'ScheduleBlockIdCode': obs_params.get('sb_id_code', 'UNKNOWN'),
@@ -46,6 +46,7 @@ def make_metadata(dataset: katdal.DataSet, targets: Sequence[katpoint.Target],
         ],
         'Targets': [target.name for target in targets],
         'KatpointTargets': [target.description for target in targets],
-        # katdal gives dump period in seconds, metadata value needs to be in hours
-        'IntegrationTime': int_time
+        # metadata value needs to be in hours
+        'IntegrationTime': [time_on_target(dataset, target).to_value(u.h)
+                            for target in targets]
     }
