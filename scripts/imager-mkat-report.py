@@ -61,9 +61,10 @@ class TargetStats:
         self.plots: Dict[str, str] = {}     # Divs to insert for plots returned by make_plots
         self.frequency_range = bokeh.models.Range1d(
             self.common.frequencies[0].to_value(FREQUENCY_PLOT_UNIT),
-            self.common.frequencies[-1].to_value(FREQUENCY_PLOT_UNIT)
+            self.common.frequencies[-1].to_value(FREQUENCY_PLOT_UNIT),
+            bounds='auto'
         )
-        self.channel_range = bokeh.models.Range1d(0, self.common.channels - 1)
+        self.channel_range = bokeh.models.Range1d(0, self.common.channels - 1, bounds='auto')
 
     @property
     def name(self) -> str:
@@ -93,7 +94,8 @@ class TargetStats:
             x_axis_label=f'Frequency ({FREQUENCY_PLOT_UNIT})',
             y_axis_label='Status',
             x_range=self.frequency_range,
-            y_range=['masked', 'failed', 'no-data', 'complete'],
+            y_range=bokeh.models.FactorRange(factors=['masked', 'failed', 'no-data', 'complete'],
+                                             bounds='auto'),
             sizing_mode='stretch_width', toolbar_location='below'
         )
         fig.cross(x='frequency', y='status', source=source, color=PALETTE[0])
