@@ -89,6 +89,7 @@ class TargetStats:
 
     def make_plot_status(self, source: bokeh.models.ColumnDataSource) -> bokeh.model.Model:
         fig = bokeh.plotting.figure(
+            height=200,
             x_axis_label=f'Frequency ({FREQUENCY_PLOT_UNIT})',
             y_axis_label='Status',
             x_range=self.frequency_range,

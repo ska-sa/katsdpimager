@@ -25,26 +25,27 @@
           </div>
           <div class="card">
             <h5 class="card-header">Channels</h5>
-            <table class="table" style="max-width: 20em">
+            <table class="table">
+              <colgroup><col style="width: 10em"><col></colgroup>
               <tbody>
                 <tr>
-                  <th scope="row">Successful</th>
+                  <td>Successful</td>
                   <td>{{ target.status|select("equalto", "complete")|list|count }}</td>
                 </tr>
                 <tr>
-                  <th scope="row">Flagged</th>
+                  <td>Flagged</td>
                   <td>{{ target.status|select("equalto", "no-data")|list|count }}</td>
                 </tr>
                 <tr>
-                  <th scope="row">Masked</th>
+                  <td>Masked</td>
                   <td>{{ target.status|select("equalto", "masked")|list|count }}</td>
                 </tr>
                 <tr>
-                  <th scope="row">Failed</th>
+                  <td>Failed</td>
                   <td>{{ target.status|select("equalto", "failed")|list|count }}</td>
                 </tr>
                 <tr>
-                  <th scope="row">Total</th>
+                  <td>Total</td>
                   <td>{{ common.channels }}</td>
                 </tr>
               </tbody>
