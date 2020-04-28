@@ -94,7 +94,7 @@ class TargetStats:
             y_axis_label='Status',
             x_range=self.frequency_range,
             y_range=['masked', 'failed', 'no-data', 'complete'],
-            sizing_mode='stretch_width'
+            sizing_mode='stretch_width', toolbar_location='below'
         )
         fig.cross(x='frequency', y='status', source=source, color=PALETTE[0])
         self._add_channel_range(fig)
