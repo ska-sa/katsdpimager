@@ -12,21 +12,25 @@
     <p>{{ target.description }}</p>
     <table>
       <caption>Channels</caption>
-      <thead>
-        <tr>
-          <th>Successful</th>
-          <th>Flagged</th>
-          <th>Masked</th>
-          <th>Failed</th>
-          <th>Total</th>
-        </tr>
-      </thead>
       <tbody>
         <tr>
+          <th scope="row">Successful</th>
           <td>{{ target.status|select("equalto", "complete")|list|count }}</td>
+        </tr>
+        <tr>
+          <th scope="row">Flagged</th>
           <td>{{ target.status|select("equalto", "no-data")|list|count }}</td>
+        </tr>
+        <tr>
+          <th scope="row">Masked</th>
           <td>{{ target.status|select("equalto", "masked")|list|count }}</td>
+        </tr>
+        <tr>
+          <th scope="row">Failed</th>
           <td>{{ target.status|select("equalto", "failed")|list|count }}</td>
+        </tr>
+        <tr>
+          <th scope="row">Total</th>
           <td>{{ common.channels }}</td>
         </tr>
       </tbody>
