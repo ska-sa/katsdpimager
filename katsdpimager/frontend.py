@@ -332,7 +332,7 @@ class Writer:
 
     @abstractmethod
     def write_fits_image(self, name, description, dataset, image, image_parameters, channel,
-                         beam=None, bunit='JY/BEAM'):
+                         beam=None, bunit='Jy/beam'):
         """Optionally output a FITS image.
 
         `name` is a machine-readable name (consistent with the argument naming

@@ -22,7 +22,7 @@ try:
 except ImportError:
     eigen3 = {'include_dirs': {MissingPkgconfig()}}
 
-tests_require = ['nose', 'scipy', 'fakeredis']
+tests_require = ['nose', 'scipy', 'fakeredis[lua]']
 
 root_dir = os.path.dirname(__file__)
 pybind11_dir = os.path.join(root_dir, '3rdparty', 'pybind11', 'include', 'pybind11')

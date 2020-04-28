@@ -229,7 +229,7 @@ def write_fits_grid(grid, image_parameters, filename, channel):
     grid = grid.transpose(3, 0, 1, 2)
 
     header = fits.Header()
-    header['BUNIT'] = 'JY'
+    header['BUNIT'] = 'Jy'
     header['ORIGIN'] = 'katsdpimager'
     header['CUNIT1'] = 'm'
     header['CRPIX1'] = grid.shape[3] // 2 + 1.0
