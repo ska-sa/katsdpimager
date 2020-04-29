@@ -200,7 +200,7 @@ def write_metadata(dataset: katdal.DataSet,
     metadata = {
         'ProductType': {
             'ProductTypeName': 'MeerKATReductionProduct',
-            'ReductionName': 'SpectralImagerReport'
+            'ReductionName': 'Spectral Imager Report'
         },
         **katsdpimager.metadata.make_metadata(
             dataset, [target.target for target in target_stats],
