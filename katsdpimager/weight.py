@@ -7,7 +7,7 @@ stages:
 
 1. The statistical weights are gridded, *without* any convolution. The subgrid
    coordinates are still passed so that the same data layouts can be shared with
-   convolutional gridding, but they are be ignored.
+   convolutional gridding, but they are ignored.
 
 2. For robust weighting, an "average" statistical weight is computed as
 
