@@ -83,9 +83,10 @@ def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block):
                     bar.next(len(chunk.uv))
         else:
             bar.next(total)
-        normalized_rms = imager.finalize_weights()
+        normalized_noise = imager.finalize_weights()
         queue.finish()
-    logger.info('Normalized thermal RMS: %g', normalized_rms)
+    logger.info('Normalized thermal RMS noise: %g', normalized_noise)
+    return normalized_noise
 
 
 def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block, degrid,
@@ -360,6 +361,8 @@ class Writer:
 
         noise
           Estimated noise in the residual image, in Jy/beam
+        normalized_noise
+          Increase in noise due to use of non-natural weights (unitless)
         """
 
 
@@ -396,8 +399,8 @@ def process_channel(dataset, args, start_channel,
     imager.clear_model()
 
     # Compute imaging weights
-    make_weights(queue, reader, rel_channel,
-                 imager, weight_p.weight_type, args.vis_block)
+    normalized_noise = make_weights(queue, reader, rel_channel,
+                                    imager, weight_p.weight_type, args.vis_block)
     writer.write_fits_image('weights', 'image weights',
                             dataset, imager.buffer('weights_grid'), image_p, channel, bunit=None)
 
@@ -524,7 +527,7 @@ def process_channel(dataset, args, start_channel,
     model += dirty
     writer.write_fits_image('clean', 'clean image', dataset, model, image_p,
                             channel, restoring_beam)
-    writer.statistics(dataset, image_p, channel, noise=noise)
+    writer.statistics(dataset, image_p, channel, noise=noise, normalized_noise=normalized_noise)
 
 
 def run(args, context, queue, dataset, writer):

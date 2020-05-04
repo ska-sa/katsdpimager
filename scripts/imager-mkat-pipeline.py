@@ -102,6 +102,7 @@ class Writer(frontend.Writer):
     def statistics(self, dataset, image_parameters, channel, **kwargs):
         sub_key = (dataset.raw_target.description, channel)
         self.telstate.set_indexed('noise', sub_key, kwargs['noise'])
+        self.telstate.set_indexed('normalized_noise', sub_key, kwargs['normalized_noise'])
 
 
 def get_parser():
