@@ -9,17 +9,27 @@ import katdal
 import astropy.units as u
 
 
-def time_on_target(dataset: katdal.DataSet, target: katpoint.Target) -> u.Quantity:
-    # Find dumps that track the target. Based on katdal.DataSet.select, but
-    # we don't actually use select because we don't want to modify the
-    # dataset.
+def target_mask(dataset: katdal.DataSet, target: katpoint.Target) -> np.ndarray:
+    """Get boolean mask of dumps where the target is being tracked."""
+    # Based on katdal.DataSet.select, but we don't actually use select because
+    # we don't want to modify the dataset.
     scan_sensor = dataset.sensor['Observation/scan_state']
     track_mask = (scan_sensor == 'track')
     target_index_sensor = dataset.sensor['Observation/target_index']
     target_index = dataset.catalogue.targets.index(target)
     mask = (target_index_sensor == target_index) & track_mask
-    n_dumps = np.sum(mask)
-    return dataset.dump_period * n_dumps * u.s
+    return mask
+
+
+def time_on_target(dataset: katdal.DataSet, target: katpoint.Target) -> u.Quantity:
+    """Seconds spent tracking the target.
+
+    This might be a slight under-report, because dumps that span the
+    boundaries are marked as not tracking by katdal, but may have partial
+    data that was nevertheless usable.
+    """
+    mask = target_mask(dataset, target)
+    return dataset.dump_period * np.sum(mask) * u.s
 
 
 def make_metadata(dataset: katdal.DataSet, targets: Sequence[katpoint.Target],

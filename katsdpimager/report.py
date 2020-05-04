@@ -3,6 +3,7 @@
 import json
 import math
 import logging
+from datetime import datetime, timezone
 from typing import List, Dict, Tuple
 
 import pkg_resources
@@ -26,6 +27,7 @@ import katsdpimager.metadata
 
 FREQUENCY_PLOT_UNIT = u.MHz
 FLUX_PLOT_UNIT = u.mJy / u.beam
+ANGLE_PLOT_UNIT = u.deg
 PALETTE = bokeh.palettes.colorblind['Colorblind'][8]
 
 
@@ -112,6 +114,17 @@ class TargetStats:
             denom = math.sqrt(2 * n * (n - 1) * self.time_on_target * self.common.channel_width)
             self.predicted_noise = self.common.sefd / denom / u.beam
 
+        mask = katsdpimager.metadata.target_mask(dataset, target)
+        self.timestamps = dataset.timestamps[mask]
+        self.time_range = bokeh.models.Range1d(
+            datetime.fromtimestamp(self.timestamps[0], timezone.utc),
+            datetime.fromtimestamp(self.timestamps[-1], timezone.utc)
+        )
+        array_ant = dataset.sensor['Antennas/array/antenna'][0]
+        self.elevation = target.azel(timestamp=self.timestamps, antenna=array_ant)[1] << u.rad
+        self.parallactic_angle = target.parallactic_angle(
+            timestamp=self.timestamps, antenna=array_ant) << u.rad
+
     @property
     def name(self) -> str:
         return self.target.name
@@ -125,7 +138,7 @@ class TargetStats:
         fig.add_layout(bokeh.models.LinearAxis(x_range_name='channel', axis_label='Channel'),
                        'above')
 
-    def make_data_source(self) -> bokeh.models.ColumnDataSource:
+    def make_channel_data_source(self) -> bokeh.models.ColumnDataSource:
         data = {
             'frequency': self.common.frequencies.to_value(FREQUENCY_PLOT_UNIT),
             'status': self.status,
@@ -134,6 +147,14 @@ class TargetStats:
         }
         if self.predicted_noise is not None:
             data['predicted_noise'] = self.predicted_noise.to_value(FLUX_PLOT_UNIT)
+        return bokeh.models.ColumnDataSource(data)
+
+    def make_time_data_source(self) -> bokeh.models.ColumnDataSource:
+        data = {
+            'time': [datetime.fromtimestamp(ts, timezone.utc) for ts in self.timestamps],
+            'elevation': self.elevation.to_value(ANGLE_PLOT_UNIT),
+            'parallactic_angle': self.parallactic_angle.to_value(ANGLE_PLOT_UNIT)
+        }
         return bokeh.models.ColumnDataSource(data)
 
     def make_plot_status(self, source: bokeh.models.ColumnDataSource) -> bokeh.model.Model:
@@ -158,27 +179,76 @@ class TargetStats:
             y_range=bokeh.models.DataRange1d(start=0.0),
             sizing_mode='stretch_width',
             tooltips=[
-                ('Frequency', f'$x {FREQUENCY_PLOT_UNIT}'),
+                ('Frequency', f'@frequency{{0.0000}} {FREQUENCY_PLOT_UNIT}'),
                 ('Channel', '$index'),
-                ('Flux', f'$y {FLUX_PLOT_UNIT}')
+                ('Flux', f'@$name {FLUX_PLOT_UNIT}')
             ]
         )
-        fig.line(x='frequency', y='peak', source=source,
+        fig.line(x='frequency', y='peak', source=source, name='peak',
                  line_color=PALETTE[0], legend_label='Peak')
-        fig.line(x='frequency', y='noise', source=source,
+        fig.line(x='frequency', y='noise', source=source, name='noise',
                  line_color=PALETTE[1], legend_label='Noise')
         if self.predicted_noise is not None:
-            fig.line(x='frequency', y='predicted_noise', source=source,
+            fig.line(x='frequency', y='predicted_noise', source=source, name='predicted_noise',
                     line_color=PALETTE[2], legend_label='Predicted noise')
         self._add_channel_range(fig)
         return fig
 
+    def make_plot_elevation(self, source: bokeh.models.ColumnDataSource) -> bokeh.model.Model:
+        unit_str = ANGLE_PLOT_UNIT.to_string('unicode')  # deg -> °
+        fig = bokeh.plotting.figure(
+            x_axis_label='Time (UTC)', x_axis_type='datetime',
+            y_axis_label=f'Elevation ({unit_str})',
+            x_range=self.time_range,
+            y_range=[0.0, (90 * u.deg).to_value(ANGLE_PLOT_UNIT)],
+            sizing_mode='stretch_width'
+        )
+        fig.add_tools(bokeh.models.HoverTool(
+            tooltips=[
+                ('Time', '@time{%Y-%m-%d %H:%M:%S}'),
+                ('Elevation', f'@elevation {unit_str}')
+            ],
+            formatters={
+                '@time': 'datetime'
+            }
+        ))
+        fig.circle(x='time', y='elevation', source=source, line_color=PALETTE[0])
+        # TODO: plot LST on the opposite axis?
+        return fig
+
+    def make_plot_parallactic_angle(
+            self, source: bokeh.models.ColumnDataSource) -> bokeh.model.Model:
+        unit_str = ANGLE_PLOT_UNIT.to_string('unicode')  # deg -> °
+        fig = bokeh.plotting.figure(
+            x_axis_label='Time (UTC)', x_axis_type='datetime',
+            y_axis_label=f'Parallactic angle ({unit_str})',
+            x_range=self.time_range,
+            y_range=[(-180 * u.deg).to_value(ANGLE_PLOT_UNIT),
+                     (180 * u.deg).to_value(ANGLE_PLOT_UNIT)],
+            sizing_mode='stretch_width'
+        )
+        fig.add_tools(bokeh.models.HoverTool(
+            tooltips=[
+                ('Time', '@time{%Y-%m-%d %H:%M:%S}'),
+                ('Angle', f'@parallactic_angle {unit_str}')
+            ],
+            formatters={
+                '@time': 'datetime'
+            }
+        ))
+        fig.circle(x='time', y='parallactic_angle', source=source, line_color=PALETTE[0])
+        # TODO: plot LST on the opposite axis?
+        return fig
+
     def make_plots(self) -> Dict[str, bokeh.model.Model]:
         """Generate Bokeh figures for the plots."""
-        source = self.make_data_source()
+        channel_source = self.make_channel_data_source()
+        time_source = self.make_time_data_source()
         return {
-            'status': self.make_plot_status(source),
-            'flux': self.make_plot_flux(source)
+            'status': self.make_plot_status(channel_source),
+            'flux': self.make_plot_flux(channel_source),
+            'elevation': self.make_plot_elevation(time_source),
+            'parallactic_angle': self.make_plot_parallactic_angle(time_source)
         }
 
 

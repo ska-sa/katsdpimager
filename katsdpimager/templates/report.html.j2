@@ -100,6 +100,20 @@
           </div>
         </div>
       </div>
+      <div class="row">
+        <div class="col-md-6">
+          <div class="card">
+            <h5 class="card-header">Elevation</h5>
+            {{ target.plots['elevation'] | safe | indent(12) }}
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="card">
+            <h5 class="card-header">Parallactic angle</h5>
+            {{ target.plots['parallactic_angle'] | safe | indent(12) }}
+          </div>
+        </div>
+      </div>
 {% endfor %}
     </div>
   </body>
