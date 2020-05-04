@@ -1,0 +1,211 @@
+"""Quality report for MeerKAT pipeline."""
+
+import json
+import math
+import logging
+from typing import List, Dict, Tuple
+
+import pkg_resources
+import jinja2
+import katpoint
+import katdal
+import katsdptelstate
+import astropy.units as u
+
+import bokeh.embed
+import bokeh.palettes
+import bokeh.plotting
+import bokeh.model
+import bokeh.models
+import bokeh.resources
+
+import katsdpimager.metadata
+
+
+FREQUENCY_PLOT_UNIT = u.MHz
+FLUX_PLOT_UNIT = u.mJy / u.beam
+PALETTE = bokeh.palettes.colorblind['Colorblind'][8]
+
+
+logger = logging.getLogger()
+
+
+class CommonStats:
+    """Information extracted from the dataset, independent of target."""
+
+    def __init__(self, dataset: katdal.DataSet, telstate: katsdptelstate.TelescopeState) -> None:
+        self.output_channels: List[int] = telstate['output_channels']
+        self.channels: int = len(dataset.channels)
+        self.channel_width = dataset.channel_width * u.Hz
+        self.frequencies: u.Quantity = dataset.freqs * u.Hz
+        self.antennas = dataset.ants
+
+
+class TargetStats:
+    """Collect all the statistics for a single target."""
+
+    def __init__(self, dataset: katdal.DataSet,
+                 common: CommonStats, target: katpoint.Target) -> None:
+        self.common = common
+        self.target = target
+        # Status string for each channel
+        self.status: List[str] = ['masked'] * common.channels
+        for channel in common.output_channels:
+            self.status[channel] = 'failed'
+        # Peak flux per channel (NaN where missing)
+        self.peak: u.Quantity = [math.nan] * common.channels * (u.Jy / u.beam)
+        # Noise per channel (NaN where missing)
+        self.noise: u.Quantity = [math.nan] * common.channels * (u.Jy / u.beam)
+        self.plots: Dict[str, str] = {}     # Divs to insert for plots returned by make_plots
+        self.frequency_range = bokeh.models.Range1d(
+            self.common.frequencies[0].to_value(FREQUENCY_PLOT_UNIT),
+            self.common.frequencies[-1].to_value(FREQUENCY_PLOT_UNIT),
+            bounds='auto'
+        )
+        self.channel_range = bokeh.models.Range1d(0, self.common.channels - 1, bounds='auto')
+        self.time_on_target = katsdpimager.metadata.time_on_target(dataset, target)
+
+    @property
+    def name(self) -> str:
+        return self.target.name
+
+    @property
+    def description(self) -> str:
+        return self.target.description
+
+    def _add_channel_range(self, fig: bokeh.plotting.Figure) -> None:
+        fig.extra_x_ranges = {'channel': self.channel_range}
+        fig.add_layout(bokeh.models.LinearAxis(x_range_name='channel', axis_label='Channel'),
+                       'above')
+
+    def make_data_source(self) -> bokeh.models.ColumnDataSource:
+        data = {
+            'frequency': self.common.frequencies.to_value(FREQUENCY_PLOT_UNIT),
+            'status': self.status,
+            'noise': self.noise.to_value(FLUX_PLOT_UNIT),
+            'peak': self.peak.to_value(FLUX_PLOT_UNIT)
+        }
+        return bokeh.models.ColumnDataSource(data)
+
+    def make_plot_status(self, source: bokeh.models.ColumnDataSource) -> bokeh.model.Model:
+        fig = bokeh.plotting.figure(
+            height=200,
+            x_axis_label=f'Frequency ({FREQUENCY_PLOT_UNIT})',
+            y_axis_label='Status',
+            x_range=self.frequency_range,
+            y_range=bokeh.models.FactorRange(factors=['masked', 'failed', 'no-data', 'complete'],
+                                             bounds='auto'),
+            sizing_mode='stretch_width', toolbar_location='below'
+        )
+        fig.cross(x='frequency', y='status', source=source, color=PALETTE[0])
+        self._add_channel_range(fig)
+        return fig
+
+    def make_plot_flux(self, source: bokeh.models.ColumnDataSource) -> bokeh.model.Model:
+        fig = bokeh.plotting.figure(
+            x_axis_label=f'Frequency ({FREQUENCY_PLOT_UNIT})',
+            y_axis_label=f'Flux ({FLUX_PLOT_UNIT})',
+            x_range=self.frequency_range,
+            y_range=bokeh.models.DataRange1d(start=0.0),
+            sizing_mode='stretch_width',
+            tooltips=[
+                ('Frequency', f'$x {FREQUENCY_PLOT_UNIT}'),
+                ('Channel', '$index'),
+                ('Flux', f'$y {FLUX_PLOT_UNIT}')
+            ]
+        )
+        fig.line(x='frequency', y='peak', source=source,
+                 line_color=PALETTE[0], legend_label='Peak')
+        fig.line(x='frequency', y='noise', source=source,
+                 line_color=PALETTE[1], legend_label='Noise')
+        self._add_channel_range(fig)
+        return fig
+
+    def make_plots(self) -> Dict[str, bokeh.model.Model]:
+        """Generate Bokeh figures for the plots."""
+        source = self.make_data_source()
+        return {
+            'status': self.make_plot_status(source),
+            'flux': self.make_plot_flux(source)
+        }
+
+
+def get_stats(dataset: katdal.DataSet,
+              telstate: katsdptelstate.TelescopeState) -> Tuple[CommonStats, List[TargetStats]]:
+    common = CommonStats(dataset, telstate)
+    stats = [TargetStats(dataset, common, katpoint.Target(target))
+             for target in telstate.get('targets', {})]
+    stats_lookup = {target.description: target for target in stats}
+    for ((target_desc, channel), status) in telstate.get('status', {}).items():
+        stats_lookup[target_desc].status[channel] = status
+    for ((target_desc, channel), peak) in telstate.get('peak', {}).items():
+        stats_lookup[target_desc].peak[channel] = peak * (u.Jy / u.beam)
+    for ((target_desc, channel), noise) in telstate.get('noise', {}).items():
+        stats_lookup[target_desc].noise[channel] = noise * (u.Jy / u.beam)
+    return common, stats
+
+
+def format_duration(duration: u.Quantity) -> str:
+    seconds = int(round(duration.to_value(u.s)))
+    return '{}:{:02}:{:02}s'.format(seconds // 3600, seconds // 60 % 60, seconds % 60)
+
+
+def write_report(common_stats: CommonStats, target_stats: List[TargetStats],
+                 filename: str) -> None:
+    env = jinja2.Environment(
+        loader=jinja2.PackageLoader('katsdpimager'),
+        autoescape=True,
+        undefined=jinja2.StrictUndefined
+    )
+    env.filters['duration'] = format_duration
+
+    plots = [target.make_plots() for target in target_stats]
+    # Flatten all plots into one list to pass to bokeh
+    flat_plots: List[Dict[str, bokeh.model.Model]] = []
+    for plot_dict in plots:
+        flat_plots.extend(plot_dict.values())
+    script, divs = bokeh.embed.components(flat_plots)
+    # Distribute divs back to individual objects
+    i = 0
+    for (target, plot_dict) in zip(target_stats, plots):
+        for name in plot_dict:
+            target.plots[name] = divs[i]
+            i += 1
+
+    resources = bokeh.resources.INLINE.render()
+    static = {}
+    for f in pkg_resources.resource_listdir('katsdpimager', 'static'):
+        content = pkg_resources.resource_string('katsdpimager', 'static/' + f)
+        static[f] = content.decode('utf-8')
+    context = {
+        'common': common_stats,
+        'targets': target_stats,
+        'resources': resources,
+        'script': script,
+        'static': static
+    }
+    template = env.get_template('report.html.j2')
+    template.stream(context).dump(filename)
+
+
+def write_metadata(dataset: katdal.DataSet,
+                   common_stats: CommonStats,
+                   target_stats: List[TargetStats],
+                   filename: str) -> None:
+    half_channel = 0.5 * common_stats.channel_width
+    metadata = {
+        'ProductType': {
+            'ProductTypeName': 'MeerKATReductionProduct',
+            'ReductionName': 'Spectral Imager Report'
+        },
+        **katsdpimager.metadata.make_metadata(
+            dataset, [target.target for target in target_stats],
+            len(common_stats.output_channels),
+            'Spectral-line imaging report'
+        ),
+        'MinFreq': (common_stats.frequencies[0] - half_channel).to_value(u.Hz),
+        'MaxFreq': (common_stats.frequencies[-1] + half_channel).to_value(u.Hz),
+        'Run': 0
+    }
+    with open(filename, 'w') as f:
+        json.dump(metadata, f, allow_nan=False, indent=2)
