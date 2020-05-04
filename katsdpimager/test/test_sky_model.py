@@ -135,7 +135,7 @@ class TestOpenSkyModel:
         assert_equal(orig, test2._catalogue)
 
     def test_telstate(self):
-        client = fakeredis.FakeStrictRedis()
+        client = fakeredis.FakeRedis()
         telstate = katsdptelstate.TelescopeState(katsdptelstate.redis.RedisBackend(client))
         # Fake just enough of telstate to keep katdal happy. This isn't all in the right
         # namespace, but that doesn't really matter.
@@ -156,10 +156,12 @@ class TestOpenSkyModel:
         _put_models(telstate, '1234567890', 'continuum', [(_TRG_A, [_TRG_A, _TRG_C])])
         expected = katpoint.Catalogue([_TRG_A, _TRG_C])
 
-        with mock.patch('redis.StrictRedis', return_value=client) as mock_redis:
+        with mock.patch('redis.Redis', return_value=client) as mock_redis:
             test = open_sky_model(
                 'redis://invalid:6379/?format=katdal&db=1&capture_block_id=1234567890'
                 '&continuum=continuum'
                 '&target=A,+radec,+20:00:00.00,+-60:00:00.0,+(200.0+12000.0+1.0+0.5+0.0)')
-            mock_redis.assert_called_with(host='invalid', port=6379, db=1, socket_timeout=mock.ANY)
+            mock_redis.assert_called_with(host='invalid', port=6379, db=1,
+                                          socket_timeout=mock.ANY,
+                                          health_check_interval=mock.ANY)
             assert_equal(expected, test._catalogue)
