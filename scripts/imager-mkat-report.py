@@ -22,7 +22,7 @@ def main() -> None:
     args = parser.parse_args()
     katsdpservices.setup_logging()
     if args.log_level is not None:
-        logging.setLevel(args.log_level.upper())
+        logging.getLogger().setLevel(args.log_level.upper())
 
     dataset = katdal.open(args.dataset, chunk_store=None, upgrade_flags=False)
     telstate = dataset.source.telstate.wrapped.root()
