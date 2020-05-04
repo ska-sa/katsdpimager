@@ -81,6 +81,22 @@
           <div class="card">
             <h5 class="card-header">Flux density</h5>
             {{ target.plots['flux'] | safe | indent(12) }}
+            <p class="card-body">
+              <dl>
+                <dt>Peak</dt>
+                <dd>Maximum flux density of any pixel in the final image, after
+                primary beam correction.</dd>
+                <dt>Noise</dt>
+                <dd>Root-mean-square noise estimated using the median absolute
+                value of the residual Stokes-I image prior to primary beam
+                correction.</dd>
+                <dt>Predicted noise</dt>
+                <dd>Noise estimate computed using a model of system equivalent
+                flux density, channel bandwidth, time on target and imaging
+                weights. Flagging (whether for RFI or otherwise) is <em>not</em>
+                taken into account, and will cause actual noise to be higher
+                than predicted.</dd>
+            </p>
           </div>
         </div>
       </div>

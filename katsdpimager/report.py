@@ -7,10 +7,12 @@ from typing import List, Dict, Tuple
 
 import pkg_resources
 import jinja2
+import numpy as np
 import katpoint
 import katdal
 import katsdptelstate
 import astropy.units as u
+import h5py
 
 import bokeh.embed
 import bokeh.palettes
@@ -30,6 +32,36 @@ PALETTE = bokeh.palettes.colorblind['Colorblind'][8]
 logger = logging.getLogger()
 
 
+class SEFDModel:
+    """Model of system-equivalent flux density."""
+
+    @staticmethod
+    def _load_dataset(dataset: h5py.Dataset) -> u.Quantity:
+        return dataset[:] << u.Unit(dataset.attrs['unit'])
+
+    def __init__(self, dish_type: str, band: str) -> None:
+        path = f'models/sefd/{dish_type}/v1/sefd_{band}.h5'
+        with h5py.File(pkg_resources.resource_stream('katsdpimager', path), 'r') as h5file:
+            self.frequencies = self._load_dataset(h5file['frequency'])
+            h = self._load_dataset(h5file['H'])
+            v = self._load_dataset(h5file['V'])
+            # Take quadratic mean to get SEFD for Stokes I
+            self.sefd = np.sqrt((np.square(h) + np.square(v)) * 0.5)
+            self.correlator_efficiency = h5file.attrs['correlator_efficiency']
+
+    def __call__(self, frequencies: u.Quantity, effective: bool = False) -> u.Quantity:
+        """Interpolate to given frequencies.
+
+        If `effective` is true, the correlator efficiency is combined
+        with the result.
+        """
+        frequencies = frequencies.to(self.frequencies.unit, equivalencies=u.spectral())
+        ans = np.interp(frequencies, self.frequencies, self.sefd, left=np.nan, right=np.nan)
+        if effective:
+            ans /= self.correlator_efficiency
+        return ans
+
+
 class CommonStats:
     """Information extracted from the dataset, independent of target."""
 
@@ -39,6 +71,15 @@ class CommonStats:
         self.channel_width = dataset.channel_width * u.Hz
         self.frequencies: u.Quantity = dataset.freqs * u.Hz
         self.antennas = dataset.ants
+        # XXX for now this only supports MeerKAT. MeerKAT+ will be heterogeneous.
+        self.sefd: Optional[u.Quantity] = None
+        band = dataset.spectral_windows[dataset.spw].band
+        try:
+            sefd_model = SEFDModel('meerkat', band)
+        except FileNotFoundError:
+            logger.warning('No SEFD model for band %s', band)
+        else:
+            self.sefd = sefd_model(self.frequencies, effective=True)
 
 
 class TargetStats:
@@ -64,6 +105,12 @@ class TargetStats:
         )
         self.channel_range = bokeh.models.Range1d(0, self.common.channels - 1, bounds='auto')
         self.time_on_target = katsdpimager.metadata.time_on_target(dataset, target)
+        self.predicted_noise: Optional[u.Quantity] = None
+        if self.common.sefd is not None and len(self.common.antennas) > 1:
+            n = len(self.common.antennas)
+            # Correlator efficiency is already folded in to self.common.sefd
+            denom = math.sqrt(2 * n * (n - 1) * self.time_on_target * self.common.channel_width)
+            self.predicted_noise = self.common.sefd / denom / u.beam
 
     @property
     def name(self) -> str:
@@ -85,6 +132,8 @@ class TargetStats:
             'noise': self.noise.to_value(FLUX_PLOT_UNIT),
             'peak': self.peak.to_value(FLUX_PLOT_UNIT)
         }
+        if self.predicted_noise is not None:
+            data['predicted_noise'] = self.predicted_noise.to_value(FLUX_PLOT_UNIT)
         return bokeh.models.ColumnDataSource(data)
 
     def make_plot_status(self, source: bokeh.models.ColumnDataSource) -> bokeh.model.Model:
@@ -118,6 +167,9 @@ class TargetStats:
                  line_color=PALETTE[0], legend_label='Peak')
         fig.line(x='frequency', y='noise', source=source,
                  line_color=PALETTE[1], legend_label='Noise')
+        if self.predicted_noise is not None:
+            fig.line(x='frequency', y='predicted_noise', source=source,
+                    line_color=PALETTE[2], legend_label='Predicted noise')
         self._add_channel_range(fig)
         return fig
 
