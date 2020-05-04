@@ -4,7 +4,7 @@ import json
 import math
 import logging
 from datetime import datetime, timezone
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 
 import pkg_resources
 import jinja2
