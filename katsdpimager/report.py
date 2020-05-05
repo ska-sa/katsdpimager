@@ -26,7 +26,7 @@ import katsdpimager.metadata
 
 
 FREQUENCY_PLOT_UNIT = u.MHz
-FLUX_PLOT_UNIT = u.mJy / u.beam
+FLUX_PLOT_UNIT = u.Jy / u.beam
 ANGLE_PLOT_UNIT = u.deg
 PALETTE = bokeh.palettes.colorblind['Colorblind'][8]
 
@@ -179,14 +179,32 @@ class TargetStats:
             x_axis_label=f'Frequency ({FREQUENCY_PLOT_UNIT})',
             y_axis_label=f'Flux ({FLUX_PLOT_UNIT})',
             x_range=self.frequency_range,
-            y_range=bokeh.models.DataRange1d(start=0.0),
+            y_axis_type='log',
             sizing_mode='stretch_width',
+        )
+        si_format = bokeh.models.CustomJSHover(code="""
+            const threshold = [1e-9, 1e-6, 1e-3, 1e0, 1e3,  1e6,  1e9, 1e12];
+            const scale =     [1e12,  1e9,  1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12];
+            const suffix =    [ "p",  "n",  "µ", "m",  "",  "k",  "M",  "G", "T"];
+            var i = 0;
+            while (i < threshold.length && value >= threshold[i])
+                i++;
+            return sprintf(format, value * scale[i]) + " " + suffix[i];
+            """)
+        fig.add_tools(bokeh.models.HoverTool(
             tooltips=[
                 ('Frequency', f'@frequency{{0.0000}} {FREQUENCY_PLOT_UNIT}'),
                 ('Channel', '$index'),
-                ('Flux', f'@$name {FLUX_PLOT_UNIT}')
-            ]
-        )
+                ('Peak', f'@peak{{%.3f}}{FLUX_PLOT_UNIT}'),
+                ('Noise', f'@noise{{%.3f}}{FLUX_PLOT_UNIT}'),
+                ('Predicted noise', f'@predicted_noise{{%.3f}}{FLUX_PLOT_UNIT}')
+            ],
+            formatters={
+                '@peak': si_format,
+                '@noise': si_format,
+                '@predicted_noise': si_format
+            }
+        ))
         fig.line(x='frequency', y='peak', source=source, name='peak',
                  line_color=PALETTE[0], legend_label='Peak')
         fig.line(x='frequency', y='noise', source=source, name='noise',
