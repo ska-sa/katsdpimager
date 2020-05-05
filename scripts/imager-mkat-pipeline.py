@@ -36,9 +36,7 @@ class Writer(frontend.Writer):
             **metadata.make_metadata(raw_data, [dataset.raw_target], 1,
                                      'Spectral-line image')
         }
-        # katdal's TelstateToStr doesn't support indexed keys yet.
-        # The .wrapped can be removed once it does.
-        telstate = raw_data.source.telstate.wrapped.root()
+        telstate = raw_data.source.telstate.root()
         namespace = telstate.join(raw_data.source.capture_block_id, args.stream)
         self.telstate = telstate.view(namespace)
 
