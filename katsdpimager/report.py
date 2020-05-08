@@ -161,13 +161,15 @@ class TargetStats:
         return bokeh.models.ColumnDataSource(data)
 
     def make_plot_status(self, source: bokeh.models.ColumnDataSource) -> bokeh.model.Model:
+        factors = ['masked', 'failed', 'no-data', 'complete']
         fig = bokeh.plotting.figure(
             height=200,
             x_axis_label=f'Frequency ({FREQUENCY_PLOT_UNIT})',
             y_axis_label='Status',
             x_range=self.frequency_range,
-            y_range=bokeh.models.FactorRange(factors=['masked', 'failed', 'no-data', 'complete'],
-                                             bounds='auto'),
+            y_range=bokeh.models.FactorRange(factors=factors,
+                                             bounds='auto',
+                                             min_interval=len(factors)),
             sizing_mode='stretch_width', toolbar_location='below'
         )
         fig.cross(x='frequency', y='status', source=source, color=PALETTE[0])
@@ -180,7 +182,7 @@ class TargetStats:
             y_axis_label=f'Flux density per beam ({FLUX_PLOT_UNIT})',
             x_range=self.frequency_range,
             y_axis_type='log',
-            sizing_mode='stretch_width',
+            sizing_mode='stretch_width'
         )
         si_format = bokeh.models.CustomJSHover(code="""
             const threshold = [1e-9, 1e-6, 1e-3, 1e0, 1e3,  1e6,  1e9, 1e12];
