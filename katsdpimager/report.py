@@ -95,7 +95,7 @@ class TargetStats:
         self.status: List[str] = ['masked'] * common.channels
         for channel in common.output_channels:
             self.status[channel] = 'failed'
-        # Peak flux per channel (NaN where missing)
+        # Peak per channel (NaN where missing)
         self.peak: u.Quantity = [math.nan] * common.channels * (u.Jy / u.beam)
         # Noise per channel (NaN where missing)
         self.noise: u.Quantity = [math.nan] * common.channels * (u.Jy / u.beam)
@@ -174,10 +174,10 @@ class TargetStats:
         self._add_channel_range(fig)
         return fig
 
-    def make_plot_flux(self, source: bokeh.models.ColumnDataSource) -> bokeh.model.Model:
+    def make_plot_snr(self, source: bokeh.models.ColumnDataSource) -> bokeh.model.Model:
         fig = bokeh.plotting.figure(
             x_axis_label=f'Frequency ({FREQUENCY_PLOT_UNIT})',
-            y_axis_label=f'Flux ({FLUX_PLOT_UNIT})',
+            y_axis_label=f'Flux density per beam ({FLUX_PLOT_UNIT})',
             x_range=self.frequency_range,
             y_axis_type='log',
             sizing_mode='stretch_width',
@@ -267,7 +267,7 @@ class TargetStats:
         time_source = self.make_time_data_source()
         return {
             'status': self.make_plot_status(channel_source),
-            'flux': self.make_plot_flux(channel_source),
+            'snr': self.make_plot_snr(channel_source),
             'elevation': self.make_plot_elevation(time_source),
             'parallactic_angle': self.make_plot_parallactic_angle(time_source)
         }
