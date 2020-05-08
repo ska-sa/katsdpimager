@@ -292,7 +292,7 @@ def get_stats(dataset: katdal.DataSet,
 
 def format_duration(duration: u.Quantity) -> str:
     seconds = int(round(duration.to_value(u.s)))
-    return '{}:{:02}:{:02}s'.format(seconds // 3600, seconds // 60 % 60, seconds % 60)
+    return '{}:{:02}:{:02}'.format(seconds // 3600, seconds // 60 % 60, seconds % 60)
 
 
 def write_report(common_stats: CommonStats, target_stats: List[TargetStats],
