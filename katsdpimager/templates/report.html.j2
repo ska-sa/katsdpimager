@@ -79,7 +79,7 @@
           <div class="card">
             <h5 class="card-header">Signal to noise</h5>
             {{ target.plots['snr'] | safe | indent(12) }}
-            <p class="card-body">
+            <div class="card-body">
               <dl>
                 <dt>Peak</dt>
                 <dd>Maximum amplitude of any pixel in the final image, after
@@ -94,7 +94,7 @@
                 weights. Flagging (whether for RFI or otherwise) is <em>not</em>
                 taken into account, and will cause actual noise to be higher
                 than predicted.</dd>
-            </p>
+            </div>
           </div>
         </div>
       </div>
