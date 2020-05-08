@@ -1,6 +1,10 @@
 Changelog
 =========
 
+.. rubric:: 1.3
+
+- Add support for primary beam correction (MeerKAT only).
+
 .. rubric:: 1.2
 
 - Add extra FITS headers to the output; particularly those needed to compute
