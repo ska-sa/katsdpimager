@@ -7,7 +7,7 @@
     {{ resources | safe | indent(4) }}
     {{ script | safe | indent(4) }}
     <style>
-      {{ static["bootstrap-4.4.1.min.css"] | indent(6) }}
+      {{ static["bootstrap-4.4.1.min.css"] | safe | indent(6) }}
     </style>
   </head>
   <body>
