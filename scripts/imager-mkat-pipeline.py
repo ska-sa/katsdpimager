@@ -78,7 +78,6 @@ class Writer(frontend.Writer):
                 json.dump(metadata, f, allow_nan=False, indent=2)
             os.rename(tmp_dir, output_dir)
             sub_key = (dataset.raw_target.description, channel)
-            self.telstate.set_indexed('peak', sub_key, float(np.nanmax(image)))
             self.telstate.set_indexed('status', sub_key, 'complete')
         except Exception:
             # Make a best effort to clean up
@@ -99,6 +98,9 @@ class Writer(frontend.Writer):
 
     def statistics(self, dataset, image_parameters, channel, **kwargs):
         sub_key = (dataset.raw_target.description, channel)
+        peak = kwargs['peak']
+        if np.isfinite(peak):
+            self.telstate.set_indexed('peak', sub_key, peak)
         self.telstate.set_indexed('noise', sub_key, kwargs['noise'])
         self.telstate.set_indexed('normalized_noise', sub_key, kwargs['normalized_noise'])
 

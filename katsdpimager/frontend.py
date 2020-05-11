@@ -11,7 +11,7 @@ import katsdpsigproc.accel as accel
 
 from . import \
     loader, parameters, polarization, preprocess, clean, weight, sky_model, \
-    imaging, progress, beam, primary_beam
+    imaging, progress, beam, primary_beam, numba
 
 
 logger = logging.getLogger(__name__)
@@ -141,6 +141,32 @@ def extract_psf(psf, psf_patch):
     x0 = (psf.shape[1] - psf_patch[1]) // 2
     x1 = x0 + psf_patch[1]
     return psf[..., y0:y1, x0:x1]
+
+
+@numba.jit(nopython=True)
+def find_peak(image, pbeam, noise):
+    """Heuristically find the peak of the data in the image.
+
+    When primary beam correction is used, the beam-corrected noise near the
+    null of the primary beam can be quite large and possibly larger than any
+    true emission. To avoid picking up noise, limit the search to pixels
+    whose absolute value is more than 10σ.
+    """
+    # TODO: it may be worth doing this on the GPU. On the other hand,
+    # the primary beam isn't currently on the GPU.
+    peak = image.dtype.type(0)
+    for i in range(image.shape[0]):
+        for j in range(image.shape[1]):
+            for k in range(image.shape[2]):
+                v = np.abs(image[i, j, k])
+                if v > peak:
+                    pb = pbeam[j, k]
+                    n = noise / pb
+                    if v * pb > 10 * n:
+                        peak = v
+    if peak == 0:
+        peak = np.nan
+    return peak
 
 
 def log_parameters(name, params):
@@ -363,6 +389,9 @@ class Writer:
           Estimated noise in the residual image, in Jy/beam
         normalized_noise
           Increase in noise due to use of non-natural weights (unitless)
+        peak
+          Largest absolute value of pixel in final image that is not simply
+          noise (according to a heuristic), or NaN if there is no such pixel.
         """
 
 
@@ -492,14 +521,13 @@ def process_channel(dataset, args, start_channel,
             'primary_beam', 'primary beam', dataset,
             np.broadcast_to(pbeam, model.shape), image_p, channel)
     else:
-        pbeam = None
+        pbeam = np.broadcast_to(np.ones(1, model.dtype), model.shape[-2:])
 
     writer.write_fits_image('model', 'model', dataset, model, image_p, channel)
     writer.write_fits_image('residuals', 'residuals', dataset, dirty, image_p,
                             channel, restoring_beam)
 
     # Try to free up memory for the beam convolution
-    del pbeam
     del grid_data
     del psf
     del imager
@@ -525,9 +553,12 @@ def process_channel(dataset, args, start_channel,
         queue.finish()
 
     model += dirty
+    del dirty
     writer.write_fits_image('clean', 'clean image', dataset, model, image_p,
                             channel, restoring_beam)
-    writer.statistics(dataset, image_p, channel, noise=noise, normalized_noise=normalized_noise)
+    peak = find_peak(model, pbeam, noise)
+    writer.statistics(dataset, image_p, channel,
+                      peak=peak, noise=noise, normalized_noise=normalized_noise)
 
 
 def run(args, context, queue, dataset, writer):
