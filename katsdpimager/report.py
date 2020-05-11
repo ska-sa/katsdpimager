@@ -140,6 +140,13 @@ class TargetStats:
         fig.add_layout(bokeh.models.LinearAxis(x_range_name='channel', axis_label='Channel'),
                        'above')
 
+    @staticmethod
+    def _line_with_markers(fig: bokeh.plotting.Figure, *args, **kwargs) -> None:
+        fig.line(*args, **kwargs)
+        if 'line_color' in kwargs:
+            kwargs['fill_color'] = kwargs['line_color']
+        fig.circle(*args, **kwargs)
+
     def make_channel_data_source(self) -> bokeh.models.ColumnDataSource:
         data = {
             'frequency': self.common.frequencies.to_value(FREQUENCY_PLOT_UNIT),
@@ -207,13 +214,16 @@ class TargetStats:
                 '@predicted_noise': si_format
             }
         ))
-        fig.line(x='frequency', y='peak', source=source, name='peak',
-                 line_color=PALETTE[0], legend_label='Peak')
-        fig.line(x='frequency', y='noise', source=source, name='noise',
-                 line_color=PALETTE[1], legend_label='Noise')
+        self._line_with_markers(
+            fig, x='frequency', y='peak', source=source, name='peak',
+            line_color=PALETTE[0], legend_label='Peak')
+        self._line_with_markers(
+            fig, x='frequency', y='noise', source=source, name='noise',
+            line_color=PALETTE[1], legend_label='Noise')
         if self.predicted_natural_noise is not None:
-            fig.line(x='frequency', y='predicted_noise', source=source, name='predicted_noise',
-                     line_color=PALETTE[2], legend_label='Predicted noise')
+            self._line_with_markers(
+                fig, x='frequency', y='predicted_noise', source=source, name='predicted_noise',
+                line_color=PALETTE[2], legend_label='Predicted noise')
         self._add_channel_range(fig)
         return fig
 
