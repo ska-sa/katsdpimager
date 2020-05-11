@@ -59,6 +59,9 @@ class SEFDModel:
         """
         frequencies = frequencies.to(self.frequencies.unit, equivalencies=u.spectral())
         ans = np.interp(frequencies, self.frequencies, self.sefd, left=np.nan, right=np.nan)
+        # Depending on the numpy and astropy versions, np.interp might lose the units, so
+        # put them back.
+        ans <<= self.sefd.unit
         if effective:
             ans /= self.correlator_efficiency
         return ans
