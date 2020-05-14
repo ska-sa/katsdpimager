@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Spectral imager report</title>
+    {{ resources | safe | indent(4) }}
+    {{ script | safe | indent(4) }}
+    <style>
+      {{ static["bootstrap-4.4.1.min.css"] | safe | indent(6) }}
+    </style>
+  </head>
+  <body>
+    <div class="container-fluid">
+{% for target in targets %}
+      <div class="row">
+        <div class="col">
+          <h1>{{ target.name }}</h1>
+        </div>
+      </div>
+      <div class="row">
+        <div class="col-auto">
+          <div class="card">
+            <h5 class="card-header">Properties</h5>
+            <table class="table">
+              <tbody>
+                <tr>
+                  <td>Description</td>
+                  <td>{{ target.description }}</td>
+                </tr>
+                <tr>
+                  <td>Antennas</td>
+                  <td>{{ common.antennas | count }}</td>
+                </tr>
+                <tr>
+                  <td>Time on target</td>
+                  <td>{{ target.time_on_target | duration }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="col-auto">
+          <div class="card">
+            <h5 class="card-header">Channels</h5>
+            <table class="table">
+              <tbody>
+                <tr>
+                  <td>Successful</td>
+                  <td>{{ target.status|select("equalto", "complete")|list|count }}</td>
+                </tr>
+                <tr>
+                  <td>Flagged</td>
+                  <td>{{ target.status|select("equalto", "no-data")|list|count }}</td>
+                </tr>
+                <tr>
+                  <td>Masked</td>
+                  <td>{{ target.status|select("equalto", "masked")|list|count }}</td>
+                </tr>
+                <tr>
+                  <td>Failed</td>
+                  <td>{{ target.status|select("equalto", "failed")|list|count }}</td>
+                </tr>
+                <tr>
+                  <td>Total</td>
+                  <td>{{ common.channels }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="col">
+          <div class="card">
+            <h5 class="card-header">Processing status</h5>
+            {{ target.plots['status'] | safe | indent(12) }}
+          </div>
+          <div class="card">
+            <h5 class="card-header">Signal to noise</h5>
+            {{ target.plots['snr'] | safe | indent(12) }}
+            <div class="card-body">
+              <dl>
+                <dt>Peak</dt>
+                <dd>Maximum absolute amplitude of a pixel in the final image,
+                after primary beam correction, and restricted to pixels that
+                are at least 10× the noise.</dd>
+                <dt>Noise</dt>
+                <dd>Root-mean-square noise estimated using the median absolute
+                value of the residual Stokes-I image prior to primary beam
+                correction.</dd>
+                <dt>Predicted noise</dt>
+                <dd>Noise estimate computed using a model of system equivalent
+                flux density, channel bandwidth, time on target and imaging
+                weights. Flagging (whether for RFI or otherwise) is <em>not</em>
+                taken into account, and will cause actual noise to be higher
+                than predicted.</dd>
+              </dl>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="col-md-6">
+          <div class="card">
+            <h5 class="card-header">Elevation</h5>
+            {{ target.plots['elevation'] | safe | indent(12) }}
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="card">
+            <h5 class="card-header">Parallactic angle</h5>
+            {{ target.plots['parallactic_angle'] | safe | indent(12) }}
+          </div>
+        </div>
+      </div>
+{% endfor %}
+    </div>
+  </body>
+</html>

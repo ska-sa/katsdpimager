@@ -11,7 +11,7 @@ import katsdpsigproc.accel as accel
 
 from . import \
     loader, parameters, polarization, preprocess, clean, weight, sky_model, \
-    imaging, progress, beam, primary_beam
+    imaging, progress, beam, primary_beam, numba
 
 
 logger = logging.getLogger(__name__)
@@ -83,9 +83,10 @@ def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block):
                     bar.next(len(chunk.uv))
         else:
             bar.next(total)
-        normalized_rms = imager.finalize_weights()
+        normalized_noise = imager.finalize_weights()
         queue.finish()
-    logger.info('Normalized thermal RMS: %g', normalized_rms)
+    logger.info('Normalized thermal RMS noise: %g', normalized_noise)
+    return normalized_noise
 
 
 def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block, degrid,
@@ -140,6 +141,32 @@ def extract_psf(psf, psf_patch):
     x0 = (psf.shape[1] - psf_patch[1]) // 2
     x1 = x0 + psf_patch[1]
     return psf[..., y0:y1, x0:x1]
+
+
+@numba.jit(nopython=True)
+def find_peak(image, pbeam, noise):
+    """Heuristically find the peak of the data in the image.
+
+    When primary beam correction is used, the beam-corrected noise near the
+    null of the primary beam can be quite large and possibly larger than any
+    true emission. To avoid picking up noise, limit the search to pixels
+    whose absolute value is more than 10σ.
+    """
+    # TODO: it may be worth doing this on the GPU. On the other hand,
+    # the primary beam isn't currently on the GPU.
+    peak = image.dtype.type(0)
+    for i in range(image.shape[0]):
+        for j in range(image.shape[1]):
+            for k in range(image.shape[2]):
+                v = np.abs(image[i, j, k])
+                if v > peak:
+                    pb = pbeam[j, k]
+                    n = noise / pb
+                    if v * pb > 10 * n:
+                        peak = v
+    if peak == 0:
+        peak = np.nan
+    return peak
 
 
 def log_parameters(name, params):
@@ -329,6 +356,7 @@ def add_options(parser):
 
 class Writer:
     """Abstract class that handles writing grids/images to files"""
+
     @abstractmethod
     def write_fits_image(self, name, description, dataset, image, image_parameters, channel,
                          beam=None, bunit='Jy/beam'):
@@ -347,6 +375,23 @@ class Writer:
         in image.py, while `description` is human-readable. If `fftshift` is
         true, the data needs to be fft-shifted on the u and v axes. The other
         arguments have the same meaning as for :meth:`.io.write_fits_grid`.
+        """
+
+    def skip_channel(self, dataset, image_parameters, channel):
+        """Called to indicate that a channel was skipped due to lack of data."""
+
+    def statistics(self, dataset, image_parameters, channel, **kwargs):
+        """Report statistics of the image or imaging process.
+
+        The statistics reported will evolve over time. Currently, they are
+
+        noise
+          Estimated noise in the residual image, in Jy/beam
+        normalized_noise
+          Increase in noise due to use of non-natural weights (unitless)
+        peak
+          Largest absolute value of pixel in final image that is not simply
+          noise (according to a heuristic), or NaN if there is no such pixel.
         """
 
 
@@ -383,8 +428,8 @@ def process_channel(dataset, args, start_channel,
     imager.clear_model()
 
     # Compute imaging weights
-    make_weights(queue, reader, rel_channel,
-                 imager, weight_p.weight_type, args.vis_block)
+    normalized_noise = make_weights(queue, reader, rel_channel,
+                                    imager, weight_p.weight_type, args.vis_block)
     writer.write_fits_image('weights', 'image weights',
                             dataset, imager.buffer('weights_grid'), image_p, channel, bunit=None)
 
@@ -397,6 +442,7 @@ def process_channel(dataset, args, start_channel,
     psf_peak = dirty[..., dirty.shape[1] // 2, dirty.shape[2] // 2]
     if np.any(psf_peak == 0):
         logger.info('Skipping channel %d which has no usable data', channel)
+        writer.skip_channel(dataset, image_p, channel)
         return
     scale = np.reciprocal(psf_peak)
     imager.scale_dirty(scale)
@@ -448,6 +494,9 @@ def process_channel(dataset, args, start_channel,
                 value = imager.clean_cycle(psf_patch, threshold_metric)
                 if value is None:
                     break
+        if i == args.major - 1:
+            # Update the noise estimate for output stats
+            noise = imager.noise_est()
         queue.finish()
 
     # Scale by primary beam
@@ -472,14 +521,13 @@ def process_channel(dataset, args, start_channel,
             'primary_beam', 'primary beam', dataset,
             np.broadcast_to(pbeam, model.shape), image_p, channel)
     else:
-        pbeam = None
+        pbeam = np.broadcast_to(np.ones(1, model.dtype), model.shape[-2:])
 
     writer.write_fits_image('model', 'model', dataset, model, image_p, channel)
     writer.write_fits_image('residuals', 'residuals', dataset, dirty, image_p,
                             channel, restoring_beam)
 
     # Try to free up memory for the beam convolution
-    del pbeam
     del grid_data
     del psf
     del imager
@@ -505,8 +553,12 @@ def process_channel(dataset, args, start_channel,
         queue.finish()
 
     model += dirty
+    del dirty
     writer.write_fits_image('clean', 'clean image', dataset, model, image_p,
                             channel, restoring_beam)
+    peak = find_peak(model, pbeam, noise)
+    writer.statistics(dataset, image_p, channel,
+                      peak=peak, noise=noise, normalized_noise=normalized_noise)
 
 
 def run(args, context, queue, dataset, writer):
