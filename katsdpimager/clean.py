@@ -18,6 +18,7 @@ minor cycles if the launch overheads become an issue.
 import math
 
 import numpy as np
+import scipy.stats
 from katsdpsigproc import accel
 import pkg_resources
 
@@ -180,6 +181,25 @@ def power_to_metric(mode, power):
         return power
     elif mode == CLEAN_SUMSQ:
         return power * power
+    else:
+        raise ValueError('Invalid mode {}'.format(mode))
+
+
+def noise_threshold_scale(mode, threshold, num_polarizations):
+    """Determine threshold on power at which to stop cleaning, based on noise.
+
+    The nominal sigma level in :attr:`.CleanParameters.threshold` is
+    appropriate for :data:`CLEAN_I` (Gaussian distribution) but not
+    `CLEAN_SUMSQ` (chi-squared distribution). We turn the given threshold into
+    a probability of a noise pixel being above the threshold assuming a
+    Gaussian distribution, then invert the chi-squared distribution to achieve
+    the same probability.
+    """
+    if mode == CLEAN_I:
+        return threshold
+    elif mode == CLEAN_SUMSQ:
+        p = 2 * scipy.stats.norm.sf(threshold)
+        return np.sqrt(scipy.stats.chi2.isf(p, num_polarizations))
     else:
         raise ValueError('Invalid mode {}'.format(mode))
 
