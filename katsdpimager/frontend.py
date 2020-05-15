@@ -408,6 +408,7 @@ def process_channel(dataset, args, start_channel,
     if not any(reader.len(rel_channel, w_slice)
                for w_slice in range(reader.num_w_slices(rel_channel))):
         logger.info('Skipping channel %d which has no data', channel)
+        writer.skip_channel(dataset, image_p, channel)
         return
 
     logger.info('Processing channel %d', channel)
