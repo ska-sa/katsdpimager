@@ -37,7 +37,7 @@ class ImagingTemplate:
         self.psf_patch = clean.PsfPatchTemplate(
             context, image_parameters.real_dtype, num_polarizations)
         self.noise_est = clean.NoiseEstTemplate(
-            context, image_parameters.real_dtype, num_polarizations, clean_parameters.mode)
+            context, image_parameters.real_dtype, num_polarizations)
         self.clean = clean.CleanTemplate(
             context, clean_parameters, image_parameters.real_dtype, num_polarizations)
         self.scale = image.ScaleTemplate(
@@ -395,8 +395,7 @@ class ImagingHost:
                                     self._clean_parameters.psf_limit)
 
     def noise_est(self):
-        return clean.noise_est_host(self._dirty, self._clean_parameters.border,
-                                    self._clean_parameters.mode)
+        return clean.noise_est_host(self._dirty, self._clean_parameters.border)
 
     def clean_reset(self):
         self._clean.reset()

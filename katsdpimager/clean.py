@@ -29,6 +29,9 @@ CLEAN_I = 0
 #: Use the sum of squares of available Stokes components to find peaks
 CLEAN_SUMSQ = 1
 
+#: Scales median absolute value of a zero-mean Gaussian distribution to its standard deviation
+_MEDIAN_TO_RMS = 1.4826022185056031   # 1 / np.sqrt(scipy.stats.chi2.ppf(0.5, 1))
+
 
 class PsfPatchTemplate:
     """Examines a PSF to determine how big a PSF patch is required to
@@ -161,8 +164,7 @@ class PsfPatch(accel.Operation):
 
 
 def metric_to_power(mode, metric):
-    """Convert a peak-finding metric to a value that scales linearly with
-    power (e.g. Jy/beam).
+    """Convert a peak-finding metric to a value that scales linearly with power (e.g. Jy/beam).
     """
     if mode == CLEAN_I:
         return metric
@@ -196,16 +198,13 @@ class NoiseEstTemplate:
         Image precision
     num_polarizations : int
         number of polarizations stored in the dirty/residual image
-    mode : {:data:`CLEAN_I`, :data:`CLEAN_SUMSQ`}
-        Metric for scoring pixels
     tuning : dict, optional
         Tuning parameters (unused for now)
     """
-    def __init__(self, context, dtype, num_polarizations, mode, tuning=None):
+    def __init__(self, context, dtype, num_polarizations, tuning=None):
         self.context = context
         self.dtype = np.dtype(dtype)
         self.num_polarizations = num_polarizations
-        self.mode = mode
         self.wgsx = 32
         self.wgsy = 8
         self.tilex = 32
@@ -218,8 +217,7 @@ class NoiseEstTemplate:
                 'wgsy': self.wgsy,
                 'tilex': self.tilex,
                 'tiley': self.tiley,
-                'num_polarizations': num_polarizations,
-                'clean_mode': mode
+                'num_polarizations': num_polarizations
             },
             extra_dirs=[pkg_resources.resource_filename(__name__, '')])
 
@@ -291,7 +289,11 @@ class NoiseEst(accel.Operation):
         dirty = self.buffer('dirty')
         rank = self.buffer('rank')
         rank_host = rank.empty_like()
-        median_rank = (dirty.shape[1] - 2 * self.border) * (dirty.shape[2] - 2 * self.border) // 2
+        median_rank = (
+            (dirty.shape[1] - 2 * self.border)
+            * (dirty.shape[2] - 2 * self.border)
+            * self.template.num_polarizations // 2
+        )
         # We don't need a super-accurate estimate down to the last bit.
         while high > np.finfo(dtype).tiny and high > low * 1.0001:
             # Average the integer bit representations, which will effectively
@@ -329,9 +331,7 @@ class NoiseEst(accel.Operation):
                 high = mid
         # low and high are very close, but we use low so that if the input is
         # more than 50% zeros then the output is zero.
-        # The magic number is the ratio between median absolute deviation and
-        # standard deviation of a Gaussian.
-        return metric_to_power(self.template.mode, low) * 1.48260222
+        return low * _MEDIAN_TO_RMS
 
 
 class _UpdateTilesTemplate:
@@ -906,15 +906,11 @@ def psf_patch_host(psf, threshold, limit=None):
     return (psf.shape[0], y_size, x_size)
 
 
-def noise_est_host(image, border, mode):
+def noise_est_host(image, border):
     """Host implementation of :class:`NoiseEstTemplate`."""
     image = image[:, border:-border, border:-border]
-    if mode == CLEAN_I:
-        metric = np.abs(image)
-    elif mode == CLEAN_SUMSQ:
-        metric = np.sum(image**2, axis=0)
-    median = np.median(metric)
-    return metric_to_power(mode, median) * 1.48260222
+    median = np.median(np.abs(image))
+    return median * _MEDIAN_TO_RMS
 
 
 @numba.jit(nopython=True)
