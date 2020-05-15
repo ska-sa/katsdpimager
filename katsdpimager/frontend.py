@@ -161,8 +161,7 @@ def find_peak(image, pbeam, noise):
                 v = np.abs(image[i, j, k])
                 if v > peak:
                     pb = pbeam[j, k]
-                    n = noise / pb
-                    if v * pb > 10 * n:
+                    if v * pb > 10 * noise:
                         peak = v
     if peak == 0:
         peak = np.nan
