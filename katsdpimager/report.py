@@ -199,6 +199,8 @@ class TargetStats:
             const scale =     [1e12,  1e9,  1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12];
             const suffix =    [ "p",  "n",  "µ", "m",  "",  "k",  "M",  "G", "T"];
             var i = 0;
+            if (value != value)
+                return "N/A ";
             while (i < threshold.length && value >= threshold[i])
                 i++;
             return sprintf(format, value * scale[i]) + " " + suffix[i];
