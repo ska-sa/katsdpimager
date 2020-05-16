@@ -182,24 +182,12 @@ class TestClean:
         # Add some big values to ensure robustness
         dirty.flat[rs.choice(dirty.size, 1000, replace=False)] += 1e6
 
-        # Test with CLEAN_I
-        template = clean.NoiseEstTemplate(context, np.float32, 4, clean.CLEAN_I)
+        template = clean.NoiseEstTemplate(context, np.float32, 4)
         fn = template.instantiate(command_queue, image_shape, border)
         fn.ensure_all_bound()
         fn.buffer('dirty').set(command_queue, dirty)
         estimated = fn()
         np.testing.assert_allclose(estimated, std, rtol=rtol)
-
-        # Test with CLEAN_SUMSQ
-        template = clean.NoiseEstTemplate(context, np.float32, 4, clean.CLEAN_SUMSQ)
-        fn = template.instantiate(command_queue, image_shape, border)
-        fn.ensure_all_bound()
-        fn.buffer('dirty').set(command_queue, dirty)
-        estimated = fn()
-        # Magic number is the ratio of the medians of the chi distribution with
-        # 4 and 1 degrees of freedom:
-        # scipy.stats.chi(4).median() / scipy.stats.chi(1).median()
-        np.testing.assert_allclose(estimated, std * 2.716317430527251, rtol=rtol)
 
     @device_test
     def test_noise(self, context, command_queue):

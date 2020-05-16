@@ -161,8 +161,7 @@ def find_peak(image, pbeam, noise):
                 v = np.abs(image[i, j, k])
                 if v > peak:
                     pb = pbeam[j, k]
-                    n = noise / pb
-                    if v * pb > 10 * n:
+                    if v * pb > 10 * noise:
                         peak = v
     if peak == 0:
         peak = np.nan
@@ -408,6 +407,7 @@ def process_channel(dataset, args, start_channel,
     if not any(reader.len(rel_channel, w_slice)
                for w_slice in range(reader.num_w_slices(rel_channel))):
         logger.info('Skipping channel %d which has no data', channel)
+        writer.skip_channel(dataset, image_p, channel)
         return
 
     logger.info('Processing channel %d', channel)
@@ -478,7 +478,8 @@ def process_channel(dataset, args, start_channel,
         imager.clean_reset()
         peak_value = imager.clean_cycle(psf_patch)
         peak_power = clean.metric_to_power(clean_p.mode, peak_value)
-        noise_threshold = noise * clean_p.threshold
+        noise_threshold = noise * clean.noise_threshold_scale(
+            clean_p.mode, clean_p.threshold, len(image_p.polarizations))
         mgain_threshold = (1.0 - clean_p.major_gain) * peak_power
         logger.info('Threshold from noise estimate: %g', noise_threshold)
         logger.info('Threshold from mgain:          %g', mgain_threshold)

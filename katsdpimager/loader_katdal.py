@@ -131,6 +131,7 @@ class LoaderKatdal(loader_core.LoaderBase):
         _logger.info('Selected target %r', self._target.description)
         if self._target.body_type != 'radec':
             raise ValueError('Target does not have fixed RA/DEC')
+        self._frequencies = self._file.freqs * units.Hz
 
         # Identify polarizations present in the file. Note that _unique
         # returns a sorted list.
@@ -202,7 +203,7 @@ class LoaderKatdal(loader_core.LoaderBase):
         return self._file.shape[1]
 
     def frequency(self, channel):
-        return self._file.freqs[channel] * units.Hz
+        return self._frequencies[channel]
 
     def band(self):
         return self._spectral_window.band

@@ -1,5 +1,4 @@
 <%include file="/port.mako"/>
-<%include file="metric.mako"/>
 <%namespace name="wg_reduce" file="/wg_reduce.mako"/>
 
 ${wg_reduce.define_scratch('uint', wgsx * wgsy, 'reduce_scratch', allow_shuffle=True)}
@@ -37,8 +36,11 @@ void compute_rank(
             if (x < image_width && y < image_height)
             {
                 int pixel_offset = y * image_row_stride + x;
-                T metric = clean_metric(image, pixel_offset, image_pol_stride);
-                local_rank += (metric < value);
+                for (int k = 0; k < NPOLS; k++)
+                {
+                    T pix = fabsf(image[pixel_offset + k * image_pol_stride]);
+                    local_rank += (pix < value);
+                }
             }
         }
 
