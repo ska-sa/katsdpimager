@@ -150,7 +150,7 @@ def find_peak(image, pbeam, noise):
     When primary beam correction is used, the beam-corrected noise near the
     null of the primary beam can be quite large and possibly larger than any
     true emission. To avoid picking up noise, limit the search to pixels
-    whose absolute value is more than 10σ.
+    whose absolute value is more than 7.5σ.
     """
     # TODO: it may be worth doing this on the GPU. On the other hand,
     # the primary beam isn't currently on the GPU.
@@ -161,7 +161,7 @@ def find_peak(image, pbeam, noise):
                 v = np.abs(image[i, j, k])
                 if v > peak:
                     pb = pbeam[j, k]
-                    if v * pb > 10 * noise:
+                    if v * pb > 7.5 * noise:
                         peak = v
     if peak == 0:
         peak = np.nan
