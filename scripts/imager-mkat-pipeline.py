@@ -102,6 +102,8 @@ class Writer(frontend.Writer):
         if np.isfinite(peak):
             self.telstate.set_indexed('peak', sub_key, peak)
         self.telstate.set_indexed('noise', sub_key, kwargs['noise'])
+        if kwargs.get('weights_noise') is not None:
+            self.telstate.set_indexed('weights_noise', sub_key, kwargs['weights_noise'])
         self.telstate.set_indexed('normalized_noise', sub_key, kwargs['normalized_noise'])
 
 

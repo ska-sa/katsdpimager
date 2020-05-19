@@ -89,7 +89,13 @@
                 <dd>Root-mean-square noise estimated using the median absolute
                 value of the residual Stokes-I image prior to primary beam
                 correction.</dd>
-                <dt>Predicted noise</dt>
+                <dt>Predicted noise (weights)</dt>
+                <dd>Noise estimate computed from the visibility weights. It
+                accounts for flagging and actual receiver performance.
+                Differences between this and the image noise likely indicate
+                problems in the imaging process such as incomplete or
+                divergent cleaning.
+                <dt>Predicted noise (model)</dt>
                 <dd>Noise estimate computed using a model of system equivalent
                 flux density, channel bandwidth, time on target and imaging
                 weights. Flagging (whether for RFI or otherwise) is <em>not</em>
