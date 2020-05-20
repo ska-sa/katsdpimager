@@ -231,7 +231,7 @@ class TargetStats:
             fig, x='frequency', y='noise', source=source, name='noise',
             line_color=PALETTE[1], legend_label='Noise')
         self._line_with_markers(
-            fig, x='frequency', y='noise', source=source, name='weights_noise',
+            fig, x='frequency', y='weights_noise', source=source, name='weights_noise',
             line_color=PALETTE[2], legend_label='Predicted noise (weights)')
         if self.model_natural_noise is not None:
             self._line_with_markers(
