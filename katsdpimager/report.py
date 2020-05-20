@@ -214,7 +214,7 @@ class TargetStats:
                 ('Channel', '$index'),
                 ('Peak', f'@peak{{%.3f}}{FLUX_PLOT_UNIT}'),
                 ('Noise', f'@noise{{%.3f}}{FLUX_PLOT_UNIT}'),
-                ('Predicted noise (weights)', f'@weights_noise{{%.3f}}{FLUX_PLOT_UNIT}')
+                ('Predicted noise (weights)', f'@weights_noise{{%.3f}}{FLUX_PLOT_UNIT}'),
                 ('Predicted noise (model)', f'@model_noise{{%.3f}}{FLUX_PLOT_UNIT}')
             ],
             formatters={
