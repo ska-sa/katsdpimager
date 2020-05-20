@@ -534,7 +534,7 @@ class Weights(accel.OperationSequence):
             rms, normalized_rms = None, 1.0
         if self._fill is not None:
             self._fill()
-        return normalized_rms
+        return rms, normalized_rms
 
 
 class WeightsHost:
