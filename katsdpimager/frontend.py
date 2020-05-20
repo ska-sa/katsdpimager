@@ -391,8 +391,8 @@ class Writer:
         noise
           Estimated noise in the residual image, in Jy/beam
         weights_noise
-          Estimated noise computed from the visibility and image weights.
-          It's in Jy/beam assuming the visibility weights are in Jy^-2.
+          Estimated noise computed from the visibility and image weights,
+          in Jy/beam. It can be ``None`` if not available.
         normalized_noise
           Increase in noise due to use of non-natural weights (unitless)
         peak
