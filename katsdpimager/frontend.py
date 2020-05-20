@@ -64,7 +64,7 @@ def preprocess_visibilities(dataset, args, start_channel, stop_channel,
     return collector
 
 
-def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block):
+def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block, weight_scale):
     imager.clear_weights()
     total = 0
     for w_slice in range(reader.num_w_slices(rel_channel)):
@@ -84,6 +84,8 @@ def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block):
         else:
             bar.next(total)
         noise, normalized_noise = imager.finalize_weights()
+        if noise is not None and weight_scale is not None:
+            noise *= weight_scale
         queue.finish()
     if noise is not None:
         logger.info('Thermal RMS noise (from weights): %g', noise)
@@ -434,7 +436,8 @@ def process_channel(dataset, args, start_channel,
 
     # Compute imaging weights
     weights_noise, normalized_noise = make_weights(queue, reader, rel_channel,
-                                                   imager, weight_p.weight_type, args.vis_block)
+                                                   imager, weight_p.weight_type, args.vis_block,
+                                                   dataset.weight_scale())
     writer.write_fits_image('weights', 'image weights',
                             dataset, imager.buffer('weights_grid'), image_p, channel, bunit=None)
 

@@ -114,6 +114,16 @@ class LoaderBase:
         """
         raise NotImplementedError('Abstract base class')
 
+    def weight_scale(self):
+        """Get scale factor between weights and inverse square noise.
+
+        The return value is the RMS noise (in Jansky) on a single real
+        correlator channel for a visibility of unit weight, or ``None``
+        if it is not known. This has no direct effect on imaging, but if
+        available is used to report statistics.
+        """
+        return None
+
     def data_iter(self, start_channel, stop_channel, max_chunk_vis=None):
         """Return an iterator that yields the data in chunks. Each chunk is a
         dictionary containing numpy arrays with the following keys:
