@@ -103,7 +103,7 @@ class TargetStats:
         # Noise per channel (NaN where missing)
         self.noise: u.Quantity = [math.nan] * common.channels * (u.Jy / u.beam)
         # Estimate neight from weights (NaN where missing)
-        self.weights_noise: u.Quantity = [math.nan] * common.channels * (u.Jy / beam)
+        self.weights_noise: u.Quantity = [math.nan] * common.channels * (u.Jy / u.beam)
         # Increase in noise due to imaging weights
         self.normalized_noise = [math.nan] * common.channels
         self.plots: Dict[str, str] = {}     # Divs to insert for plots returned by make_plots
