@@ -43,6 +43,8 @@ class SEFDModel(ABC):
 
         If `effective` is true, the correlator efficiency is combined
         with the result.
+
+        Given frequencies outside the support of the model return NaN.
         """
 
 
@@ -90,14 +92,25 @@ class PolynomialSEFDModel(SEFDModel):
 
 
 def meerkat_sefd_model(band: str) -> SEFDModel:
+    """Look up an SEFD model for MeerKAT.
+
+    Parameters
+    ----------
+    band
+        Frequency band for which the model will be applicable. Note that the model
+        will likely not cover the edges of the band.
+
+    Raises
+    ------
+    ValueError
+        If no model is available for the given band
+    """
     if band == 'L':
         coeffs = [
             [2.08778760e+02, 1.08462392e+00, -1.24639611e-03, 4.00344294e-07],  # H
             [7.57838984e+02, -2.24205001e-01, -1.72161897e-04, 1.11118471e-07]  # V
-        ]
-        return PolynomialSEFDModel(
-            900.0 * u.MHz, 1670 * u.MHz,
-            (coeffs * u.Jy).T, u.MHz, 0.96)
+        ] * u.Jy
+        return PolynomialSEFDModel(900.0 * u.MHz, 1670 * u.MHz, coeffs.T, u.MHz, 0.96)
     else:
         raise ValueError(f'No SEFD model for band {band}')
 
