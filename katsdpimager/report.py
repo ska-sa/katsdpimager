@@ -5,7 +5,7 @@ import json
 import math
 import logging
 from datetime import datetime, timezone
-from typing import List, Sequence, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional
 
 import pkg_resources
 import jinja2
@@ -14,7 +14,6 @@ import katpoint
 import katdal
 import katsdptelstate
 import astropy.units as u
-import h5py
 
 import bokeh.embed
 import bokeh.palettes
