@@ -57,8 +57,8 @@ class PolynomialSEFDModel(SEFDModel):
         Frequency range over which the model is valid. For frequencies
         outside this range, NaN will be returned.
     coeffs
-        2D array of polynomial coefficients. Each column corresponds to a
-        single polarization. See :meth:`numpy.polynomial.polynomial.polyval`.
+        2D array of polynomial coefficients. Each row corresponds to a
+        single polarization, with coefficients increasing in exponent.
         The units must be flux density units e.g. Jy.
     frequency_unit
         Unit to which frequencies are converted for evaluation of the
@@ -83,7 +83,7 @@ class PolynomialSEFDModel(SEFDModel):
         x = frequencies.to(self._frequency_unit).value
         x[(frequencies < self.min_frequency) | (frequencies > self.max_frequency)] = np.nan
         pol_sefd = np.polynomial.polynomial.polyval(
-            x, self._coeffs.value, tensor=True) << self._coeffs.unit
+            x, self._coeffs.value.T, tensor=True) << self._coeffs.unit
         # Take quadratic mean of individual polarizations
         sefd = np.sqrt(np.mean(np.square(pol_sefd), axis=0))
         if effective:
@@ -110,7 +110,7 @@ def meerkat_sefd_model(band: str) -> SEFDModel:
             [2.08778760e+02, 1.08462392e+00, -1.24639611e-03, 4.00344294e-07],  # H
             [7.57838984e+02, -2.24205001e-01, -1.72161897e-04, 1.11118471e-07]  # V
         ] * u.Jy
-        return PolynomialSEFDModel(900.0 * u.MHz, 1670 * u.MHz, coeffs.T, u.MHz, 0.96)
+        return PolynomialSEFDModel(900.0 * u.MHz, 1670 * u.MHz, coeffs, u.MHz, 0.96)
     else:
         raise ValueError(f'No SEFD model for band {band}')
 
