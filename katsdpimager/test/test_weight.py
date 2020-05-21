@@ -77,6 +77,7 @@ class TestDensityWeights:
                 sum_w += w
                 sum_dw += d * w
                 sum_d2w += d**2 * w
+        self.rms = np.sqrt(sum_d2w) / sum_dw
         self.normalized_rms = np.sqrt(sum_d2w * sum_w) / sum_dw
 
     @device_test
@@ -92,9 +93,10 @@ class TestDensityWeights:
         accel.HostArray.padded_view(tmp_data).fill(3)
         tmp_data[:] = self.data
         fn.buffer('grid').set(command_queue, tmp_data)
-        normalized_rms = fn()
+        rms, normalized_rms = fn()
         actual = fn.buffer('grid').get(command_queue)
         np.testing.assert_allclose(self.expected, actual, 1e-5, 1e-5)
+        np.testing.assert_allclose(self.rms, rms, 1e-6)
         np.testing.assert_allclose(self.normalized_rms, normalized_rms, 1e-6)
 
 

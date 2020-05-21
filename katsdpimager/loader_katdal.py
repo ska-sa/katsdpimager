@@ -224,6 +224,12 @@ class LoaderKatdal(loader_core.LoaderBase):
     def has_feed_angles(self):
         return True
 
+    def weight_scale(self):
+        # A katdal complex visibility with weight 1 has an expected squared
+        # magnitude of 1, so the real and imaginary parts each have variance
+        # 1/2.
+        return math.sqrt(0.5)
+
     def data_iter(self, start_channel, stop_channel, max_chunk_vis=None):
         self._file.select(reset='F')
         n_file_times, n_file_chans, n_file_cp = self._file.shape

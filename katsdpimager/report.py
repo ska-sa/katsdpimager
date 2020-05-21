@@ -102,6 +102,8 @@ class TargetStats:
         self.peak: u.Quantity = [math.nan] * common.channels * (u.Jy / u.beam)
         # Noise per channel (NaN where missing)
         self.noise: u.Quantity = [math.nan] * common.channels * (u.Jy / u.beam)
+        # Estimate noise from weights (NaN where missing)
+        self.weights_noise: u.Quantity = [math.nan] * common.channels * (u.Jy / u.beam)
         # Increase in noise due to imaging weights
         self.normalized_noise = [math.nan] * common.channels
         self.plots: Dict[str, str] = {}     # Divs to insert for plots returned by make_plots
@@ -112,12 +114,12 @@ class TargetStats:
         )
         self.channel_range = bokeh.models.Range1d(0, self.common.channels - 1, bounds='auto')
         self.time_on_target = katsdpimager.metadata.time_on_target(dataset, target)
-        self.predicted_natural_noise: Optional[u.Quantity] = None
+        self.model_natural_noise: Optional[u.Quantity] = None
         if self.common.sefd is not None and len(self.common.antennas) > 1:
             n = len(self.common.antennas)
             # Correlator efficiency is already folded in to self.common.sefd
             denom = math.sqrt(2 * n * (n - 1) * self.time_on_target * self.common.channel_width)
-            self.predicted_natural_noise = self.common.sefd / denom / u.beam
+            self.model_natural_noise = self.common.sefd / denom / u.beam
 
         mask = katsdpimager.metadata.target_mask(dataset, target)
         self.timestamps = dataset.timestamps[mask]
@@ -154,12 +156,13 @@ class TargetStats:
         data = {
             'frequency': self.common.frequencies.to_value(FREQUENCY_PLOT_UNIT),
             'status': self.status,
+            'weights_noise': self.weights_noise.to_value(FLUX_PLOT_UNIT),
             'noise': self.noise.to_value(FLUX_PLOT_UNIT),
             'peak': self.peak.to_value(FLUX_PLOT_UNIT)
         }
-        if self.predicted_natural_noise is not None:
-            predicted_noise = self.predicted_natural_noise * self.normalized_noise
-            data['predicted_noise'] = predicted_noise.to_value(FLUX_PLOT_UNIT)
+        if self.model_natural_noise is not None:
+            model_noise = self.model_natural_noise * self.normalized_noise
+            data['model_noise'] = model_noise.to_value(FLUX_PLOT_UNIT)
         return bokeh.models.ColumnDataSource(data)
 
     def make_time_data_source(self) -> bokeh.models.ColumnDataSource:
@@ -211,12 +214,14 @@ class TargetStats:
                 ('Channel', '$index'),
                 ('Peak', f'@peak{{%.3f}}{FLUX_PLOT_UNIT}'),
                 ('Noise', f'@noise{{%.3f}}{FLUX_PLOT_UNIT}'),
-                ('Predicted noise', f'@predicted_noise{{%.3f}}{FLUX_PLOT_UNIT}')
+                ('Predicted noise (weights)', f'@weights_noise{{%.3f}}{FLUX_PLOT_UNIT}'),
+                ('Predicted noise (model)', f'@model_noise{{%.3f}}{FLUX_PLOT_UNIT}')
             ],
             formatters={
                 '@peak': si_format,
                 '@noise': si_format,
-                '@predicted_noise': si_format
+                '@weights_noise': si_format,
+                '@model_noise': si_format
             }
         ))
         self._line_with_markers(
@@ -225,10 +230,13 @@ class TargetStats:
         self._line_with_markers(
             fig, x='frequency', y='noise', source=source, name='noise',
             line_color=PALETTE[1], legend_label='Noise')
-        if self.predicted_natural_noise is not None:
+        self._line_with_markers(
+            fig, x='frequency', y='weights_noise', source=source, name='weights_noise',
+            line_color=PALETTE[2], legend_label='Predicted noise (weights)')
+        if self.model_natural_noise is not None:
             self._line_with_markers(
-                fig, x='frequency', y='predicted_noise', source=source, name='predicted_noise',
-                line_color=PALETTE[2], legend_label='Predicted noise')
+                fig, x='frequency', y='model_noise', source=source, name='model_noise',
+                line_color=PALETTE[3], legend_label='Predicted noise (model)')
         self._add_channel_range(fig)
         return fig
 
@@ -302,6 +310,8 @@ def get_stats(dataset: katdal.DataSet,
         stats_lookup[target_desc].peak[channel] = peak * (u.Jy / u.beam)
     for ((target_desc, channel), noise) in telstate.get('noise', {}).items():
         stats_lookup[target_desc].noise[channel] = noise * (u.Jy / u.beam)
+    for ((target_desc, channel), noise) in telstate.get('weights_noise', {}).items():
+        stats_lookup[target_desc].weights_noise[channel] = noise * (u.Jy / u.beam)
     for ((target_desc, channel), normalized_noise) in telstate.get('normalized_noise', {}).items():
         stats_lookup[target_desc].normalized_noise[channel] = normalized_noise
     return common, stats

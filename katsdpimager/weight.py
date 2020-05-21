@@ -220,8 +220,9 @@ class DensityWeights(accel.Operation):
     is :math:`1 / (aW + b)`. This allows for natural, uniform or robust
     weights. If not altered, the default gives uniform weights.
 
-    It also computes and returns the normalized thermal RMS, as described in
-    equation 3.5 of [Bri95]_.
+    It also computes and returns the RMS and normalized thermal RMS, as
+    described in equations 3.3 and 3.5 of [Bri95]_ (assuming that
+    ΔS_uw = 1).
 
     .. rubric:: Slots
 
@@ -279,7 +280,8 @@ class DensityWeights(accel.Operation):
         if isinstance(sums, accel.SVMArray):
             self.command_queue.finish()
         sums.get(self.command_queue, self._sums_host)
-        return np.sqrt(self._sums_host[2] * self._sums_host[0]) / self._sums_host[1]
+        rms = np.sqrt(self._sums_host[2]) / self._sums_host[1]
+        return rms, rms * np.sqrt(self._sums_host[0])
 
     def parameters(self):
         return {
@@ -421,7 +423,8 @@ class Weights(accel.OperationSequence):
      1. If using :const:`WeightType.ROBUST` weighting, set :attr:`robustness`.
      2. Call :meth:`clear`.
      3. For each batch of weights, call :meth:`grid`.
-     4. Call :meth:`finalize`, which returns the normalized thermal RMS.
+     4. Call :meth:`finalize`, which returns the thermal RMS and normalized
+        thermal RMS.
 
     .. rubric:: Slots
 
@@ -526,12 +529,12 @@ class Weights(accel.OperationSequence):
             self._density_weights.a = S2
             self._density_weights.b = 1.0
         if self._density_weights is not None:
-            normalized_rms = self._density_weights()
+            rms, normalized_rms = self._density_weights()
         else:
-            normalized_rms = 1.0
+            rms, normalized_rms = None, 1.0
         if self._fill is not None:
             self._fill()
-        return normalized_rms
+        return rms, normalized_rms
 
 
 class WeightsHost:
@@ -570,6 +573,7 @@ class WeightsHost:
     def finalize(self):
         if self.weight_type == WeightType.NATURAL:
             self.weights_grid.fill(1)
+            rms = None
             normalized_rms = 1.0
         elif self.weight_type == WeightType.UNIFORM:
             sum_w = np.sum(self.weights_grid[0])
@@ -579,7 +583,8 @@ class WeightsHost:
             np.reciprocal(self.weights_grid, out=self.weights_grid)
             # d^2w == d, because d is 1/w
             sum_d2w = np.sum(self.weights_grid[0])
-            normalized_rms = np.sqrt(sum_d2w * sum_w) / sum_dw
+            rms = np.sqrt(sum_d2w) / sum_dw
+            normalized_rms = rms * np.sqrt(sum_w)
         elif self.weight_type == WeightType.ROBUST:
             sum_sq = np.dot(self.weights_grid[0].flat, self.weights_grid[0].flat)
             sum = np.sum(self.weights_grid[0])
@@ -592,7 +597,8 @@ class WeightsHost:
             sum_w = np.sum(old_weights0)
             sum_dw = np.sum(self.weights_grid[0] * old_weights0)
             sum_d2w = np.sum(self.weights_grid[0]**2 * old_weights0)
-            normalized_rms = np.sqrt(sum_d2w * sum_w) / sum_dw
+            rms = np.sqrt(sum_d2w) / sum_dw
+            normalized_rms = rms * np.sqrt(sum_w)
         else:
             raise ValueError('Unknown weight_type {}'.format(self.weight_type))
-        return normalized_rms
+        return rms, normalized_rms

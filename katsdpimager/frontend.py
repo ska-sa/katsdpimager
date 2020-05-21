@@ -64,7 +64,7 @@ def preprocess_visibilities(dataset, args, start_channel, stop_channel,
     return collector
 
 
-def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block):
+def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block, weight_scale):
     imager.clear_weights()
     total = 0
     for w_slice in range(reader.num_w_slices(rel_channel)):
@@ -83,10 +83,14 @@ def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block):
                     bar.next(len(chunk.uv))
         else:
             bar.next(total)
-        normalized_noise = imager.finalize_weights()
+        noise, normalized_noise = imager.finalize_weights()
+        if noise is not None and weight_scale is not None:
+            noise *= weight_scale
         queue.finish()
+    if noise is not None:
+        logger.info('Thermal RMS noise (from weights): %g', noise)
     logger.info('Normalized thermal RMS noise: %g', normalized_noise)
-    return normalized_noise
+    return noise, normalized_noise
 
 
 def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block, degrid,
@@ -386,6 +390,9 @@ class Writer:
 
         noise
           Estimated noise in the residual image, in Jy/beam
+        weights_noise
+          Estimated noise computed from the visibility and image weights,
+          in Jy/beam. It can be ``None`` if not available.
         normalized_noise
           Increase in noise due to use of non-natural weights (unitless)
         peak
@@ -428,8 +435,9 @@ def process_channel(dataset, args, start_channel,
     imager.clear_model()
 
     # Compute imaging weights
-    normalized_noise = make_weights(queue, reader, rel_channel,
-                                    imager, weight_p.weight_type, args.vis_block)
+    weights_noise, normalized_noise = make_weights(queue, reader, rel_channel,
+                                                   imager, weight_p.weight_type, args.vis_block,
+                                                   dataset.weight_scale())
     writer.write_fits_image('weights', 'image weights',
                             dataset, imager.buffer('weights_grid'), image_p, channel, bunit=None)
 
@@ -559,7 +567,9 @@ def process_channel(dataset, args, start_channel,
                             channel, restoring_beam)
     peak = find_peak(model, pbeam, noise)
     writer.statistics(dataset, image_p, channel,
-                      peak=peak, noise=noise, normalized_noise=normalized_noise)
+                      peak=peak, noise=noise,
+                      weights_noise=weights_noise,
+                      normalized_noise=normalized_noise)
 
 
 def run(args, context, queue, dataset, writer):
