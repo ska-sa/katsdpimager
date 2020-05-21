@@ -102,7 +102,7 @@ class TargetStats:
         self.peak: u.Quantity = [math.nan] * common.channels * (u.Jy / u.beam)
         # Noise per channel (NaN where missing)
         self.noise: u.Quantity = [math.nan] * common.channels * (u.Jy / u.beam)
-        # Estimate neight from weights (NaN where missing)
+        # Estimate noise from weights (NaN where missing)
         self.weights_noise: u.Quantity = [math.nan] * common.channels * (u.Jy / u.beam)
         # Increase in noise due to imaging weights
         self.normalized_noise = [math.nan] * common.channels
