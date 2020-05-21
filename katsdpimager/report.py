@@ -36,25 +36,15 @@ logger = logging.getLogger()
 
 
 class SEFDModel(ABC):
-    """Base class for system-equivalent flux density models."""
-
-    def __init__(self, correlator_efficiency: float) -> None:
-        self.correlator_efficiency = correlator_efficiency
+    """Abstract class for system-equivalent flux density models."""
 
     @abstractmethod
-    def _lookup(self, frequencies: u.Quantity) -> u.Quantity:
-        """Implements :meth:`__call__`, without applying correlator efficiency."""
-
     def __call__(self, frequencies: u.Quantity, effective: bool = False) -> u.Quantity:
         """Interpolate to given frequencies.
 
         If `effective` is true, the correlator efficiency is combined
         with the result.
         """
-        ans = self._lookup(frequencies)
-        if effective:
-            ans /= self.correlator_efficiency
-        return ans
 
 
 class PolynomialSEFDModel(SEFDModel):
@@ -80,13 +70,13 @@ class PolynomialSEFDModel(SEFDModel):
                  min_frequency: u.Quantity, max_frequency: u.Quantity,
                  coeffs: u.Quantity, frequency_unit: u.Unit,
                  correlator_efficiency: float) -> None:
-        super().__init__(correlator_efficiency)
         self.min_frequency = min_frequency
         self.max_frequency = max_frequency
-        self._coeffs = coeffs
+        self._coeffs = coeffs.copy()
         self._frequency_unit = frequency_unit
+        self.correlator_efficiency = correlator_efficiency
 
-    def _lookup(self, frequencies: u.Quantity) -> u.Quantity:
+    def __call__(self, frequencies: u.Quantity, effective: bool = False) -> u.Quantity:
         # Note: don't use to_value, because that can return a value, and we're
         # going to modify x.
         x = frequencies.to(self._frequency_unit).value
@@ -95,10 +85,12 @@ class PolynomialSEFDModel(SEFDModel):
             x, self._coeffs.value, tensor=True) << self._coeffs.unit
         # Take quadratic mean of individual polarizations
         sefd = np.sqrt(np.mean(np.square(pol_sefd), axis=0))
+        if effective:
+            sefd /= self.correlator_efficiency
         return sefd
 
 
-def meerkat_sefd_model(band: str):
+def meerkat_sefd_model(band: str) -> SEFDModel:
     if band == 'L':
         coeffs = [
             [2.08778760e+02, 1.08462392e+00, -1.24639611e-03, 4.00344294e-07],  # H
