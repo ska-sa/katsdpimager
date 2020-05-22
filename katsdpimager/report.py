@@ -1,5 +1,6 @@
 """Quality report for MeerKAT pipeline."""
 
+from abc import abstractmethod, ABC
 import json
 import math
 import logging
@@ -13,7 +14,6 @@ import katpoint
 import katdal
 import katsdptelstate
 import astropy.units as u
-import h5py
 
 import bokeh.embed
 import bokeh.palettes
@@ -34,37 +34,85 @@ PALETTE = bokeh.palettes.colorblind['Colorblind'][8]
 logger = logging.getLogger()
 
 
-class SEFDModel:
-    """Model of system-equivalent flux density."""
+class SEFDModel(ABC):
+    """Abstract class for system-equivalent flux density models."""
 
-    @staticmethod
-    def _load_dataset(dataset: h5py.Dataset) -> u.Quantity:
-        return dataset[:] << u.Unit(dataset.attrs['unit'])
-
-    def __init__(self, dish_type: str, band: str) -> None:
-        path = f'models/sefd/{dish_type}/v1/sefd_{band}.h5'
-        with h5py.File(pkg_resources.resource_stream('katsdpimager', path), 'r') as h5file:
-            self.frequencies = self._load_dataset(h5file['frequency'])
-            h = self._load_dataset(h5file['H'])
-            v = self._load_dataset(h5file['V'])
-            # Take quadratic mean to get SEFD for Stokes I
-            self.sefd = np.sqrt((np.square(h) + np.square(v)) * 0.5)
-            self.correlator_efficiency = h5file.attrs['correlator_efficiency']
-
+    @abstractmethod
     def __call__(self, frequencies: u.Quantity, effective: bool = False) -> u.Quantity:
         """Interpolate to given frequencies.
 
         If `effective` is true, the correlator efficiency is combined
         with the result.
+
+        Given frequencies outside the support of the model return NaN.
         """
-        frequencies = frequencies.to(self.frequencies.unit, equivalencies=u.spectral())
-        ans = np.interp(frequencies, self.frequencies, self.sefd, left=np.nan, right=np.nan)
-        # Depending on the numpy and astropy versions, np.interp might lose the units, so
-        # put them back.
-        ans <<= self.sefd.unit
+
+
+class PolynomialSEFDModel(SEFDModel):
+    """SEFD model that uses a polynomial for each polarization.
+
+    Parameters
+    ----------
+    min_frequency, max_frequency
+        Frequency range over which the model is valid. For frequencies
+        outside this range, NaN will be returned.
+    coeffs
+        2D array of polynomial coefficients. Each row corresponds to a
+        single polarization, with coefficients increasing in exponent.
+        The units must be flux density units e.g. Jy.
+    frequency_unit
+        Unit to which frequencies are converted for evaluation of the
+        polynomial.
+    correlator_efficiency
+        Loss in SNR due to quantization in the correlator.
+    """
+
+    def __init__(self,
+                 min_frequency: u.Quantity, max_frequency: u.Quantity,
+                 coeffs: u.Quantity, frequency_unit: u.Unit,
+                 correlator_efficiency: float) -> None:
+        self.min_frequency = min_frequency
+        self.max_frequency = max_frequency
+        self._coeffs = coeffs.copy()
+        self._frequency_unit = frequency_unit
+        self.correlator_efficiency = correlator_efficiency
+
+    def __call__(self, frequencies: u.Quantity, effective: bool = False) -> u.Quantity:
+        # Note: don't use to_value, because that can return a value, and we're
+        # going to modify x.
+        x = frequencies.to(self._frequency_unit).value
+        x[(frequencies < self.min_frequency) | (frequencies > self.max_frequency)] = np.nan
+        pol_sefd = np.polynomial.polynomial.polyval(
+            x, self._coeffs.value.T, tensor=True) << self._coeffs.unit
+        # Take quadratic mean of individual polarizations
+        sefd = np.sqrt(np.mean(np.square(pol_sefd), axis=0))
         if effective:
-            ans /= self.correlator_efficiency
-        return ans
+            sefd /= self.correlator_efficiency
+        return sefd
+
+
+def meerkat_sefd_model(band: str) -> SEFDModel:
+    """Look up an SEFD model for MeerKAT.
+
+    Parameters
+    ----------
+    band
+        Frequency band for which the model will be applicable. Note that the model
+        will likely not cover the edges of the band.
+
+    Raises
+    ------
+    ValueError
+        If no model is available for the given band
+    """
+    if band == 'L':
+        coeffs = [
+            [2.08778760e+02, 1.08462392e+00, -1.24639611e-03, 4.00344294e-07],  # H
+            [7.57838984e+02, -2.24205001e-01, -1.72161897e-04, 1.11118471e-07]  # V
+        ] * u.Jy
+        return PolynomialSEFDModel(900.0 * u.MHz, 1670 * u.MHz, coeffs, u.MHz, 0.96)
+    else:
+        raise ValueError(f'No SEFD model for band {band}')
 
 
 class CommonStats:
@@ -80,8 +128,8 @@ class CommonStats:
         self.sefd: Optional[u.Quantity] = None
         band = dataset.spectral_windows[dataset.spw].band
         try:
-            sefd_model = SEFDModel('meerkat', band)
-        except FileNotFoundError:
+            sefd_model = meerkat_sefd_model(band)
+        except ValueError:
             logger.warning('No SEFD model for band %s', band)
         else:
             self.sefd = sefd_model(self.frequencies, effective=True)
