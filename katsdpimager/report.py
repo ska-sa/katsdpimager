@@ -1,9 +1,12 @@
 """Quality report for MeerKAT pipeline."""
 
 from abc import abstractmethod, ABC
+import itertools
+import io
 import json
 import math
 import logging
+import xml.sax.saxutils
 from datetime import datetime, timezone
 from typing import List, Dict, Tuple, Optional
 
@@ -14,6 +17,10 @@ import katpoint
 import katdal
 import katsdptelstate
 import astropy.units as u
+
+import matplotlib
+import matplotlib.figure
+import matplotlib.patches
 
 import bokeh.embed
 import bokeh.palettes
@@ -115,6 +122,24 @@ def meerkat_sefd_model(band: str) -> SEFDModel:
         raise ValueError(f'No SEFD model for band {band}')
 
 
+class SVGMangler(xml.sax.saxutils.XMLGenerator):
+    """Rip out the XML header and width and height attributes from an SVG.
+
+    This is used to massage the SVG written by matplotlib to make it suitable for embedding.
+    """
+
+    def startDocument(self):
+        pass      # Suppress the <?xml> header
+
+    def startElement(self, name, attrs):
+        if name == 'svg':
+            # attrs is a non-mutable mapping, so we can't just delete from it
+            attrs2 = dict(item for item in attrs.items() if item[0] not in {'width', 'height'})
+            super().startElement(name, attrs.__class__(attrs2))
+        else:
+            super().startElement(name, attrs)
+
+
 class CommonStats:
     """Information extracted from the dataset, independent of target."""
 
@@ -155,6 +180,7 @@ class TargetStats:
         # Increase in noise due to imaging weights
         self.normalized_noise = [math.nan] * common.channels
         self.plots: Dict[str, str] = {}     # Divs to insert for plots returned by make_plots
+        self.uv_coverage = ''
         self.frequency_range = bokeh.models.Range1d(
             self.common.frequencies[0].to_value(FREQUENCY_PLOT_UNIT),
             self.common.frequencies[-1].to_value(FREQUENCY_PLOT_UNIT),
@@ -172,13 +198,21 @@ class TargetStats:
         mask = katsdpimager.metadata.target_mask(dataset, target)
         self.timestamps = dataset.timestamps[mask]
         self.time_range = bokeh.models.Range1d(
-            datetime.fromtimestamp(self.timestamps[0], timezone.utc),
-            datetime.fromtimestamp(self.timestamps[-1], timezone.utc)
+            datetime.fromtimestamp(self.timestamps[0] - 0.5 * dataset.dump_period, timezone.utc),
+            datetime.fromtimestamp(self.timestamps[-1] + 0.5 * dataset.dump_period, timezone.utc)
         )
-        array_ant = dataset.sensor['Antennas/array/antenna'][0]
-        self.elevation = target.azel(timestamp=self.timestamps, antenna=array_ant)[1] << u.rad
+        # Find contiguous time intervals on target
+        delta = np.diff(mask, prepend=0, append=0)
+        starts = np.nonzero(delta == 1)[0]
+        ends = np.nonzero(delta == -1)[0] - 1
+        self.time_intervals = list(zip(dataset.timestamps[starts] - 0.5 * dataset.dump_period,
+                                       dataset.timestamps[ends] + 0.5 * dataset.dump_period))
+
+        self.array_ant = dataset.sensor['Antennas/array/antenna'][0]
+        self.ants = dataset.ants
+        self.elevation = target.azel(timestamp=self.timestamps, antenna=self.array_ant)[1] << u.rad
         self.parallactic_angle = target.parallactic_angle(
-            timestamp=self.timestamps, antenna=array_ant) << u.rad
+            timestamp=self.timestamps, antenna=self.array_ant) << u.rad
 
     @property
     def name(self) -> str:
@@ -345,6 +379,109 @@ class TargetStats:
             'parallactic_angle': self.make_plot_parallactic_angle(time_source)
         }
 
+    def make_uv_coverage(self) -> None:
+        """Generate SVG showing UV coverage and store it internally.
+
+        This is implemented in matplotlib (generating an SVG) rather than
+        Bokeh because Bokeh doesn't support elliptic arcs.
+        """
+        matplotlib.use('SVG')
+        fig = matplotlib.figure.Figure(figsize=(14, 14))
+        ax = fig.subplots()
+        ax.set_aspect('equal')
+
+        def split_interval(start, end):
+            """Split up long intervals into shorter ones.
+
+            This is to avoid any ambiguities about which direction arcs should
+            go if there is a track longer than 12 hours.
+            """
+            if end - start < 11 * 3600:
+                yield start, end
+            else:
+                mid = (start + end) / 2
+                yield from split_interval(start, mid)
+                yield from split_interval(mid, end)
+
+        for start, end in itertools.chain.from_iterable(
+                split_interval(s, e) for s, e in self.time_intervals):
+            # Find the Earth's rotation axis in the UVW basis (it's not a
+            # constant due to precession etc, but close enough over a single
+            # track). We use an offset of an hour rather than end time to
+            # avoid numeric stability issues for very short tracks.
+            bases = self.target.uvw_basis([start, start + 3600.0], self.array_ant)
+            B = bases[..., 1] - bases[..., 0]
+            # The axis of rotation will have the same UVW coordinates at both times,
+            # and hence is in the null-space of B - so should correspond to a
+            # singular value of zero.
+            U, S, VH = np.linalg.svd(B)
+            assert S[2] <= 1e-4 <= S[1]
+            axis = U[:, 2]    # UVW coordinates of rotation axis (could be North or South)
+            # Projection of the rotation axis gives direction of semi-minor
+            # axis of the ellipse, and the w coordinate determines the ratio
+            # between the axis lengths.
+            flatten = abs(axis[2])
+            angle = np.arctan2(axis[1], axis[0])
+
+            all_uvw = np.stack(self.target.uvw(self.ants, [start, end], self.array_ant), axis=-1)
+            for i in range(len(self.ants)):
+                for j in range(i + 1, len(self.ants)):
+                    uvw0, uvw1 = all_uvw[:, j] - all_uvw[:, i]  # Start and end uvw
+                    # Project onto rotation axis to get centre of the ellipse.
+                    # A lot of these calculations could be vectorised, but
+                    # in practice I think the matplotlib arc rendering will
+                    # dominate any potential savings.
+                    mid = np.dot(uvw0, axis) * axis
+                    a = np.linalg.norm(uvw0 - mid)
+                    b = flatten * a
+                    angle0 = np.arctan2(uvw0[1] - mid[1], uvw0[0] - mid[0])
+                    angle1 = np.arctan2(uvw1[1] - mid[1], uvw1[0] - mid[0])
+                    adiff = (angle1 - angle0) % (2 * np.pi)
+                    # Ensure we draw the arc the shorter way around. We've
+                    # limited the track length so that this should always be
+                    # the correct direction.
+                    if adiff >= np.pi:
+                        angle0, angle1 = angle1, angle0
+                    # matplotlib interprets arc endpoints relative to rotated ellipse.
+                    angle0 -= angle
+                    angle1 -= angle
+                    arc = matplotlib.patches.Arc(
+                        (mid[0], mid[1]), 2 * b, 2 * a, np.rad2deg(angle),
+                        np.rad2deg(angle0),
+                        np.rad2deg(angle1))
+                    ax.add_patch(arc)
+                    # Mirror image
+                    arc = matplotlib.patches.Arc(
+                        (-mid[0], -mid[1]), 2 * b, 2 * a, np.rad2deg(angle),
+                        np.rad2deg(angle0) + 180,
+                        np.rad2deg(angle1) + 180)
+                    ax.add_patch(arc)
+                    # Uncomment to plot dots on top of the tracks to verify.
+                    # u, v, w = self.target.uvw([self.ants[i], self.ants[j]],
+                    #                           np.arange(start, end, 256.0),
+                    #                           self.array_ant)
+                    # u = u[:, 1] - u[:, 0]
+                    # v = v[:, 1] - v[:, 0]
+                    # ax.plot(u, v, 'g.', markersize=1)
+                    # ax.plot(-u, -v, 'g.', markersize=1)
+
+        # Adjust data limits to be square and centred
+        data_lim = ax.dataLim
+        lim = max(-data_lim.x0, data_lim.x1, -data_lim.y0, data_lim.y1)
+        ax.set_xlim(-lim, lim)
+        ax.set_ylim(-lim, lim)
+        ax.set_xlabel('m')
+        ax.set_ylabel('m')
+        raw_svg = io.BytesIO()
+        fig.savefig(raw_svg, format='svg', bbox_inches='tight')
+
+        # Clean up the SVG for embedding into the HTML.
+        raw_svg.seek(0)
+        out_svg = io.StringIO()
+        mangler = SVGMangler(out_svg, encoding='utf-8', short_empty_elements=True)
+        xml.sax.parse(raw_svg, mangler)
+        self.uv_coverage = out_svg.getvalue()
+
 
 def get_stats(dataset: katdal.DataSet,
               telstate: katsdptelstate.TelescopeState) -> Tuple[CommonStats, List[TargetStats]]:
@@ -379,6 +516,7 @@ def write_report(common_stats: CommonStats, target_stats: List[TargetStats],
     )
     env.filters['duration'] = format_duration
 
+    uv_coverage = [target.make_uv_coverage() for target in target_stats]
     plots = [target.make_plots() for target in target_stats]
     # Flatten all plots into one list to pass to bokeh
     flat_plots: List[Dict[str, bokeh.model.Model]] = []
@@ -402,7 +540,8 @@ def write_report(common_stats: CommonStats, target_stats: List[TargetStats],
         'targets': target_stats,
         'resources': resources,
         'script': script,
-        'static': static
+        'static': static,
+        'uv_coverage': uv_coverage
     }
     template = env.get_template('report.html.j2')
     template.stream(context).dump(filename)
