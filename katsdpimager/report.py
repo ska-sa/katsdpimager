@@ -107,10 +107,16 @@ def meerkat_sefd_model(band: str) -> SEFDModel:
     """
     if band == 'L':
         coeffs = [
-            [2.08778760e+02, 1.08462392e+00, -1.24639611e-03, 4.00344294e-07],  # H
-            [7.57838984e+02, -2.24205001e-01, -1.72161897e-04, 1.11118471e-07]  # V
+            [2.08778760e+02, 1.08462392e+00, -1.24639611e-03, 4.00344294e-07],   # H
+            [7.57838984e+02, -2.24205001e-01, -1.72161897e-04, 1.11118471e-07]   # V
         ] * u.Jy
         return PolynomialSEFDModel(900.0 * u.MHz, 1670 * u.MHz, coeffs, u.MHz, 0.96)
+    elif band == 'UHF':
+        coeffs = [
+            [1.20011355e+03, -7.08771871e-01, -1.46789604e-03, 1.29596990e-06],  # H
+            [2.06467503e+03, -4.16858417e+00, 3.16131140e-03, -7.31852890e-07]   # V
+        ] * u.Jy
+        return PolynomialSEFDModel(580 * u.MHz, 1015 * u.MHz, coeffs, u.MHz, 0.96)
     else:
         raise ValueError(f'No SEFD model for band {band}')
 

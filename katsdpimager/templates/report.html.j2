@@ -94,13 +94,14 @@
                 accounts for flagging and actual receiver performance.
                 Differences between this and the image noise likely indicate
                 problems in the imaging process such as incomplete or
-                divergent cleaning.
+                divergent cleaning.</dd>
                 <dt>Predicted noise (model)</dt>
                 <dd>Noise estimate computed using a model of system equivalent
-                flux density, channel bandwidth, time on target and imaging
+                flux density (SEFD), channel bandwidth, time on target and imaging
                 weights. Flagging (whether for RFI or otherwise) is <em>not</em>
                 taken into account, and will cause actual noise to be higher
-                than predicted.</dd>
+                than predicted. The SEFD model is a cubic polynomial fit across
+                the band, and may be up to 5% off for specific channels.</dd>
               </dl>
             </div>
           </div>
