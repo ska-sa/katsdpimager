@@ -59,9 +59,7 @@ setup(
                        'models/*/*/*/*.h5', 'templates/*', 'static/*']},
     scripts=["scripts/imager.py",
              "scripts/imager-mkat-pipeline.py",
-             "scripts/imager-mkat-report.py",
-             "scripts/fits-video.py",
-             "scripts/fits-image.py"],
+             "scripts/imager-mkat-report.py"],
     ext_package='katsdpimager',
     ext_modules=extensions,
     python_requires='>=3.6',
@@ -78,7 +76,8 @@ setup(
         'ms': ['python-casacore'],
         'katdal': ['katdal'],
         'benchmark': ['katpoint'],
-        'pipeline': ['katsdpservices', 'matplotlib', 'jinja2>=2.11', 'bokeh>=2.0.0']
+        'pipeline': ['katsdpservices', 'katsdpimageutils',
+                     'matplotlib', 'jinja2>=2.11', 'bokeh>=2.0.0']
     },
     use_katversion=True,
     classifiers=[

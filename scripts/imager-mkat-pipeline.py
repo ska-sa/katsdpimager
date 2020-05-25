@@ -13,8 +13,9 @@ from astropy import units
 import katsdpservices
 import katdal
 from katsdpsigproc import accel
+import katsdpimageutils.render
 
-from katsdpimager import frontend, loader, io, progress, render, metadata
+from katsdpimager import frontend, loader, io, progress, metadata
 
 
 logger = logging.getLogger()
@@ -69,11 +70,16 @@ class Writer(frontend.Writer):
                 io.write_fits_image(dataset, image, image_parameters, filename,
                                     channel, beam, bunit)
             with progress.step('Write PNG'):
-                render.write_image(filename, filename + '.png',
-                                   width=6500, height=5000,
-                                   dpi=10 * render.DEFAULT_DPI)
+                katsdpimageutils.render.write_image(
+                    filename, filename + '.png',
+                    width=6500, height=5000,
+                    dpi=10 * katsdpimageutils.render.DEFAULT_DPI
+                )
             with progress.step('Write thumbnail'):
-                render.write_image(filename, filename + '.tnail.png', width=650, height=500)
+                katsdpimageutils.render.write_image(
+                    filename, filename + '.tnail.png',
+                    width=650, height=500
+                )
             with open(os.path.join(tmp_dir, 'metadata.json'), 'w') as f:
                 json.dump(metadata, f, allow_nan=False, indent=2)
             os.rename(tmp_dir, output_dir)
