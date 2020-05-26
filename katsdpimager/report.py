@@ -33,10 +33,21 @@ import katsdpimager.metadata
 
 
 FREQUENCY_PLOT_UNIT = u.MHz
-FLUX_PLOT_UNIT = u.Jy / u.beam
+FLUX_DENSITY_PLOT_UNIT = u.Jy
+PIXEL_PLOT_UNIT = u.Jy / u.beam
 ANGLE_PLOT_UNIT = u.deg
 PALETTE = bokeh.palettes.colorblind['Colorblind'][8]
-
+SI_FORMAT = bokeh.models.CustomJSHover(code="""
+    const threshold = [1e-9, 1e-6, 1e-3, 1e0, 1e3,  1e6,  1e9, 1e12];
+    const scale =     [1e12,  1e9,  1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12];
+    const suffix =    [ "p",  "n",  "µ", "m",  "",  "k",  "M",  "G", "T"];
+    var i = 0;
+    if (value != value)
+        return "N/A ";
+    while (i < threshold.length && Math.abs(value) >= threshold[i])
+        i++;
+    return sprintf(format, value * scale[i]) + " " + suffix[i];
+    """)
 
 logger = logging.getLogger()
 
@@ -179,6 +190,11 @@ class TargetStats:
             self.status[channel] = 'failed'
         # Peak per channel (NaN where missing)
         self.peak: u.Quantity = [math.nan] * common.channels * (u.Jy / u.beam)
+        # Total flux density per (polarization, channel) (NaN where missing)
+        self.totals: u.Quantity = {
+            pol: [math.nan] * common.channels * u.Jy
+            for pol in 'IQUV'
+        }
         # Noise per channel (NaN where missing)
         self.noise: u.Quantity = [math.nan] * common.channels * (u.Jy / u.beam)
         # Estimate noise from weights (NaN where missing)
@@ -244,13 +260,15 @@ class TargetStats:
         data = {
             'frequency': self.common.frequencies.to_value(FREQUENCY_PLOT_UNIT),
             'status': self.status,
-            'weights_noise': self.weights_noise.to_value(FLUX_PLOT_UNIT),
-            'noise': self.noise.to_value(FLUX_PLOT_UNIT),
-            'peak': self.peak.to_value(FLUX_PLOT_UNIT)
+            'weights_noise': self.weights_noise.to_value(PIXEL_PLOT_UNIT),
+            'noise': self.noise.to_value(PIXEL_PLOT_UNIT),
+            'peak': self.peak.to_value(PIXEL_PLOT_UNIT)
         }
+        for pol, total in self.totals.items():
+            data[f'total_{pol}'] = total.to_value(FLUX_DENSITY_PLOT_UNIT)
         if self.model_natural_noise is not None:
             model_noise = self.model_natural_noise * self.normalized_noise
-            data['model_noise'] = model_noise.to_value(FLUX_PLOT_UNIT)
+            data['model_noise'] = model_noise.to_value(PIXEL_PLOT_UNIT)
         return bokeh.models.ColumnDataSource(data)
 
     def make_time_data_source(self) -> bokeh.models.ColumnDataSource:
@@ -280,36 +298,25 @@ class TargetStats:
     def make_plot_snr(self, source: bokeh.models.ColumnDataSource) -> bokeh.model.Model:
         fig = bokeh.plotting.figure(
             x_axis_label=f'Frequency ({FREQUENCY_PLOT_UNIT})',
-            y_axis_label=f'Flux density per beam ({FLUX_PLOT_UNIT})',
+            y_axis_label=f'Flux density per beam ({PIXEL_PLOT_UNIT})',
             x_range=self.frequency_range,
             y_axis_type='log',
             sizing_mode='stretch_width'
         )
-        si_format = bokeh.models.CustomJSHover(code="""
-            const threshold = [1e-9, 1e-6, 1e-3, 1e0, 1e3,  1e6,  1e9, 1e12];
-            const scale =     [1e12,  1e9,  1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12];
-            const suffix =    [ "p",  "n",  "µ", "m",  "",  "k",  "M",  "G", "T"];
-            var i = 0;
-            if (value != value)
-                return "N/A ";
-            while (i < threshold.length && value >= threshold[i])
-                i++;
-            return sprintf(format, value * scale[i]) + " " + suffix[i];
-            """)
         fig.add_tools(bokeh.models.HoverTool(
             tooltips=[
                 ('Frequency', f'@frequency{{0.0000}} {FREQUENCY_PLOT_UNIT}'),
                 ('Channel', '$index'),
-                ('Peak', f'@peak{{%.3f}}{FLUX_PLOT_UNIT}'),
-                ('Noise', f'@noise{{%.3f}}{FLUX_PLOT_UNIT}'),
-                ('Predicted noise (weights)', f'@weights_noise{{%.3f}}{FLUX_PLOT_UNIT}'),
-                ('Predicted noise (model)', f'@model_noise{{%.3f}}{FLUX_PLOT_UNIT}')
+                ('Peak', f'@peak{{%.3f}}{PIXEL_PLOT_UNIT}'),
+                ('Noise', f'@noise{{%.3f}}{PIXEL_PLOT_UNIT}'),
+                ('Predicted noise (weights)', f'@weights_noise{{%.3f}}{PIXEL_PLOT_UNIT}'),
+                ('Predicted noise (model)', f'@model_noise{{%.3f}}{PIXEL_PLOT_UNIT}')
             ],
             formatters={
-                '@peak': si_format,
-                '@noise': si_format,
-                '@weights_noise': si_format,
-                '@model_noise': si_format
+                '@peak': SI_FORMAT,
+                '@noise': SI_FORMAT,
+                '@weights_noise': SI_FORMAT,
+                '@model_noise': SI_FORMAT
             }
         ))
         self._line_with_markers(
@@ -325,6 +332,30 @@ class TargetStats:
             self._line_with_markers(
                 fig, x='frequency', y='model_noise', source=source, name='model_noise',
                 line_color=PALETTE[3], legend_label='Predicted noise (model)')
+        self._add_channel_range(fig)
+        return fig
+
+    def make_plot_flux_density(self, source: bokeh.models.ColumnDataSource) -> bokeh.model.Model:
+        fig = bokeh.plotting.figure(
+            x_axis_label=f'Frequency ({FREQUENCY_PLOT_UNIT})',
+            y_axis_label=f'Flux density ({FLUX_DENSITY_PLOT_UNIT})',
+            x_range=self.frequency_range,
+            sizing_mode='stretch_width'
+        )
+        fig.add_tools(bokeh.models.HoverTool(
+            tooltips=[
+                ('Frequency', f'@frequency{{0.0000}} {FREQUENCY_PLOT_UNIT}'),
+                ('Channel', '$index')
+            ] + [
+                (pol, f'@total_{pol}{{%.3f}}{FLUX_DENSITY_PLOT_UNIT}')
+                for pol in self.totals.keys()
+            ],
+            formatters={f'@total_{pol}': SI_FORMAT for pol in self.totals.keys()}
+        ))
+        for i, pol in enumerate(self.totals.keys()):
+            self._line_with_markers(
+                fig, x='frequency', y=f'total_{pol}', source=source, name=f'total_{pol}',
+                line_color=PALETTE[i], legend_label=pol)
         self._add_channel_range(fig)
         return fig
 
@@ -381,6 +412,7 @@ class TargetStats:
         return {
             'status': self.make_plot_status(channel_source),
             'snr': self.make_plot_snr(channel_source),
+            'flux_density': self.make_plot_flux_density(channel_source),
             'elevation': self.make_plot_elevation(time_source),
             'parallactic_angle': self.make_plot_parallactic_angle(time_source)
         }
@@ -499,6 +531,8 @@ def get_stats(dataset: katdal.DataSet,
         stats_lookup[target_desc].status[channel] = status
     for ((target_desc, channel), peak) in telstate.get('peak', {}).items():
         stats_lookup[target_desc].peak[channel] = peak * (u.Jy / u.beam)
+    for ((target_desc, channel, pol), total) in telstate.get('total', {}).items():
+        stats_lookup[target_desc].totals[pol][channel] = total * u.Jy
     for ((target_desc, channel), noise) in telstate.get('noise', {}).items():
         stats_lookup[target_desc].noise[channel] = noise * (u.Jy / u.beam)
     for ((target_desc, channel), noise) in telstate.get('weights_noise', {}).items():

@@ -105,6 +105,10 @@
               </dl>
             </div>
           </div>
+          <div class="card">
+            <h5 class="card-header">Total flux density</h5>
+            {{ target.plots['flux_density'] | safe | indent(12) }}
+          </div>
         </div>
       </div>
       <div class="row">
