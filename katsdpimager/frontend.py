@@ -176,8 +176,8 @@ def get_totals(image_parameters, image, restoring_beam):
     """Compute total flux density in each polarization."""
     sums = np.nansum(image, axis=(1, 2), dtype=np.float64)   # Sum separately per polarization
     # Area under the restoring beam. It is a Gaussian with peak of 1, and
-    # hence the area under it is 2πσ_xσ_y. The Beam class holds FWHM not
-    # standard deviations, hence the extra factor of 8*log 2.
+    # hence the area under it is 2πσ_xσ_y. The Beam class holds FWHM (in
+    # pixels) not standard deviations, hence the extra factor of 8*log 2.
     beam_area = 2 * math.pi * restoring_beam.major * restoring_beam.minor / (8 * math.log(2))
     sums /= beam_area
     return {
