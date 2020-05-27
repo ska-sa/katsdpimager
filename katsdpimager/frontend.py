@@ -172,6 +172,20 @@ def find_peak(image, pbeam, noise):
     return peak
 
 
+def get_totals(image_parameters, image, restoring_beam):
+    """Compute total flux density in each polarization."""
+    sums = np.nansum(image, axis=(1, 2), dtype=np.float64)   # Sum separately per polarization
+    # Area under the restoring beam. It is a Gaussian with peak of 1, and
+    # hence the area under it is 2πσ_xσ_y. The Beam class holds FWHM (in
+    # pixels) not standard deviations, hence the extra factor of 8*log 2.
+    beam_area = 2 * math.pi * restoring_beam.major * restoring_beam.minor / (8 * math.log(2))
+    sums /= beam_area
+    return {
+        polarization.STOKES_NAMES[pol]: float(s)
+        for pol, s in zip(image_parameters.polarizations, sums)
+    }
+
+
 def log_parameters(name, params):
     if logger.isEnabledFor(logging.INFO):
         s = str(params)
@@ -398,6 +412,9 @@ class Writer:
         peak
           Largest absolute value of pixel in final image that is not simply
           noise (according to a heuristic), or NaN if there is no such pixel.
+        totals
+          Total non-NaN flux density in each Stokes image, as a dictionary
+          keyed by string name of the Stokes parameter.
         """
 
 
@@ -566,8 +583,9 @@ def process_channel(dataset, args, start_channel,
     writer.write_fits_image('clean', 'clean image', dataset, model, image_p,
                             channel, restoring_beam)
     peak = find_peak(model, pbeam, noise)
+    totals = get_totals(image_p, model, restoring_beam)
     writer.statistics(dataset, image_p, channel,
-                      peak=peak, noise=noise,
+                      peak=peak, totals=totals, noise=noise,
                       weights_noise=weights_noise,
                       normalized_noise=normalized_noise)
 

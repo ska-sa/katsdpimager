@@ -107,6 +107,8 @@ class Writer(frontend.Writer):
         peak = kwargs['peak']
         if np.isfinite(peak):
             self.telstate.set_indexed('peak', sub_key, peak)
+        for pol, total in kwargs['totals'].items():
+            self.telstate.set_indexed('total', sub_key + (pol,), total)
         self.telstate.set_indexed('noise', sub_key, kwargs['noise'])
         if kwargs.get('weights_noise') is not None:
             self.telstate.set_indexed('weights_noise', sub_key, kwargs['weights_noise'])
