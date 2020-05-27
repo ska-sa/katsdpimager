@@ -64,7 +64,7 @@ setup(
     ext_modules=extensions,
     python_requires='>=3.6',
     install_requires=[
-        'numpy>=1.10.0', 'scipy', 'katsdpsigproc', 'katpoint', 'astropy>=1.3', 'progress',
+        'numpy>=1.16.0', 'scipy', 'katsdpsigproc', 'katpoint', 'astropy>=1.3', 'progress',
         'pycuda', 'scikit-cuda', 'h5py', 'ansicolors'
     ],
     tests_require=tests_require,
@@ -77,7 +77,7 @@ setup(
         'katdal': ['katdal'],
         'benchmark': ['katpoint'],
         'pipeline': ['katsdpservices', 'katsdpimageutils',
-                     'matplotlib', 'jinja2>=2.11', 'bokeh>=2.0.0']
+                     'matplotlib>=3.1', 'jinja2>=2.11', 'bokeh>=2.0.0']
     },
     use_katversion=True,
     classifiers=[
