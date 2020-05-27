@@ -417,6 +417,9 @@ class Writer:
           keyed by string name of the Stokes parameter.
         """
 
+    def finalize(self):
+        """Called at the end of all the imaging."""
+
 
 def process_channel(dataset, args, start_channel,
                     context, queue, reader, writer, channel_p, array_p, weight_p,
@@ -643,3 +646,4 @@ def run(args, context, queue, dataset, writer):
             for channel_p in params:
                 process_channel(dataset, args, start_channel, context, queue,
                                 reader, writer, channel_p, array_p, weight_p, subtract_model)
+    writer.finalize()

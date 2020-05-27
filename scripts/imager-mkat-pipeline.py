@@ -11,6 +11,7 @@ import gc
 import numpy as np
 from astropy import units
 import katsdpservices
+import katsdptelstate
 import katdal
 from katsdpsigproc import accel
 import katsdpimageutils.render
@@ -40,6 +41,11 @@ class Writer(frontend.Writer):
         telstate = raw_data.source.telstate.root()
         namespace = telstate.join(raw_data.source.capture_block_id, args.stream)
         self.telstate = telstate.view(namespace)
+        # Telstate updates are made in an in-memory staging version and only
+        # written at the end. This reduces the chance of a failed execution
+        # leaving half-finished values around, which would prevent the
+        # subsequent retry from putting in its own values.
+        self.staging_telstate = katsdptelstate.TelescopeState()
 
     def write_fits_image(self, name, description, dataset, image, image_parameters, channel,
                          beam=None, bunit='Jy/beam'):
@@ -84,7 +90,7 @@ class Writer(frontend.Writer):
                 json.dump(metadata, f, allow_nan=False, indent=2)
             os.rename(tmp_dir, output_dir)
             sub_key = (dataset.raw_target.description, channel)
-            self.telstate.set_indexed('status', sub_key, 'complete')
+            self.staging_telstate.set_indexed('status', sub_key, 'complete')
         except Exception:
             # Make a best effort to clean up
             shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -100,19 +106,27 @@ class Writer(frontend.Writer):
 
     def skip_channel(self, dataset, image_parameters, channel):
         sub_key = (dataset.raw_target.description, channel)
-        self.telstate.set_indexed('status', sub_key, 'no-data')
+        self.staging_telstate.set_indexed('status', sub_key, 'no-data')
 
     def statistics(self, dataset, image_parameters, channel, **kwargs):
         sub_key = (dataset.raw_target.description, channel)
         peak = kwargs['peak']
         if np.isfinite(peak):
-            self.telstate.set_indexed('peak', sub_key, peak)
+            self.staging_telstate.set_indexed('peak', sub_key, peak)
         for pol, total in kwargs['totals'].items():
-            self.telstate.set_indexed('total', sub_key + (pol,), total)
-        self.telstate.set_indexed('noise', sub_key, kwargs['noise'])
+            self.staging_telstate.set_indexed('total', sub_key + (pol,), total)
+        self.staging_telstate.set_indexed('noise', sub_key, kwargs['noise'])
         if kwargs.get('weights_noise') is not None:
-            self.telstate.set_indexed('weights_noise', sub_key, kwargs['weights_noise'])
-        self.telstate.set_indexed('normalized_noise', sub_key, kwargs['normalized_noise'])
+            self.staging_telstate.set_indexed('weights_noise', sub_key, kwargs['weights_noise'])
+        self.staging_telstate.set_indexed('normalized_noise', sub_key, kwargs['normalized_noise'])
+
+    def finalize(self):
+        for key in self.staging_telstate.keys():
+            assert self.staging_telstate.key_type(key) == katsdptelstate.KeyType.INDEXED
+            values = self.staging_telstate[key]
+            for sub_key, value in values.items():
+                self.telstate.set_indexed(key, sub_key, value)
+        self.staging_telstate.clear()
 
 
 def get_parser():
