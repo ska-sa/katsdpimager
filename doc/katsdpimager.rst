@@ -32,7 +32,6 @@ Submodules
    katsdpimager.preprocess
    katsdpimager.primary_beam
    katsdpimager.progress
-   katsdpimager.render
    katsdpimager.sky_model
    katsdpimager.types
    katsdpimager.weight
