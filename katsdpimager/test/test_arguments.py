@@ -1,7 +1,6 @@
 """Tests for :mod:`katsdpimager.arguments`"""
 
 import argparse
-import decimal
 
 from nose.tools import assert_equal
 
