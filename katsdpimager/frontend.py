@@ -4,31 +4,18 @@ import atexit
 import logging
 import math
 from abc import abstractmethod
+from typing import List, Iterable
 
 import numpy as np
 from astropy import units
 import katsdpsigproc.accel as accel
 
 from . import \
-    loader, parameters, polarization, preprocess, clean, weight, sky_model, \
-    imaging, progress, beam, primary_beam, numba
+    loader, loader_core, parameters, polarization, preprocess, clean, weight, sky_model, \
+    imaging, progress, beam, primary_beam, numba, arguments
 
 
 logger = logging.getLogger(__name__)
-
-
-def parse_quantity(str_value):
-    """Parse a string into an astropy Quantity. Rather than trying to guess
-    where the split occurs, we try every position from the back until we
-    succeed."""
-    for i in range(len(str_value), 0, -1):
-        try:
-            value = float(str_value[:i])
-            unit = units.Unit(str_value[i:])
-            return units.Quantity(value, unit)
-        except ValueError:
-            pass
-    raise ValueError('Could not parse {} as a quantity'.format(str_value))
 
 
 def preprocess_visibilities(dataset, args, start_channel, stop_channel,
@@ -279,9 +266,14 @@ class ChannelParameters:
         log_parameters("CLEAN parameters" + suffix, self.clean_p)
 
 
+def prepend_dunder(value):
+    return '--' + value
+
+
 def add_options(parser):
     group = parser.add_argument_group('Input selection')
-    group.add_argument('--input-option', '-i', action='append', default=[], metavar='KEY=VALUE',
+    group.add_argument('--input-option', '-i',
+                       type=prepend_dunder, action='append', default=[], metavar='KEY=VALUE',
                        help='Backend-specific input parsing option')
     group.add_argument('--start-channel', '-c', type=int, default=0,
                        help='Index of first channel to process [%(default)s]')
@@ -295,11 +287,12 @@ def add_options(parser):
                        help='Field of view to image, relative to main lobe of beam [%(default)s]')
     group.add_argument('--image-oversample', type=float, default=5,
                        help='Pixels per beam [%(default)s]')
-    group.add_argument('--pixel-size', type=parse_quantity,
+    group.add_argument('--pixel-size', type=arguments.parse_quantity,
                        help='Size of each image pixel [computed from array]')
     group.add_argument('--pixels', type=int,
                        help='Number of pixels in image [computed from array]')
-    group.add_argument('--stokes', type=polarization.parse_stokes, default='I',
+    group.add_argument('--stokes', type=polarization.parse_stokes,
+                       default=polarization.parse_stokes('I'),
                        help='Stokes parameters to image e.g. IQUV for full-Stokes [%(default)s]')
     group.add_argument('--precision', choices=['single', 'double'], default='single',
                        help='Internal floating-point precision [%(default)s]')
@@ -319,10 +312,10 @@ def add_options(parser):
                        help='Oversampling factor for kernel generation [%(default)s]')
     group.add_argument('--w-slices', type=int,
                        help='Number of W slices [computed from --kernel-width]')
-    group.add_argument('--w-step', type=parse_quantity, default='1.0',
+    group.add_argument('--w-step', type=arguments.parse_quantity, default=units.Quantity(1.0),
                        help='Separation between W planes, in subgrid cells or a distance '
                             '[%(default)s]')
-    group.add_argument('--max-w', type=parse_quantity,
+    group.add_argument('--max-w', type=arguments.parse_quantity,
                        help='Largest w, as either distance or wavelengths [longest baseline]')
     group.add_argument('--aa-width', type=float, default=7,
                        help='Support of anti-aliasing kernel [%(default)s]')
@@ -369,6 +362,19 @@ def add_options(parser):
                        help='Keep preprocessed visibilities in memory')
     group.add_argument('--max-cache-size', type=int, default=None,
                        help='Limit HDF5 cache size for preprocessing')
+
+
+def command_line_options(args: arguments.SmartNamespace,
+                         dataset: loader_core.LoaderBase,
+                         exclude: Iterable[str]) -> List[str]:
+    """Reconstruct an equivalent command line from parsed arguments."""
+    dataset_args = dataset.command_line_options()
+    global_args = arguments.unparse_args(
+        args, exclude,
+        arg_handlers={
+            'stokes': lambda name, value: ['--stokes=' + polarization.unparse_stokes(value)]
+        })
+    return dataset_args + global_args
 
 
 class Writer:

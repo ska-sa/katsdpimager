@@ -146,3 +146,7 @@ def parse_stokes(str_value):
         elif cnt > 0:
             ans.append(STOKES_NAMES.index(p))
     return sorted(ans)
+
+
+def unparse_stokes(params):
+    return ''.join(STOKES_NAMES[idx] for idx in params)

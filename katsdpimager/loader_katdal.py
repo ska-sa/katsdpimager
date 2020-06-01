@@ -20,7 +20,7 @@ from astropy import units
 from astropy.time import Time
 import astropy.io.fits
 
-from . import polarization, loader_core, sky_model
+from . import polarization, loader_core, sky_model, arguments
 
 
 _logger = logging.getLogger(__name__)
@@ -109,7 +109,7 @@ class LoaderKatdal(loader_core.LoaderBase):
                             help='Comma-separated calibration solutions to pre-apply [%(default)s]')
         parser.add_argument('--access-key', type=str, help='S3 access key')
         parser.add_argument('--secret-key', type=str, help='S3 secret key')
-        args = parser.parse_args(options)
+        args = parser.parse_args(options, namespace=arguments.SmartNamespace())
 
         open_args = dict(ref_ant=args.ref_ant, applycal=args.apply_cal)
         if (args.access_key is not None) != (args.secret_key is not None):
@@ -177,6 +177,14 @@ class LoaderKatdal(loader_core.LoaderBase):
         if not corrections:
             corrections = 'none'
         _logger.info('Calibration corrections applied: %s', corrections)
+        unparsed = arguments.unparse_args(args, {'access_key', 'secret_key'})
+        self._command_line_options = []
+        for arg in unparsed:
+            self._command_line_options.append('-i')
+            self._command_line_options.append(arg[2:])   # Strip "--"
+
+    def command_line_options(self):
+        return self._command_line_options
 
     @classmethod
     def match(cls, filename):

@@ -2,21 +2,28 @@
 import sys
 import argparse
 import logging
+import shlex
 from contextlib import closing, contextmanager
 
 import numpy as np
 import colors
 import katsdpsigproc.accel as accel
+import astropy.io.fits as fits
 
-from katsdpimager import frontend, loader, io, progress, numba
+from katsdpimager import frontend, loader, io, progress, numba, arguments
 
 
 logger = logging.getLogger()
 
 
 class Writer(frontend.Writer):
-    def __init__(self, args):
+    def __init__(self, args, dataset):
         self.args = args
+        options = frontend.command_line_options(
+            args, dataset, {'input_file', 'output_file', 'input_option'})
+        self.extra_fits_headers = fits.Header()
+        self.extra_fits_headers['HISTORY'] = \
+            'Command line options: ' + ' '.join(shlex.quote(arg) for arg in options)
 
     def write_fits_image(self, name, description, dataset, image, image_parameters, channel,
                          beam=None, bunit='Jy/beam'):
@@ -29,7 +36,7 @@ class Writer(frontend.Writer):
                 filename = filename % channel
             with progress.step('Write {}'.format(description)):
                 io.write_fits_image(dataset, image, image_parameters, filename,
-                                    channel, beam, bunit)
+                                    channel, beam, bunit, self.extra_fits_headers)
 
     def write_fits_grid(self, name, description, fftshift, grid_data, image_parameters, channel):
         filename = getattr(self.args, 'write_' + name)
@@ -124,8 +131,7 @@ def configure_logging(args):
 
 def main():
     parser = get_parser()
-    args = parser.parse_args()
-    args.input_option = ['--' + opt for opt in args.input_option]
+    args = parser.parse_args(namespace=arguments.SmartNamespace())
     if (args.stop_channel is None or args.stop_channel - args.start_channel > 1):
         if '%' not in args.output_file:
             parser.error('More than one channel selected but no %d in output filename')
@@ -143,7 +149,7 @@ def main():
             logger.warning('could not import numba: --host mode will be VERY slow')
 
     with closing(loader.load(args.input_file, args.input_option)) as dataset:
-        frontend.run(args, context, queue, dataset, Writer(args))
+        frontend.run(args, context, queue, dataset, Writer(args, dataset))
 
 
 if __name__ == '__main__':
