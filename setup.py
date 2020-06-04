@@ -4,33 +4,37 @@ import glob
 import os
 
 
-class MissingPkgconfig:
+class Missing:
     """Raise an exception only when trying to convert it to a string.
 
-    This allows commands like ``setup.py clean`` to work even when pkgconfig
+    This allows commands like ``setup.py clean`` to work even when the package
     is not present, but makes it fail when trying to build the extension.
     """
+
+    def __init__(self, name):
+        self.name = name
+
     def __str__(self):
         raise RuntimeError(
-            'The pkgconfig module was not found. Try upgrading pip to the latest '
-            'version and using it to install.')
+            ('The {} module was not found. Try upgrading pip to the latest '
+             'version and using it to install.').format(self.name))
 
 
 try:
     import pkgconfig
     eigen3 = pkgconfig.parse('eigen3')
 except ImportError:
-    eigen3 = {'include_dirs': {MissingPkgconfig()}}
+    eigen3 = {'include_dirs': {Missing('pkgconfig')}}
+
+try:
+    import pybind11
+    pybind11_include_dirs = [pybind11.get_include()]
+except ImportError:
+    pybind11_include_dirs = [Missing('pybind11')]
 
 tests_require = ['nose', 'scipy', 'fakeredis[lua]']
 
 root_dir = os.path.dirname(__file__)
-pybind11_dir = os.path.join(root_dir, '3rdparty', 'pybind11', 'include', 'pybind11')
-if not os.path.exists(pybind11_dir):
-    raise RuntimeError(
-        'pybind11 directory not found in source tree. If this is a git checkout, you '
-        'can probably fix it by running "git submodule update --init --recursive".')
-
 with open(os.path.join(root_dir, 'README.rst')) as f:
     long_description = f.read()
 
@@ -39,7 +43,7 @@ extensions = [
         '_preprocess',
         sources=['katsdpimager/preprocess.cpp'],
         language='c++',
-        include_dirs=['3rdparty/pybind11/include'] + list(eigen3.get('include_dirs', [])),
+        include_dirs=pybind11_include_dirs + list(eigen3.get('include_dirs', [])),
         depends=glob.glob('katsdpimager/*.h'),
         extra_compile_args=['-std=' + os.environ.get('KATSDPIMAGER_STD_CXX', 'c++1y'),
                             '-g0', '-fvisibility=hidden'],
