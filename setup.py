@@ -16,8 +16,10 @@ class Missing:
 
     def __str__(self):
         raise RuntimeError(
-            ('The {} module was not found. Try upgrading pip to the latest '
-             'version and using it to install.').format(self.name))
+            ("The {name} module was not found. You should use pip to install, "
+             "which will automatically install {name} in the build environment. "
+             "If you are using pip, check that you're using at least "
+             "version 19.0.").format(name=self.name))
 
 
 try:
