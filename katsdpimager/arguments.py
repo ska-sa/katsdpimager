@@ -19,7 +19,7 @@ class SmartNamespace(argparse.Namespace):
       then replaces it with the conversion of that string value).
 
     Access to the information is provided by :func:`argument_changed` rather
-    than a methods to avoid potential conflicts with command-line option
+    than via methods to avoid potential conflicts with command-line option
     names.
     """
 

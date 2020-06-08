@@ -266,14 +266,14 @@ class ChannelParameters:
         log_parameters("CLEAN parameters" + suffix, self.clean_p)
 
 
-def prepend_dunder(value):
+def prepend_dashes(value):
     return '--' + value
 
 
 def add_options(parser):
     group = parser.add_argument_group('Input selection')
     group.add_argument('--input-option', '-i',
-                       type=prepend_dunder, action='append', default=[], metavar='KEY=VALUE',
+                       type=prepend_dashes, action='append', default=[], metavar='KEY=VALUE',
                        help='Backend-specific input parsing option')
     group.add_argument('--start-channel', '-c', type=int, default=0,
                        help='Index of first channel to process [%(default)s]')
