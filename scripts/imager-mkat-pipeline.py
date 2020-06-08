@@ -7,6 +7,7 @@ import shutil
 import json
 from contextlib import closing
 import gc
+import shlex
 
 import numpy as np
 from astropy import units
@@ -15,8 +16,9 @@ import katsdptelstate
 import katdal
 from katsdpsigproc import accel
 import katsdpimageutils.render
+import astropy.io.fits as fits
 
-from katsdpimager import frontend, loader, io, progress, metadata
+from katsdpimager import frontend, loader, io, progress, metadata, arguments
 
 
 logger = logging.getLogger()
@@ -26,6 +28,12 @@ class Writer(frontend.Writer):
     def __init__(self, args, dataset):
         self.args = args
         self.uuid = uuid.uuid4()
+
+        options = frontend.command_line_options(
+            args, dataset, {'input_file', 'output_dir', 'prefix', 'stream', 'input_option'})
+        self.extra_fits_headers = fits.Header()
+        self.extra_fits_headers['HISTORY'] = \
+            'Command line options: ' + ' '.join(shlex.quote(arg) for arg in options)
 
         raw_data = dataset.raw_data
         if not isinstance(raw_data, katdal.DataSet):
@@ -74,7 +82,7 @@ class Writer(frontend.Writer):
         try:
             with progress.step('Write {}'.format(description)):
                 io.write_fits_image(dataset, image, image_parameters, filename,
-                                    channel, beam, bunit)
+                                    channel, beam, bunit, self.extra_fits_headers)
             with progress.step('Write PNG'):
                 katsdpimageutils.render.write_image(
                     filename, filename + '.png',
@@ -151,8 +159,7 @@ def get_parser():
 
 def main():
     parser = get_parser()
-    args = parser.parse_args()
-    args.input_option = ['--' + opt for opt in args.input_option]
+    args = parser.parse_args(namespace=arguments.SmartNamespace())
     katsdpservices.setup_logging()
     if args.log_level is not None:
         logger.setLevel(args.log_level.upper())

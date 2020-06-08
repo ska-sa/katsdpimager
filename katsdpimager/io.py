@@ -84,7 +84,7 @@ def _fits_polarizations(header, axis, polarizations):
 
 
 def write_fits_image(dataset, image, image_parameters, filename, channel,
-                     beam=None, bunit='Jy/beam'):
+                     beam=None, bunit='Jy/beam', extra_fits_headers=None):
     """Write an image to a FITS file.
 
     Parameters
@@ -105,6 +105,8 @@ def write_fits_image(dataset, image, image_parameters, filename, channel,
     bunit : str, optional
         Value for the ``BUNIT`` header in the file. It can be explicitly set
         to ``None`` to avoid writing this key.
+    extra_fits_headers : mapping, optional
+        Extra headers to add to the FITS headers present.
 
     Raises
     ------
@@ -165,6 +167,8 @@ def write_fits_image(dataset, image, image_parameters, filename, channel,
         header['DATAMAX'] = datamax
 
     header.update(dataset.extra_fits_headers())
+    if extra_fits_headers is not None:
+        header.update(extra_fits_headers)
 
     # l axis is reversed, because RA increases right-to-left.
     # Explicitly converting to big-endian has two advantages:

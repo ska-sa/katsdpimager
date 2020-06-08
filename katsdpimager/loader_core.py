@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 
 """Base classes used by loader modules"""
+
+from abc import ABC, abstractmethod
+
 import numpy as np
 from astropy import units
 import astropy.io.fits
@@ -8,19 +11,27 @@ import astropy.io.fits
 from . import parameters, sky_model
 
 
-class LoaderBase:
+class LoaderBase(ABC):
     def __init__(self, filename, options):
         """Open the file"""
         self.filename = filename
 
+    @abstractmethod
+    def command_line_options(self):
+        """Return command-line options, in string form.
+
+        Turn the `options` passed to the constructor into a canonical string
+        form e.g. ``['-i', 'foo=bar', '-i', 'blah']``.
+        """
+
     @classmethod
+    @abstractmethod
     def match(cls, filename):
         """Return True if this loader can handle the file"""
-        raise NotImplementedError('Abstract base class')
 
+    @abstractmethod
     def antenna_diameters(self):
         """Effective diameters of the antennas."""
-        raise NotImplementedError('Abstract base class')
 
     def antenna_diameter(self):
         """Return the common diameter of all dishes.
@@ -36,6 +47,7 @@ class LoaderBase:
             raise ValueError('Diameters are not all equal')
         return D
 
+    @abstractmethod
     def antenna_positions(self):
         """Return the antenna positions. The coordinate system is arbitrary
         since it is used only to compute baseline lengths.
@@ -45,7 +57,6 @@ class LoaderBase:
         Quantity, shape (n, 3)
             XYZ coordinates for each antenna.
         """
-        raise NotImplementedError('Abstract base class')
 
     def longest_baseline(self):
         """Return the length of the longest baseline."""
@@ -62,10 +73,11 @@ class LoaderBase:
         return parameters.ArrayParameters(
             self.antenna_diameter(), self.longest_baseline())
 
+    @abstractmethod
     def num_channels(self):
         """Return total number of channels, which are assumed to be contiguous."""
-        raise NotImplementedError('Abstract base class')
 
+    @abstractmethod
     def frequency(self, channel):
         """Return frequency for a given channel.
 
@@ -75,16 +87,16 @@ class LoaderBase:
             Frequency, in appropriate reference frame for transforming UVW
             coordinates from distance to wavelength count.
         """
-        raise NotImplementedError('Abstract base class')
 
+    @abstractmethod
     def band(self):
         """Return name for the frequency band in use.
 
         This is used for looking up externally-defined beam models. If the
         band name is not known, return None.
         """
-        raise NotImplementedError('Abstract base class')
 
+    @abstractmethod
     def phase_centre(self):
         """Return direction corresponding to l=0, m=0.
 
@@ -95,8 +107,8 @@ class LoaderBase:
 
             TODO: use katpoint or astropy.coordinates quantity instead?
         """
-        raise NotImplementedError('Abstract base class')
 
+    @abstractmethod
     def polarizations(self):
         """Return polarizations stored in the data.
 
@@ -106,13 +118,10 @@ class LoaderBase:
             List of polarization constants from
             :py:mod:`katsdpsigproc.parameters`.
         """
-        raise NotImplementedError('Abstract base class')
 
+    @abstractmethod
     def has_feed_angles(self):
-        """Return whether the data iterator will return `feed_angle1` and
-        `feed_angle2`.
-        """
-        raise NotImplementedError('Abstract base class')
+        """Return whether the data iterator will return `feed_angle1` and `feed_angle2`."""
 
     def weight_scale(self):
         """Get scale factor between weights and inverse square noise.
@@ -124,6 +133,7 @@ class LoaderBase:
         """
         return None
 
+    @abstractmethod
     def data_iter(self, start_channel, stop_channel, max_chunk_vis=None):
         """Return an iterator that yields the data in chunks. Each chunk is a
         dictionary containing numpy arrays with the following keys:
@@ -176,7 +186,6 @@ class LoaderBase:
             may be exceeded if the natural unit of the storage format (e.g. row
             in a measurement set) exceeds this size.
         """
-        raise NotImplementedError('Abstract base class')
 
     def sky_model(self):
         """Get the stored sky model, if any.
@@ -211,9 +220,9 @@ class LoaderBase:
         return astropy.io.fits.Header()
 
     @property
+    @abstractmethod
     def raw_data(self):
         """Return a handle to the the underlying class-specific data set."""
-        raise NotImplementedError('Abstract base class')
 
     def close(self):
         """Close any open file handles. The object must not be used after this."""

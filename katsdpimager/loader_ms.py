@@ -12,7 +12,7 @@ import astropy.time
 import astropy.coordinates
 import astropy.io.fits
 
-import katsdpimager.loader_core
+from . import loader_core, arguments
 
 
 _logger = logging.getLogger(__name__)
@@ -224,7 +224,7 @@ def _fix_cache_size(table, column):
     table.setmaxcachesize(column, cache_size)
 
 
-class LoaderMS(katsdpimager.loader_core.LoaderBase):
+class LoaderMS(loader_core.LoaderBase):
     def __init__(self, filename, options):
         super().__init__(filename, options)
         parser = argparse.ArgumentParser(
@@ -240,7 +240,7 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
                             help='Reference frame for polarization [%(default)s]')
         parser.add_argument('--uvw', choices=['casa', 'strict'], default='casa',
                             help='UVW sign convention [%(default)s]')
-        args = parser.parse_args(options)
+        args = parser.parse_args(options, namespace=arguments.SmartNamespace())
         self._strict_uvw = (args.uvw == 'strict')
         self._main = casacore.tables.table(filename, ack=False)
         _fix_cache_size(self._main, 'FLAG')
@@ -295,6 +295,15 @@ class LoaderMS(katsdpimager.loader_core.LoaderBase):
             self._antenna_angle = None
         self._average_time = None     # Will be set by data_iter
         self._observation_ids = set()
+
+        unparsed = arguments.unparse_args(args)
+        self._command_line_options = []
+        for arg in unparsed:
+            self._command_line_options.append('-i')
+            self._command_line_options.append(arg[2:])   # Strip "--"
+
+    def command_line_options(self):
+        return self._command_line_options
 
     @classmethod
     def match(cls, filename):
