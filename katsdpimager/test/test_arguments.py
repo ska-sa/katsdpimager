@@ -2,6 +2,7 @@
 
 import argparse
 
+import astropy.units as u
 from nose.tools import assert_equal
 
 from .. import arguments
@@ -18,7 +19,7 @@ class TestUnparse:
         parser.add_argument('--str-default', type=str, default='')
         parser.add_argument('--positive', action='store_true')
         parser.add_argument('--no-negative', dest='negative', action='store_false')
-        parser.add_argument('--quantity', type=arguments.parse_quantity)
+        parser.add_argument('--quantity', type=u.Quantity)
         self.parser = parser
 
     def test_no_args(self):

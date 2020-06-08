@@ -6,20 +6,6 @@ from typing import List, Iterable, Set, Mapping, Callable, Any
 import astropy.units as u
 
 
-def parse_quantity(str_value):
-    """Parse a string into an astropy Quantity. Rather than trying to guess
-    where the split occurs, we try every position from the back until we
-    succeed."""
-    for i in range(len(str_value), 0, -1):
-        try:
-            value = float(str_value[:i])
-            unit = u.Unit(str_value[i:])
-            return u.Quantity(value, unit)
-        except ValueError:
-            pass
-    raise ValueError('Could not parse {} as a quantity'.format(str_value))
-
-
 class SmartNamespace(argparse.Namespace):
     """Namespace that tracks whether arguments are default or not.
 

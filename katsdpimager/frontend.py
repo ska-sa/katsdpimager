@@ -287,7 +287,7 @@ def add_options(parser):
                        help='Field of view to image, relative to main lobe of beam [%(default)s]')
     group.add_argument('--image-oversample', type=float, default=5,
                        help='Pixels per beam [%(default)s]')
-    group.add_argument('--pixel-size', type=arguments.parse_quantity,
+    group.add_argument('--pixel-size', type=units.Quantity,
                        help='Size of each image pixel [computed from array]')
     group.add_argument('--pixels', type=int,
                        help='Number of pixels in image [computed from array]')
@@ -312,10 +312,10 @@ def add_options(parser):
                        help='Oversampling factor for kernel generation [%(default)s]')
     group.add_argument('--w-slices', type=int,
                        help='Number of W slices [computed from --kernel-width]')
-    group.add_argument('--w-step', type=arguments.parse_quantity, default=units.Quantity(1.0),
+    group.add_argument('--w-step', type=units.Quantity, default=units.Quantity(1.0),
                        help='Separation between W planes, in subgrid cells or a distance '
                             '[%(default)s]')
-    group.add_argument('--max-w', type=arguments.parse_quantity,
+    group.add_argument('--max-w', type=units.Quantity,
                        help='Largest w, as either distance or wavelengths [longest baseline]')
     group.add_argument('--aa-width', type=float, default=7,
                        help='Support of anti-aliasing kernel [%(default)s]')
