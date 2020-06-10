@@ -1,7 +1,7 @@
 ansicolors
 appdirs                   # via katsdpsigproc
 argparse                  # via python-casacore
-astropy==3.1.2
+astropy
 bokeh==2.0.2              # katsdpdockerbase currently provides only 1.x
 botocore                  # for S3 authentication in katdal
 certifi                   # via requests
@@ -17,11 +17,11 @@ h5py                      # via katdal
 idna                      # via requests
 jinja2==2.11.2            # katsdpdockerbase version is currently too old
 jmespath                  # via botocore
-kiwisolver==1.1.0         # via matplotlib
+kiwisolver                # via matplotlib
 llvmlite                  # via numba
 Mako
 MarkupSafe                # via Mako
-matplotlib==3.1.3         # pinned because katsdpdockerbase is too old
+matplotlib
 msgpack                   # via katsdptelstate
 netifaces                 # via katsdptelstate
 numba
@@ -34,7 +34,7 @@ pycuda
 pyephem                   # via katpoint
 pygelf                    # via katsdpservices
 pyjwt                     # via katdal
-python-casacore==3.1.1
+python-casacore
 python-dateutil           # via pandas, botocore, bokeh
 python-lzf                # via katsdptelstate
 pytools                   # via pycuda
