@@ -56,7 +56,7 @@ class BeamModel(ABC):
     The phase of the electric field at a point increases with time i.e., the
     phasor is
 
-    .. math:: e^{\omega t - kz)i}
+    .. math:: e^{(\omega t - kz)i}
 
     The "ideal" complex voltage is multiplied by the beam model to obtain the
     measured voltage.
