@@ -133,6 +133,15 @@ class LoaderBase(ABC):
         """
         return None
 
+    def channel_enabled(self, channel):
+        """Whether the channel should be imaged.
+
+        This can be used to implement a loader-specific channel mask. For
+        efficiency, data for these channels should all be masked by
+        :meth:`data_iter`.
+        """
+        return True
+
     @abstractmethod
     def data_iter(self, start_channel, stop_channel, max_chunk_vis=None):
         """Return an iterator that yields the data in chunks. Each chunk is a
