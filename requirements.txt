@@ -13,7 +13,7 @@ decorator                 # via pycuda, katsdpsigproc
 docutils                  # via botocore
 ephem                     # via pyephem
 future                    # via katdal, katpoint
-h5py                      # via katdal
+h5py                      # via katdal, katsdpmodels
 idna                      # via requests
 jinja2==2.11.2            # katsdpdockerbase version is currently too old
 jmespath                  # via botocore
@@ -42,18 +42,20 @@ pytz                      # via pandas
 pyyaml                    # via bokeh
 rdbtools                  # via katsdptelstate
 redis                     # via katsdptelstate
-requests                  # via katdal
+requests                  # via katdal, katsdpmodels
 scikit-cuda
 scipy                     # via katdal (its fallback interpolation behaves differently)
+strict-rfc3339            # via katsdpmodels
 six                       # via pytools, python-dateutil, bokeh
 toolz                     # via dask[array]
 tornado                   # via bokeh
-typing_extensions         # via katsdpsigproc
+typing_extensions         # via katsdpsigproc, katsdpmodels
 urllib3                   # via requests
 
 katdal @ git+https://github.com/ska-sa/katdal
 katpoint @ git+https://github.com/ska-sa/katpoint
 katsdpimageutils @ git+https://github.com/ska-sa/katsdpimageutils
+katsdpmodels @ git+https://github.com/ska-sa/katsdpmodels@fetch_base
 katsdpsigproc @ git+https://github.com/ska-sa/katsdpsigproc
 katsdptelstate @ git+https://github.com/ska-sa/katsdptelstate
 katsdpservices @ git+https://github.com/ska-sa/katsdpservices
