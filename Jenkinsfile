@@ -7,7 +7,7 @@ katsdp.setDependencies([
     'ska-sa/katsdpdockerbase/master',
     'ska-sa/katpoint/master',
     'ska-sa/katdal/master',
-    'ska-sa/katsdpmodels/fetch_base',
+    'ska-sa/katsdpmodels/master',
     'ska-sa/katsdpsigproc/master',
     'ska-sa/katsdpservices/master',
     'ska-sa/katsdptelstate/master'])

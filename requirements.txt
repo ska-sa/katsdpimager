@@ -55,7 +55,7 @@ urllib3                   # via requests
 katdal @ git+https://github.com/ska-sa/katdal
 katpoint @ git+https://github.com/ska-sa/katpoint
 katsdpimageutils @ git+https://github.com/ska-sa/katsdpimageutils
-katsdpmodels @ git+https://github.com/ska-sa/katsdpmodels@fetch_base
+katsdpmodels @ git+https://github.com/ska-sa/katsdpmodels
 katsdpsigproc @ git+https://github.com/ska-sa/katsdpsigproc
 katsdptelstate @ git+https://github.com/ska-sa/katsdptelstate
 katsdpservices @ git+https://github.com/ska-sa/katsdpservices
