@@ -15,6 +15,8 @@ import urllib
 
 import katdal
 from katdal.lazy_indexer import DaskLazyIndexer
+import katsdpmodels.fetch.requests
+import katsdpmodels.rfi_mask
 import numpy as np
 from astropy import units
 from astropy.time import Time
@@ -107,6 +109,9 @@ class LoaderKatdal(loader_core.LoaderBase):
                             help='Override reference antenna for identifying scans [array]')
         parser.add_argument('--apply-cal', type=str, default='all',
                             help='Comma-separated calibration solutions to pre-apply [%(default)s]')
+        parser.add_argument('--rfi-mask', type=str, default='none',
+                            choices=('none', 'fixed', 'config'),
+                            help='Use RFI mask from the observation to skip channels')
         parser.add_argument('--access-key', type=str, help='S3 access key')
         parser.add_argument('--secret-key', type=str, help='S3 secret key')
         args = parser.parse_args(options, namespace=arguments.SmartNamespace())
@@ -177,6 +182,21 @@ class LoaderKatdal(loader_core.LoaderBase):
         if not corrections:
             corrections = 'none'
         _logger.info('Calibration corrections applied: %s', corrections)
+
+        # Determine RFI mask, if any (TODO: eventually katdal should do some of this)
+        if args.rfi_mask != 'none':
+            telstate = self._file.source.telstate
+            base_url = telstate['sdp_model_base_url']
+            rfi_mask_key = telstate.join('model', 'rfi_mask', args.rfi_mask)
+            rel_url = telstate[rfi_mask_key]
+            url = urllib.parse.urljoin(base_url, rel_url)
+            rfi_mask = katsdpmodels.fetch.requests.fetch_model(url, katsdpmodels.rfi_mask.RFIMask)
+            max_length = rfi_mask.max_baseline_length(self._file.channel_freqs * units.Hz)
+            self._channel_mask = max_length > 0
+        else:
+            self._channel_mask = None
+
+        # Record command-line options for FITS HISTORY
         unparsed = arguments.unparse_args(args, {'access_key', 'secret_key'})
         self._command_line_options = []
         for arg in unparsed:
@@ -238,6 +258,9 @@ class LoaderKatdal(loader_core.LoaderBase):
         # 1/2.
         return math.sqrt(0.5)
 
+    def channel_enabled(self, channel):
+        return not self._channel_mask[channel]
+
     def data_iter(self, start_channel, stop_channel, max_chunk_vis=None):
         self._file.select(reset='F')
         n_file_times, n_file_chans, n_file_cp = self._file.shape
@@ -288,6 +311,8 @@ class LoaderKatdal(loader_core.LoaderBase):
             # Flag missing correlation products
             if self._missing_corr_products:
                 flags[:, :, self._missing_corr_products] = True
+            if self._channel_mask is not None:
+                flags |= self._channel_mask[np.newaxis, start_channel : stop_channel, np.newaxis]
             # Apply flags to weights
             weights *= np.logical_not(flags)
 

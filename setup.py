@@ -80,7 +80,7 @@ setup(
         'cpu': ['numba'],
         'report': ['aplpy', 'matplotlib', 'mako'],
         'ms': ['python-casacore'],
-        'katdal': ['katdal'],
+        'katdal': ['katdal', 'katsdpmodels[requests]'],
         'benchmark': ['katpoint'],
         'pipeline': ['katsdpservices', 'katsdpimageutils',
                      'matplotlib>=3.1', 'jinja2>=2.11', 'bokeh>=2.0.0']
