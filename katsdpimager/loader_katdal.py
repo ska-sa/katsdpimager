@@ -259,7 +259,7 @@ class LoaderKatdal(loader_core.LoaderBase):
         return math.sqrt(0.5)
 
     def channel_enabled(self, channel):
-        return not self._channel_mask[channel]
+        return self._channel_mask is None or not self._channel_mask[channel]
 
     def data_iter(self, start_channel, stop_channel, max_chunk_vis=None):
         self._file.select(reset='F')
