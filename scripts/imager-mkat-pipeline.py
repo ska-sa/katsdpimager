@@ -49,11 +49,10 @@ class Writer(frontend.Writer):
         telstate = raw_data.source.telstate.root()
         namespace = telstate.join(raw_data.source.capture_block_id, args.stream)
         self.telstate = telstate.view(namespace)
-        # Telstate updates are made in an in-memory staging version and only
-        # written at the end. This reduces the chance of a failed execution
-        # leaving half-finished values around, which would prevent the
-        # subsequent retry from putting in its own values.
-        self.staging_telstate = katsdptelstate.TelescopeState()
+
+    def channel_already_done(self, dataset, channel):
+        sub_key = (dataset.raw_target.description, channel)
+        return self.telstate.get_indexed('status', sub_key) is not None
 
     def write_fits_image(self, name, description, dataset, image, image_parameters, channel,
                          beam=None, bunit='Jy/beam'):
@@ -97,8 +96,6 @@ class Writer(frontend.Writer):
             with open(os.path.join(tmp_dir, 'metadata.json'), 'w') as f:
                 json.dump(metadata, f, allow_nan=False, indent=2)
             os.rename(tmp_dir, output_dir)
-            sub_key = (dataset.raw_target.description, channel)
-            self.staging_telstate.set_indexed('status', sub_key, 'complete')
         except Exception:
             # Make a best effort to clean up
             shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -114,27 +111,32 @@ class Writer(frontend.Writer):
 
     def skip_channel(self, dataset, image_parameters, channel):
         sub_key = (dataset.raw_target.description, channel)
-        self.staging_telstate.set_indexed('status', sub_key, 'no-data')
+        self.telstate.set_indexed('status', sub_key, 'no-data')
+
+    def _set_statistic(self, key, sub_key, value):
+        # The imaging adds floating-point values in a non-deterministic order
+        # and hence produces slightly different results every time. In the
+        # unlikely event that we filled in statistics in a previous run but
+        # didn't make it to setting the completion flag, this can fail.
+        try:
+            self.telstate.set_indexed(key, sub_key, value)
+        except katsdptelstate.ImmutableKeyError as exc:
+            logger.warning("%s", exc)
 
     def statistics(self, dataset, image_parameters, channel, **kwargs):
         sub_key = (dataset.raw_target.description, channel)
         peak = kwargs['peak']
         if np.isfinite(peak):
-            self.staging_telstate.set_indexed('peak', sub_key, peak)
+            self._set_statistic('peak', sub_key, peak)
         for pol, total in kwargs['totals'].items():
-            self.staging_telstate.set_indexed('total', sub_key + (pol,), total)
-        self.staging_telstate.set_indexed('noise', sub_key, kwargs['noise'])
+            self._set_statistic('total', sub_key + (pol,), total)
+        self._set_statistic('noise', sub_key, kwargs['noise'])
         if kwargs.get('weights_noise') is not None:
-            self.staging_telstate.set_indexed('weights_noise', sub_key, kwargs['weights_noise'])
-        self.staging_telstate.set_indexed('normalized_noise', sub_key, kwargs['normalized_noise'])
-
-    def finalize(self):
-        for key in self.staging_telstate.keys():
-            assert self.staging_telstate.key_type(key) == katsdptelstate.KeyType.INDEXED
-            values = self.staging_telstate[key]
-            for sub_key, value in values.items():
-                self.telstate.set_indexed(key, sub_key, value)
-        self.staging_telstate.clear()
+            self._set_statistic('weights_noise', sub_key, kwargs['weights_noise'])
+        self._set_statistic('normalized_noise', sub_key, kwargs['normalized_noise'])
+        # statistics() is the last step in process_channel, so if we get this
+        # far, the channel is fully processed.
+        self.telstate.set_indexed('status', sub_key, 'complete')
 
 
 def get_parser():
