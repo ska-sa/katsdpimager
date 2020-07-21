@@ -380,6 +380,13 @@ def command_line_options(args: arguments.SmartNamespace,
 class Writer:
     """Abstract class that handles writing grids/images to files"""
 
+    def channel_already_done(self, dataset, channel):
+        """Determine whether a channel has already been imaged in a previous run.
+
+        If this returns true, it will be skipped for imaging this time.
+        """
+        return False
+
     @abstractmethod
     def write_fits_image(self, name, description, dataset, image, image_parameters, channel,
                          beam=None, bunit='Jy/beam'):
@@ -423,9 +430,6 @@ class Writer:
           keyed by string name of the Stokes parameter.
         """
 
-    def finalize(self):
-        """Called at the end of all the imaging."""
-
 
 def process_channel(dataset, args, start_channel,
                     context, queue, reader, writer, channel_p, array_p, weight_p,
@@ -437,6 +441,9 @@ def process_channel(dataset, args, start_channel,
     clean_p = channel_p.clean_p
 
     # Check if there is anything to do
+    if writer.channel_already_done(dataset, channel):
+        logger.info('Skipping channel %d because it has already been done', channel)
+        return
     if not dataset.channel_enabled(channel_p.channel):
         logger.info('Skipping channel %d which is masked', channel)
         return
@@ -655,4 +662,3 @@ def run(args, context, queue, dataset, writer):
             for channel_p in params:
                 process_channel(dataset, args, start_channel, context, queue,
                                 reader, writer, channel_p, array_p, weight_p, subtract_model)
-    writer.finalize()
