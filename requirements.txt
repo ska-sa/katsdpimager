@@ -29,7 +29,7 @@ numpy
 packaging                 # via bokeh
 pandas                    # via katsdpsigproc
 pillow                    # via bokeh
-progress==1.2
+progress==1.5
 pycuda
 pyephem                   # via katpoint
 pygelf                    # via katsdpservices
