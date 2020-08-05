@@ -5,6 +5,7 @@ Subpackages
 -----------
 
 .. toctree::
+   :maxdepth: 4
 
    katsdpimager.test
 
@@ -12,7 +13,9 @@ Submodules
 ----------
 
 .. toctree::
+   :maxdepth: 4
 
+   katsdpimager.arguments
    katsdpimager.beam
    katsdpimager.clean
    katsdpimager.fft
@@ -25,13 +28,16 @@ Submodules
    katsdpimager.loader_core
    katsdpimager.loader_katdal
    katsdpimager.loader_ms
+   katsdpimager.metadata
    katsdpimager.numba
    katsdpimager.parameters
    katsdpimager.polarization
    katsdpimager.predict
    katsdpimager.preprocess
    katsdpimager.primary_beam
+   katsdpimager.profiling
    katsdpimager.progress
+   katsdpimager.report
    katsdpimager.sky_model
    katsdpimager.types
    katsdpimager.weight
