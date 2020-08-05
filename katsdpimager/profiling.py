@@ -6,29 +6,88 @@ import contextlib
 from contextvars import ContextVar
 import csv
 import pathlib
-from typing import List, Dict, Mapping, Generator, Union, Optional, Any
+import weakref
+import typing
+from typing import List, Tuple, Dict, Mapping, Generator, Union, Optional, Any
+
+
+class Frame:
+    """Stack frame.
+
+    Where possible, identical frames are represented by the same object to save
+    memory.
+
+    Stack frames may have arbitrary key/value labels associated to assist with
+    aggregation. Label values must be CSV-compatible e.g. strings, ints and
+    floats. The following labels are standardised:
+
+    - channel
+    - start_channel, stop_channel
+    """
+
+    name: str
+    labels: Dict[str, Any]
+    parent: Optional['Frame']
+    _hash: int
+    _children: weakref.WeakValueDictionary
+
+    def __new__(cls, name, labels: Mapping[str, Any] = {},
+                parent: Optional['Frame'] = None) -> 'Frame':
+        labels = dict(labels)
+        key = (name, tuple(sorted(labels.items())))
+        if parent is not None:
+            frame = parent._children.get(key)
+            if frame is not None:
+                return frame
+        frame = super().__new__(cls)
+        frame.name = name
+        frame.labels = labels
+        frame.parent = parent
+        frame._hash = hash((key, parent))
+        frame._children = weakref.WeakValueDictionary()
+        if parent is not None:
+            parent._children[key] = frame
+        return frame
+
+    def __eq__(self, other: object) -> bool:
+        if type(other) != Frame:
+            return NotImplemented
+        assert isinstance(other, Frame)    # To keep mypy happy
+        if self._hash != other._hash:
+            return False
+        return (self.name == other.name and self.labels == other.labels
+                and self.parent == other.parent)
+
+    def __hash__(self) -> int:
+        return self._hash
+
+    def stack(self) -> Generator['Frame', None, None]:
+        """Iterate over the frames in the stack, from root to leaf."""
+        if self.parent is not None:
+            yield from self.parent.stack()
+        yield self
+
+    def all_labels(self) -> Mapping[str, Any]:
+        """Collapse all labels in the stack to a single dictionary.
+
+        Labels closer to the top of the stack update those below.
+        """
+        labels = {}
+        for frame in self.stack():
+            labels.update(frame.labels)
+        return labels
 
 
 class Record:
     """A record of some process with a start and a stop time.
 
-    Records may have arbitrary key/value labels associated to assist with
-    aggregation. The following labels are standardised:
-
-    - channel
-    - start_channel, stop_channel
-
     The start and stop times are as returned by :func:`time.monotonic`.
-
-    Label values must be CSV-compatible e.g. strings, ints and floats.
     """
 
-    def __init__(self, name: str, start_time: float, stop_time: float,
-                 labels: Mapping[str, Any] = {}) -> None:
-        self.name = name
+    def __init__(self, frame: Frame, start_time: float, stop_time: float) -> None:
+        self.frame = frame
         self.start_time = start_time
         self.stop_time = stop_time
-        self.labels = dict(labels)
 
     @property
     def elapsed(self) -> float:
@@ -41,8 +100,7 @@ class Record:
             return NotImplemented
 
     def __hash__(self) -> int:
-        return hash((self.name, self.start_time, self.stop_time,
-                     tuple(sorted(self.labels.items()))))
+        return hash((self.frame, self.start_time, self.stop_time))
 
 
 class Stopwatch(contextlib.ContextDecorator):
@@ -55,10 +113,9 @@ class Stopwatch(contextlib.ContextDecorator):
     the stopwatch.
     """
 
-    def __init__(self, profiler: 'Profiler', name: str, labels: Mapping[str, Any]):
+    def __init__(self, profiler: 'Profiler', frame: Frame):
         self._profiler = profiler
-        self._name = name
-        self._labels = labels
+        self._frame = frame
         self._start_time: Optional[float] = None
 
     def __enter__(self) -> 'Stopwatch':
@@ -71,14 +128,14 @@ class Stopwatch(contextlib.ContextDecorator):
 
     def start(self) -> None:
         if self._start_time is not None:
-            raise RuntimeError(f'Stopwatch {self._name} is already running')
+            raise RuntimeError(f'Stopwatch for {self._frame.name} is already running')
         self._start_time = time.monotonic()
 
     def stop(self) -> None:
         if self._start_time is None:
-            raise RuntimeError(f'Stopwatch {self._name} is already stopped')
+            raise RuntimeError(f'Stopwatch {self._frame.name} is already stopped')
         stop_time = time.monotonic()
-        record = Record(self._name, self._start_time, stop_time, self._labels)
+        record = Record(self._frame, self._start_time, stop_time)
         self._profiler.records.append(record)
         self._start_time = None
 
@@ -105,27 +162,31 @@ class Profiler:
 
     @contextlib.contextmanager
     def profile(self, name: str, **kwargs) -> Generator[Stopwatch, None, None]:
-        """Context manager that runs code under a :class:`Stopwatch`."""
-        default_labels = _default_labels.get({})
-        labels = {**default_labels, **kwargs}
-        with Stopwatch(self, name, labels) as stopwatch:
-            yield stopwatch
+        """Context manager that runs code under a :class:`Stopwatch` with a new Frame."""
+        frame = Frame(name, kwargs, _current_frame.get())
+        token = _current_frame.set(frame)
+        try:
+            with Stopwatch(self, frame) as stopwatch:
+                yield stopwatch
+        finally:
+            _current_frame.reset(token)
 
     def write_csv(self, filename: Union[str, pathlib.Path]) -> None:
         labelset = set()
         for record in self.records:
-            labelset |= set(record.labels.keys())
+            for frame in record.frame.stack():
+                labelset |= set(frame.labels)
         labels = sorted(labelset)
         with open(filename, 'w') as f:
             writer = csv.DictWriter(f, ['name', 'start', 'stop', 'elapsed'] + labels)
             writer.writeheader()
             for record in self.records:
                 row = {
-                    'name': record.name,
+                    'name': record.frame.name,
                     'start': record.start_time,
                     'stop': record.stop_time,
                     'elapsed': record.elapsed,
-                    **record.labels
+                    **record.frame.all_labels()
                 }
                 writer.writerow(row)
 
@@ -136,31 +197,18 @@ class Profiler:
         post-process the output.
 
         Labels are discarded.
-
-        TODO: The implementation currently assumes that all events come from
-        the same context and that time strictly increases between events.
-        Stack frames should instead be explicitly maintained as events are
-        collected.
         """
-        events = []
+        samples: typing.Counter[Tuple[str, ...]] = collections.Counter()
         for record in self.records:
-            events.append((record.start_time, True, record))
-            events.append((record.stop_time, False, record))
-        events.sort(key=lambda event: event[0])
-        stack = []
-        last_time = None
-        samples = collections.Counter()
-        for new_time, start, record in events:
-            if last_time is not None:
-                stack_names = tuple(record.name for record in stack)
-                samples[stack_names] += int(1000000 * (new_time - last_time))
-            if start:
-                stack.append(record)
-            else:
-                if not stack or stack[-1] is not record:
-                    raise ValueError('Records are not correctly nested')
-                stack.pop()
-            last_time = new_time
+            stack = tuple(frame.name for frame in record.frame.stack())
+            # flamegraph.pl wants integers, so convert to microseconds
+            elapsed = round(1000000 * record.elapsed)
+            samples[stack] += elapsed
+            # We need to produce exclusive counts (time with no child frames
+            # active), so subtract from parent frames.
+            for i in range(1, len(stack) - 1):
+                samples[stack[:i]] -= elapsed
+
         with open(filename, 'w') as f:
             for names, value in samples.items():
                 print(';'.join(names), value, file=f)
@@ -176,7 +224,7 @@ class Profiler:
 
 # Create a default profiler that any context should inherit
 _current_profiler: ContextVar[Profiler] = ContextVar('_current_profiler', default=Profiler())
-_default_labels: ContextVar[Dict[str, Any]] = ContextVar('_default_labels')
+_current_frame: ContextVar[Optional[Frame]] = ContextVar('_current_frame', default=None)
 
 
 @contextlib.contextmanager
@@ -191,21 +239,9 @@ def profile(name: str, **kwargs) -> Generator[Stopwatch, None, None]:
         yield stopwatch
 
 
-@contextlib.contextmanager
-def labels(**kwargs) -> Generator[None, None, None]:
-    """Context manager that sets and restores labels."""
-    old_labels = _default_labels.get({})
-    new_labels = {**old_labels, **kwargs}
-    token = _default_labels.set(new_labels)
-    try:
-        yield
-    finally:
-        _default_labels.reset(token)
-
-
 class NullProfiler(Profiler):
     """Implements the :class:`Profiler` interface but does not record anything."""
 
     @contextlib.contextmanager
     def profile(self, name: str, **kwargs) -> Generator[Stopwatch, None, None]:
-        yield NullStopwatch(self, name, {})
+        yield NullStopwatch(self, name, Frame('', {}))
