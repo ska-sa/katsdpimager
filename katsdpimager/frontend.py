@@ -10,9 +10,11 @@ import numpy as np
 from astropy import units
 import katsdpsigproc.accel as accel
 
-from . import \
-    loader, loader_core, parameters, polarization, preprocess, clean, weight, sky_model, \
+from . import (
+    loader, loader_core, parameters, polarization, preprocess, clean, weight, sky_model,
     imaging, progress, beam, primary_beam, numba, arguments
+)
+from .profiling import profile
 
 
 logger = logging.getLogger(__name__)
@@ -80,6 +82,7 @@ def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block, wei
     return noise, normalized_noise
 
 
+@profile('make_dirty')
 def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block, degrid,
                full_cycle=False, subtract_model=None):
     imager.clear_dirty()
@@ -608,6 +611,7 @@ def process_channel(dataset, args, start_channel,
                       normalized_noise=normalized_noise)
 
 
+@profile('run')
 def run(args, context, queue, dataset, writer):
     # PyCUDA leaks resources that are freed when the corresponding context is
     # not active. We make it active for the rest of the execution to avoid
