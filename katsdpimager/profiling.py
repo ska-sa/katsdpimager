@@ -97,29 +97,18 @@ class NullStopwatch(Stopwatch):
 
 
 class Profiler:
-    """Top-level class to hold profiling results.
-
-    Labels that will be applied to all records can be set in
-    :attr:`default_labels`; the :func:`labels` context manager is a better
-    alternative in most cases though.
-    """
+    """Top-level class to hold profiling results."""
 
     def __init__(self) -> None:
         self.records: List[Record] = []
-        self.default_labels: Dict[str, Any] = {}
 
     @contextlib.contextmanager
     def profile(self, name: str, **kwargs) -> Generator[Stopwatch, None, None]:
-        labels = {**self.default_labels, **kwargs}
+        """Context manager that runs code under a :class:`Stopwatch`."""
+        default_labels = _default_labels.get({})
+        labels = {**default_labels, **kwargs}
         with Stopwatch(self, name, labels) as stopwatch:
             yield stopwatch
-
-    @contextlib.contextmanager
-    def labels(self, **kwargs) -> Generator[None, None, None]:
-        old_labels = self.default_labels
-        self.default_labels.update(kwargs)
-        yield
-        self.default_labels = old_labels
 
     def write(self, filename: Union[str, pathlib.Path]) -> None:
         labelset = set()
@@ -150,12 +139,31 @@ class Profiler:
 
 # Create a default profiler that any context should inherit
 _current_profiler: ContextVar[Profiler] = ContextVar('_current_profiler', default=Profiler())
+_default_labels: ContextVar[Dict[str, Any]] = ContextVar('_default_labels')
 
 
 @contextlib.contextmanager
 def profile(name: str, **kwargs) -> Generator[Stopwatch, None, None]:
+    """Context manager that runs code under a :class:`Stopwatch`.
+
+    See also
+    --------
+    :meth:`Profiler.profile`
+    """
     with Profiler.get_profiler().profile(name, **kwargs) as stopwatch:
         yield stopwatch
+
+
+@contextlib.contextmanager
+def labels(**kwargs) -> Generator[None, None, None]:
+    """Context manager that sets and restores labels."""
+    old_labels = _default_labels.get({})
+    new_labels = {**old_labels, **kwargs}
+    token = _default_labels.set(new_labels)
+    try:
+        yield
+    finally:
+        _default_labels.reset(token)
 
 
 class NullProfiler(Profiler):
