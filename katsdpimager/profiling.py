@@ -5,7 +5,7 @@ import contextlib
 from contextvars import ContextVar
 import csv
 import pathlib
-from typing import List, Dict, Mapping, Generator, Union, Any
+from typing import List, Dict, Mapping, Generator, Union, Optional, Any
 
 
 class Record:
@@ -58,7 +58,7 @@ class Stopwatch(contextlib.ContextDecorator):
         self._profiler = profiler
         self._name = name
         self._labels = labels
-        self._start_time = None
+        self._start_time: Optional[float] = None
 
     def __enter__(self) -> 'Stopwatch':
         self.start()
