@@ -18,6 +18,8 @@ class Record:
     - start_channel, stop_channel
 
     The start and stop times are as returned by :func:`time.monotonic`.
+
+    Label values must be CSV-compatible e.g. strings, ints and floats.
     """
 
     def __init__(self, name: str, start_time: float, stop_time: float,
@@ -30,6 +32,16 @@ class Record:
     @property
     def elapsed(self) -> float:
         return self.stop_time - self.start_time
+
+    def __eq__(self, other: object) -> bool:
+        if type(other) == Record:
+            return vars(self) == vars(other)
+        else:
+            return NotImplemented
+
+    def __hash__(self) -> int:
+        return hash((self.name, self.start_time, self.stop_time,
+                     tuple(sorted(self.labels.items()))))
 
 
 class Stopwatch(contextlib.ContextDecorator):
