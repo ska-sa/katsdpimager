@@ -104,8 +104,6 @@ class Profiler:
     alternative in most cases though.
     """
 
-    _current: ContextVar['Profiler'] = ContextVar('Profiler._current')
-
     def __init__(self) -> None:
         self.records: List[Record] = []
         self.default_labels: Dict[str, Any] = {}
@@ -143,15 +141,15 @@ class Profiler:
 
     @staticmethod
     def get_profiler() -> 'Profiler':
-        return Profiler._current.get()
+        return _current_profiler.get()
 
     @staticmethod
     def set_profiler(profiler: 'Profiler') -> None:
-        Profiler._current.set(profiler)
+        _current_profiler.set(profiler)
 
 
 # Create a default profiler that any context should inherit
-Profiler._current.set(Profiler())
+_current_profiler: ContextVar[Profiler] = ContextVar('_current_profiler', default=Profiler())
 
 
 @contextlib.contextmanager
