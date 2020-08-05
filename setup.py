@@ -70,7 +70,7 @@ setup(
     ext_modules=extensions,
     python_requires='>=3.6',
     install_requires=[
-        'numpy>=1.16.0', 'scipy', 'katsdpsigproc', 'katpoint', 'astropy>=1.3', 'progress',
+        'numpy>=1.16.0', 'scipy', 'katsdpsigproc', 'katpoint', 'astropy>=1.3', 'progress>=1.5',
         'pycuda', 'scikit-cuda', 'h5py', 'ansicolors'
     ],
     tests_require=tests_require,

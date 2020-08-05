@@ -58,7 +58,7 @@ def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block, wei
         total += reader.len(rel_channel, w_slice)
     bar = progress.make_progressbar('Computing weights', max=total)
     queue.finish()
-    with progress.finishing(bar):
+    with bar:
         if weight_type != weight.WeightType.NATURAL:
             for w_slice in range(reader.num_w_slices(rel_channel)):
                 for chunk in reader.iter_slice(rel_channel, w_slice, vis_block):
@@ -99,7 +99,7 @@ def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block
         bar = progress.make_progressbar('Grid {}'.format(label), max=N)
         imager.clear_grid()
         queue.finish()
-        with progress.finishing(bar):
+        with bar:
             for chunk in reader.iter_slice(rel_channel, w_slice, vis_block):
                 imager.num_vis = len(chunk.uv)
                 imager.set_coordinates(chunk.uv, chunk.sub_uv, chunk.w_plane)
@@ -533,8 +533,7 @@ def process_channel(dataset, args, start_channel,
             break
         logger.info('CLEANing to threshold:         %g', threshold)
         threshold_metric = clean.power_to_metric(clean_p.mode, threshold)
-        bar = progress.make_progressbar('CLEAN', max=clean_p.minor - 1)
-        with progress.finishing(bar):
+        with progress.make_progressbar('CLEAN', max=clean_p.minor - 1) as bar:
             for j in bar.iter(range(clean_p.minor - 1)):
                 value = imager.clean_cycle(psf_patch, threshold_metric)
                 if value is None:
