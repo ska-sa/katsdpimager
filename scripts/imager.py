@@ -156,7 +156,7 @@ def main():
         frontend.run(args, context, queue, dataset, Writer(args, dataset))
 
     if args.write_profile:
-        profiling.Profiler.get_profiler().write(args.write_profile)
+        profiling.Profiler.get_profiler().write_flamegraph(args.write_profile)
 
 
 if __name__ == '__main__':
