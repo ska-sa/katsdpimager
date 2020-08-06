@@ -86,9 +86,9 @@ class TestProfiler:
         assert_equal(self.profiler.records, [Record(Frame('foo'), 0.0, 1.0)])
 
     def test_nested(self, monotonic):
-        with self.profiler.profile('foo', x=1):
+        with self.profiler.profile('foo', {'x': 1}):
             monotonic.return_value += 1.0
-            with self.profiler.profile('bar', y=2):
+            with self.profiler.profile('bar', {'y': 2}):
                 monotonic.return_value += 1.0
             monotonic.return_value += 1.0
         frame1 = Frame('foo', {'x': 1})
@@ -99,7 +99,7 @@ class TestProfiler:
         ])
 
     def test_pause(self, monotonic):
-        with self.profiler.profile('foo', x=1) as stopwatch:
+        with self.profiler.profile('foo', {'x': 1}) as stopwatch:
             monotonic.return_value += 1.0
             stopwatch.stop()
             monotonic.return_value += 1.0
@@ -114,7 +114,7 @@ class TestProfiler:
     def test_context(self, monotonic):
         def inner():
             Profiler.set_profiler(self.profiler)
-            with profile('foo', x=1):
+            with profile('foo', {'x': 1}):
                 monotonic.return_value += 1.0
 
         context = contextvars.copy_context()

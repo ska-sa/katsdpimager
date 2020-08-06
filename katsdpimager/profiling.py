@@ -161,9 +161,10 @@ class Profiler:
         self.records: List[Record] = []
 
     @contextlib.contextmanager
-    def profile(self, name: str, **kwargs) -> Generator[Stopwatch, None, None]:
+    def profile(self, name: str,
+                labels: Mapping[str, Any] = {}) -> Generator[Stopwatch, None, None]:
         """Context manager that runs code under a :class:`Stopwatch` with a new Frame."""
-        frame = Frame(name, kwargs, _current_frame.get())
+        frame = Frame(name, labels, _current_frame.get())
         token = _current_frame.set(frame)
         try:
             with Stopwatch(self, frame) as stopwatch:
@@ -228,14 +229,14 @@ _current_frame: ContextVar[Optional[Frame]] = ContextVar('_current_frame', defau
 
 
 @contextlib.contextmanager
-def profile(name: str, **kwargs) -> Generator[Stopwatch, None, None]:
+def profile(name: str, labels: Mapping[str, Any] = {}) -> Generator[Stopwatch, None, None]:
     """Context manager that runs code under a :class:`Stopwatch`.
 
     See also
     --------
     :meth:`Profiler.profile`
     """
-    with Profiler.get_profiler().profile(name, **kwargs) as stopwatch:
+    with Profiler.get_profiler().profile(name, labels) as stopwatch:
         yield stopwatch
 
 
@@ -243,5 +244,6 @@ class NullProfiler(Profiler):
     """Implements the :class:`Profiler` interface but does not record anything."""
 
     @contextlib.contextmanager
-    def profile(self, name: str, **kwargs) -> Generator[Stopwatch, None, None]:
+    def profile(self, name: str,
+                labels: Mapping[str, Any] = {}) -> Generator[Stopwatch, None, None]:
         yield NullStopwatch(self, name, Frame('', {}))
