@@ -1,11 +1,13 @@
 """Tests for :py:mod:`katsdpimager.profiling`."""
 
 import contextvars
+import functools
 from unittest import mock
+from typing import Generator
 
 from nose.tools import assert_equal, assert_not_equal, assert_is, assert_is_none, assert_is_not
 
-from ..profiling import Frame, Record, Profiler, profile
+from ..profiling import Frame, Record, Profiler, profile, profile_function, profile_generator
 
 
 class TestFrame:
@@ -75,6 +77,16 @@ class TestRecord:
         assert_equal(hash(self.record), hash(other))
 
 
+def temporary_context(func):
+    """Run a function with its own context."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        context = contextvars.copy_context()
+        return context.run(func, *args, **kwargs)
+
+    return wrapper
+
+
 @mock.patch('time.monotonic', return_value=0.0)
 class TestProfiler:
     def setUp(self) -> None:
@@ -122,3 +134,51 @@ class TestProfiler:
         assert_is_not(Profiler.get_profiler(), self.profiler)
         frame = Frame('foo', {'x': 1})
         assert_equal(self.profiler.records, [Record(frame, 0.0, 1.0)])
+
+    @temporary_context
+    def test_profile_function(self, monotonic):
+        @profile_function('blah', ('x', 'y'))
+        def inner(y, z, x=4):
+            pass
+
+        Profiler.set_profiler(self.profiler)
+        inner(2, 3)
+        inner(y=5, z=6, x=7)
+        assert_equal(self.profiler.records, [
+            Record(Frame('blah', {'x': 4, 'y': 2}), 0.0, 0.0),
+            Record(Frame('blah', {'x': 7, 'y': 5}), 0.0, 0.0)
+        ])
+
+    @temporary_context
+    def test_profile_function_auto_name(self, monotonic):
+        @profile_function()
+        def inner():
+            pass
+
+        Profiler.set_profiler(self.profiler)
+        inner()
+        assert_equal(self.profiler.records, [Record(Frame('inner', {}), 0.0, 0.0)])
+
+    @temporary_context
+    def test_profile_generator(self, monotonic):
+        @profile_generator(labels=('reps',))
+        def slow_range(reps: int) -> Generator[int, None, None]:
+            for i in range(reps):
+                monotonic.return_value += 1.0
+                yield i
+            monotonic.return_value += 0.5
+
+        Profiler.set_profiler(self.profiler)
+        result = []
+        for item in slow_range(3):
+            monotonic.return_value += 2.0
+            result.append(item)
+
+        assert_equal(result, [0, 1, 2])
+        frame = Frame('slow_range', {'reps': 3})
+        assert_equal(self.profiler.records, [
+            Record(frame, 0.0, 1.0),
+            Record(frame, 3.0, 4.0),
+            Record(frame, 6.0, 7.0),
+            Record(frame, 9.0, 9.5)
+        ])

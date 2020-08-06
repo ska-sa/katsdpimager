@@ -5,10 +5,17 @@ import collections
 import contextlib
 from contextvars import ContextVar
 import csv
+import functools
+import inspect
 import pathlib
 import weakref
 import typing
-from typing import List, Tuple, Dict, Mapping, Generator, Union, Optional, Any
+from typing import (
+    List, Tuple, Dict, Mapping, Iterable, Callable, Generator, Union, Optional, TypeVar, Any
+)
+
+
+_T = TypeVar('_T')
 
 
 class Frame:
@@ -77,6 +84,12 @@ class Frame:
             labels.update(frame.labels)
         return labels
 
+    def __repr__(self) -> str:
+        if self.parent is None:
+            return f'Frame({self.name!r}, {self.labels!r})'
+        else:
+            return f'Frame({self.name!r}, {self.labels!r}, {self.parent!r})'
+
 
 class Record:
     """A record of some process with a start and a stop time.
@@ -101,6 +114,9 @@ class Record:
 
     def __hash__(self) -> int:
         return hash((self.frame, self.start_time, self.stop_time))
+
+    def __repr__(self) -> str:
+        return f'Record({self.frame!r}, {self.start_time!r}, {self.stop_time!r})'
 
 
 class Stopwatch(contextlib.ContextDecorator):
@@ -238,6 +254,80 @@ def profile(name: str, labels: Mapping[str, Any] = {}) -> Generator[Stopwatch, N
     """
     with Profiler.get_profiler().profile(name, labels) as stopwatch:
         yield stopwatch
+
+
+def profile_function(name: Optional[str] = None, labels: Iterable[str] = ()) \
+        -> Callable[[Callable], Callable]:
+    """Decorator for profiling functions.
+
+    It defaults to using the name of the function as the name for the frame,
+    and the labels are extracted from the arguments passed to the function.
+
+    Note that :func:`profile` can also be used as a function decorator if one
+    does not need to extract labels.
+    """
+    labels = list(labels)
+
+    def decorator(func: Callable) -> Callable:
+        sig = inspect.signature(func)
+        func_name = getattr(func, '__name__', '<anonymous function>')
+        frame_name = name if name is not None else func_name
+        for label in labels:
+            if label not in sig.parameters:
+                raise KeyError(f'Label {label} is not a parameter of {func_name}')
+
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            bound = sig.bind(*args, **kwargs)
+            bound.apply_defaults()
+            label_dict = {label: bound.arguments[label] for label in labels}
+            with profile(frame_name, label_dict):
+                return func(*args, **kwargs)
+
+        return wrapper
+    return decorator
+
+
+def profile_generator(name: Optional[str] = None, labels: Iterable[str] = ()) \
+        -> Callable[[Callable[..., Generator[_T, None, None]]],
+                    Callable[..., Generator[_T, None, None]]]:
+    """Decorator for profiling generator functions.
+
+    It is only suitable for simple generators intended to be used as
+    iterables. It does not support sending values or exceptions into the
+    wrapped generator.
+
+    The stopwatch is stopped when the generator yields and restarted when it
+    resumes.
+    """
+
+    labels = list(labels)
+
+    def decorator(func: Callable) -> Callable:
+        sig = inspect.signature(func)
+        func_name = getattr(func, '__name__', '<anonymous function>')
+        frame_name = name if name is not None else func_name
+        for label in labels:
+            if label not in sig.parameters:
+                raise KeyError(f'Label {label} is not a parameter of {func_name}')
+
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            bound = sig.bind(*args, **kwargs)
+            bound.apply_defaults()
+            label_dict = {label: bound.arguments[label] for label in labels}
+            gen = func(*args, **kwargs)
+            try:
+                with profile(frame_name, label_dict) as stopwatch:
+                    for item in gen:
+                        stopwatch.stop()
+                        yield item
+                        stopwatch.start()
+            finally:
+                gen.close()
+
+        return wrapper
+    return decorator
 
 
 class NullProfiler(Profiler):
