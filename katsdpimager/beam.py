@@ -45,7 +45,8 @@ from astropy import units
 from katsdpsigproc import accel
 import katsdpimager.types
 
-from katsdpimager import fft
+from . import fft
+from .profiling import profile_function
 
 
 class Beam:
@@ -89,6 +90,7 @@ class Beam:
         return "Beam({0.major!r}, {0.minor!r}, {0.theta!r})".format(self)
 
 
+@profile_function()
 def fit_beam(psf, step=1.0, threshold=0.01, init_threshold=0.5):
     """Fit a 2D Gaussian to the point spread function. The function is not
     truncated to the central region: the caller should do this.
@@ -157,6 +159,7 @@ def fit_beam(psf, step=1.0, threshold=0.01, init_threshold=0.5):
     return Beam(model)
 
 
+@profile_function()
 def beam_covariance_sqrt(beam):
     model = beam.model
     # Rotation matrix for theta
@@ -168,6 +171,7 @@ def beam_covariance_sqrt(beam):
     return Q * D * Q.T
 
 
+@profile_function()
 def convolve_beam(model, beam, out=None):
     """Convolve a model image with a restoring beam.
 

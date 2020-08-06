@@ -5,11 +5,13 @@ import numpy as np
 from katsdpsigproc import accel
 
 from . import grid, predict, weight, image, clean
+from .profiling import profile_function
 
 
 class ImagingTemplate:
     """Template holding all the other templates for imaging."""
 
+    @profile_function()
     def __init__(self, command_queue, array_parameters, image_parameters,
                  weight_parameters, grid_parameters, clean_parameters):
         self.command_queue = command_queue
@@ -59,6 +61,7 @@ class ImagingTemplate:
 
 
 class Imaging(accel.OperationSequence):
+    @profile_function()
     def __init__(self, template, max_vis, max_sources, major, allocator=None):
         self.template = template
         lm_scale = float(template.image_parameters.pixel_size)
@@ -157,58 +160,70 @@ class Imaging(accel.OperationSequence):
         self._predict.num_vis = value
         self._continuum_predict.num_vis = value
 
+    @profile_function()
     def clear_weights(self):
         self.ensure_all_bound()
         self._weights.clear()
 
+    @profile_function()
     def grid_weights(self, uv, weights):
         self.ensure_all_bound()
         self._weights.grid(uv, weights)
 
+    @profile_function()
     def finalize_weights(self):
         self.ensure_all_bound()
         return self._weights.finalize()
 
+    @profile_function()
     def clear_grid(self):
         self.ensure_all_bound()
         self.buffer('grid').zero(self.command_queue)
 
+    @profile_function()
     def clear_dirty(self):
         self.ensure_all_bound()
         self.buffer('dirty').zero(self.command_queue)
 
+    @profile_function()
     def clear_model(self):
         self.ensure_all_bound()
         self.buffer('model').zero(self.command_queue)
 
+    @profile_function()
     def set_coordinates(self, *args, **kwargs):
         self.ensure_all_bound()
         # The gridder and predictors share their coordinates, so we can
         # use any here.
         self._gridder.set_coordinates(*args, **kwargs)
 
+    @profile_function()
     def set_vis(self, *args, **kwargs):
         self.ensure_all_bound()
         # The gridder and predicters share their visibilities, so we
         # can use any here.
         self._gridder.set_vis(*args, **kwargs)
 
+    @profile_function()
     def set_weights(self, *args, **kwargs):
         """Set statistical weights for prediction"""
         self.ensure_all_bound()
         # The predicters share their weights, so we can use any here.
         self._predict.set_weights(*args, **kwargs)
 
+    @profile_function()
     def grid(self):
         self.ensure_all_bound()
         self._gridder()
 
+    @profile_function()
     def predict(self, w):
         self.ensure_all_bound()
         if not self.template.grid_parameters.degrid:
             self._predict.set_w(w)
         self._predict()
 
+    @profile_function()
     def continuum_predict(self, w):
         self.ensure_all_bound()
         self._continuum_predict.set_w(w)
@@ -218,11 +233,13 @@ class Imaging(accel.OperationSequence):
         self.ensure_all_bound()
         self._continuum_predict.set_sky_model(sky_model, phase_centre)
 
+    @profile_function()
     def grid_to_image(self, w):
         self.ensure_all_bound()
         self._grid_to_image.set_w(w)
         self._grid_to_image()
 
+    @profile_function()
     def model_to_grid(self, w):
         if not self._image_to_grid:
             raise RuntimeError('Can only use model_to_grid with degridding')
@@ -230,6 +247,7 @@ class Imaging(accel.OperationSequence):
         self._image_to_grid.set_w(w)
         self._image_to_grid()
 
+    @profile_function()
     def model_to_predict(self):
         if self.template.grid_parameters.degrid:
             raise RuntimeError('Can only use model_to_predict with direct prediction')
@@ -237,29 +255,35 @@ class Imaging(accel.OperationSequence):
         self._predict.command_queue.finish()
         self._predict.set_sky_image(self.buffer('model'))
 
+    @profile_function()
     def scale_dirty(self, scale_factor):
         self.ensure_all_bound()
         self._scale.set_scale_factor(scale_factor)
         self._scale()
 
+    @profile_function()
     def dirty_to_psf(self):
         dirty = self.buffer('dirty')
         psf = self.buffer('psf')
         self.bind(dirty=psf, psf=dirty)
 
+    @profile_function()
     def psf_patch(self):
         self.ensure_all_bound()
         return self._psf_patch(self.template.clean_parameters.psf_cutoff,
                                self.template.clean_parameters.psf_limit)
 
+    @profile_function()
     def noise_est(self):
         self.ensure_all_bound()
         return self._noise_est()
 
+    @profile_function()
     def clean_reset(self):
         self.ensure_all_bound()
         self._clean.reset()
 
+    @profile_function()
     def clean_cycle(self, psf_patch, threshold=0.0):
         self.ensure_all_bound()
         return self._clean(psf_patch, threshold)

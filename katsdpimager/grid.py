@@ -128,6 +128,7 @@ import katsdpsigproc.tune as tune
 
 import katsdpimager.types
 from . import numba
+from .profiling import profile_function
 
 
 logger = logging.getLogger(__name__)
@@ -231,6 +232,7 @@ def antialias_kernel(width, oversample, beta=None):
     return kernel
 
 
+@profile_function(labels='w')
 def antialias_w_kernel(
         cell_wavelengths, w, width,
         oversample, antialias_width, image_oversample, beta,
