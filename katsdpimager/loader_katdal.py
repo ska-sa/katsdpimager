@@ -23,7 +23,7 @@ from astropy.time import Time
 import astropy.io.fits
 
 from . import polarization, loader_core, sky_model, arguments
-from .profiling import profile
+from .profiling import profile, profile_function, profile_generator
 
 
 _logger = logging.getLogger(__name__)
@@ -95,7 +95,7 @@ class LoaderKatdal(loader_core.LoaderBase):
                     raise ValueError('Target index {} is out of range'.format(idx))
                 return idx
 
-    @profile('LoaderKatdal.__init__')
+    @profile_function()
     def __init__(self, filename, options):
         super().__init__(filename, options)
         parser = argparse.ArgumentParser(
@@ -132,9 +132,10 @@ class LoaderKatdal(loader_core.LoaderBase):
             raise ValueError('Spectral window {} is out of range'.format(args.spw))
         self._spectral_window = self._file.spectral_windows[args.spw]
         target_idx = self._find_target(args.target)
-        self._file.select(subarray=args.subarray, spw=args.spw,
-                          targets=[target_idx], scans=['track'],
-                          corrprods='cross')
+        with profile('katdal.DataSet.select'):
+            self._file.select(subarray=args.subarray, spw=args.spw,
+                              targets=[target_idx], scans=['track'],
+                              corrprods='cross')
         self._target = self._file.catalogue.targets[target_idx]
         _logger.info('Selected target %r', self._target.description)
         if self._target.body_type != 'radec':
@@ -264,47 +265,46 @@ class LoaderKatdal(loader_core.LoaderBase):
     def channel_enabled(self, channel):
         return self._channel_mask is None or not self._channel_mask[channel]
 
+    @profile_generator(labels=('start_channel', 'stop_channel'))
     def data_iter(self, start_channel, stop_channel, max_chunk_vis=None):
-        with profile('LoaderKatdal.data_iter',
-                     start_channel=start_channel,
-                     stop_channel=stop_channel) as stopwatch:
-            self._file.select(reset='F')
-            n_file_times, n_file_chans, n_file_cp = self._file.shape
-            self._file.select(channels=np.s_[start_channel : stop_channel])
-            assert 0 <= start_channel < stop_channel <= n_file_chans
-            n_chans = stop_channel - start_channel
-            n_pols = len(self._polarizations)
-            if max_chunk_vis is None:
-                load_times = n_file_times
-            else:
-                load_times = max(1, max_chunk_vis // (n_chans * n_file_cp))
-            # timestamps is a property, so ensure it's only evaluated once
-            with profile('katdal.DataSet.timestamps',
-                         start_channel=start_channel, stop_channel=stop_channel):
-                timestamps = self._file.timestamps
-            baseline_idx = np.arange(len(self._baselines)).astype(np.int32)
-            start = 0
-            # Determine chunking scheme
-            if isinstance(self._file.vis, DaskLazyIndexer):
-                chunk_sizes = self._file.vis.dataset.chunks[0]
-                chunk_boundaries = [0] + list(itertools.accumulate(chunk_sizes))
-                if chunk_sizes and chunk_sizes[0] > load_times:
-                    _logger.warning('Chunk size is %d dumps but only %d loaded at a time. '
-                                    'Consider increasing --vis-load',
-                                    chunk_sizes[0], load_times)
-            else:
-                chunk_boundaries = list(range(n_file_times + 1))  # No chunk info available
-            while start < n_file_times:
-                end = min(n_file_times, start + load_times)
-                # Align to chunking if possible
-                aligned_end = chunk_boundaries[bisect.bisect(chunk_boundaries, end) - 1]
-                if aligned_end > start:
-                    end = aligned_end
-                # Load a chunk from the lazy indexer, then reindex to order
-                # the baselines as desired.
-                _logger.debug('Loading dumps %d:%d', start, end)
-                select = np.s_[start:end, :, :]
-                fix = np.s_[:, :, self._corr_product_permutation]
+        self._file.select(reset='F')
+        n_file_times, n_file_chans, n_file_cp = self._file.shape
+        self._file.select(channels=np.s_[start_channel : stop_channel])
+        assert 0 <= start_channel < stop_channel <= n_file_chans
+        n_chans = stop_channel - start_channel
+        n_pols = len(self._polarizations)
+        if max_chunk_vis is None:
+            load_times = n_file_times
+        else:
+            load_times = max(1, max_chunk_vis // (n_chans * n_file_cp))
+        # timestamps is a property, so ensure it's only evaluated once
+        with profile('katdal.DataSet.timestamps'):
+            timestamps = self._file.timestamps
+        baseline_idx = np.arange(len(self._baselines)).astype(np.int32)
+        start = 0
+        # Determine chunking scheme
+        if isinstance(self._file.vis, DaskLazyIndexer):
+            chunk_sizes = self._file.vis.dataset.chunks[0]
+            chunk_boundaries = [0] + list(itertools.accumulate(chunk_sizes))
+            if chunk_sizes and chunk_sizes[0] > load_times:
+                _logger.warning('Chunk size is %d dumps but only %d loaded at a time. '
+                                'Consider increasing --vis-load',
+                                chunk_sizes[0], load_times)
+        else:
+            chunk_boundaries = list(range(n_file_times + 1))  # No chunk info available
+        while start < n_file_times:
+            end = min(n_file_times, start + load_times)
+            # Align to chunking if possible
+            aligned_end = chunk_boundaries[bisect.bisect(chunk_boundaries, end) - 1]
+            if aligned_end > start:
+                end = aligned_end
+            # Load a chunk from the lazy indexer, then reindex to order
+            # the baselines as desired.
+            _logger.debug('Loading dumps %d:%d', start, end)
+            select = np.s_[start:end, :, :]
+            fix = np.s_[:, :, self._corr_product_permutation]
+            with profile('katdal.lazy_indexer.DaskLazyIndexer.get',
+                         {'start_dump': start, 'end_dump': end}):
                 if isinstance(self._file.vis, DaskLazyIndexer):
                     vis, weights, flags = DaskLazyIndexer.get(
                         [self._file.vis, self._file.weights, self._file.flags], select)
@@ -312,52 +312,52 @@ class LoaderKatdal(loader_core.LoaderBase):
                     vis = self._file.vis[select]
                     weights = self._file.weights[select]
                     flags = self._file.flags[select]
-                _logger.debug('Dumps %d:%d loaded', start, end)
-                vis = vis[fix]
-                weights = weights[fix]
-                flags = flags[fix]
-                # Flag missing correlation products
-                if self._missing_corr_products:
-                    flags[:, :, self._missing_corr_products] = True
-                if self._channel_mask is not None:
-                    flags |= self._channel_mask[np.newaxis, start_channel:stop_channel, np.newaxis]
-                # Apply flags to weights
-                weights *= np.logical_not(flags)
+            _logger.debug('Dumps %d:%d loaded', start, end)
+            vis = vis[fix]
+            weights = weights[fix]
+            flags = flags[fix]
+            # Flag missing correlation products
+            if self._missing_corr_products:
+                flags[:, :, self._missing_corr_products] = True
+            if self._channel_mask is not None:
+                flags |= self._channel_mask[np.newaxis, start_channel:stop_channel, np.newaxis]
+            # Apply flags to weights
+            weights *= np.logical_not(flags)
 
-                # Compute per-antenna UVW coordinates and parallactic angles.
+            # Compute per-antenna UVW coordinates and parallactic angles.
+            with profile('katpoint.Target.uvw'):
                 antenna_uvw = units.Quantity(self._target.uvw(
                     self._file.ants, timestamp=timestamps[start:end], antenna=self._ref_ant))
-                antenna_uvw = antenna_uvw.T   # Switch from (uvw, time, ant) to (ant, time, uvw)
-                # parangle converts to degrees before returning, so we have to
-                # convert back to radians.
+            antenna_uvw = antenna_uvw.T   # Switch from (uvw, time, ant) to (ant, time, uvw)
+            # parangle converts to degrees before returning, so we have to
+            # convert back to radians.
+            with profile('katdal.DataSet.parangle'):
                 antenna_pa = units.Quantity(
                     self._file.parangle[start:end, :].transpose(),
                     unit=units.deg, dtype=np.float32, copy=False).to(units.rad)
-                # We've mapped H to x and V to y, so we need the angle from x to H
-                # rather than from x to V.
-                antenna_pa -= math.pi / 2 * units.rad
-                # Combine these into per-baseline UVW coordinates and feed angles
-                uvw = np.empty((end - start, len(self._baselines), 3), np.float32)
-                feed_angle1 = np.empty((end - start, len(self._baselines)), np.float32)
-                feed_angle2 = np.empty_like(feed_angle1)
-                for i, (a, b) in enumerate(self._baselines):
-                    uvw[:, i, :] = antenna_uvw[b] - antenna_uvw[a]
-                    feed_angle1[:, i] = antenna_pa[a]
-                    feed_angle2[:, i] = antenna_pa[b]
+            # We've mapped H to x and V to y, so we need the angle from x to H
+            # rather than from x to V.
+            antenna_pa -= math.pi / 2 * units.rad
+            # Combine these into per-baseline UVW coordinates and feed angles
+            uvw = np.empty((end - start, len(self._baselines), 3), np.float32)
+            feed_angle1 = np.empty((end - start, len(self._baselines)), np.float32)
+            feed_angle2 = np.empty_like(feed_angle1)
+            for i, (a, b) in enumerate(self._baselines):
+                uvw[:, i, :] = antenna_uvw[b] - antenna_uvw[a]
+                feed_angle1[:, i] = antenna_pa[a]
+                feed_angle2[:, i] = antenna_pa[b]
 
-                # reshape everything into the target formats
-                stopwatch.stop()
-                yield dict(
-                    uvw=uvw.reshape(-1, 3),
-                    weights=weights.swapaxes(0, 1).reshape(n_chans, -1, n_pols),
-                    baselines=np.tile(baseline_idx, end - start),
-                    vis=vis.swapaxes(0, 1).reshape(n_chans, -1, n_pols),
-                    feed_angle1=feed_angle1.reshape(-1),
-                    feed_angle2=feed_angle2.reshape(-1),
-                    progress=end,
-                    total=n_file_times)
-                stopwatch.start()
-                start = end
+            # reshape everything into the target formats
+            yield dict(
+                uvw=uvw.reshape(-1, 3),
+                weights=weights.swapaxes(0, 1).reshape(n_chans, -1, n_pols),
+                baselines=np.tile(baseline_idx, end - start),
+                vis=vis.swapaxes(0, 1).reshape(n_chans, -1, n_pols),
+                feed_angle1=feed_angle1.reshape(-1),
+                feed_angle2=feed_angle2.reshape(-1),
+                progress=end,
+                total=n_file_times)
+            start = end
 
     def sky_model(self):
         try:
