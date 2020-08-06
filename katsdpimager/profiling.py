@@ -1,7 +1,7 @@
 """Functions for recording profiling information."""
 
 import time
-import collections
+import collections.abc
 import contextlib
 from contextvars import ContextVar
 import csv
@@ -11,11 +11,14 @@ import pathlib
 import weakref
 import typing
 from typing import (
-    List, Tuple, Dict, Mapping, Iterable, Callable, Generator, Union, Optional, TypeVar, Any
+    List, Tuple, Dict, Mapping, Sequence, Callable,
+    Generator, Union, Optional, TypeVar, Any
 )
 
 
 _T = TypeVar('_T')
+_LabelSpec = Union[Sequence[str],
+                   Mapping[str, Union[Callable[[inspect.BoundArguments], Any], str]]]
 
 
 class Frame:
@@ -256,18 +259,33 @@ def profile(name: str, labels: Mapping[str, Any] = {}) -> Generator[Stopwatch, N
         yield stopwatch
 
 
-def profile_function(name: Optional[str] = None, labels: Iterable[str] = ()) \
+def _extract_labels(sig: inspect.Signature, labels: _LabelSpec, *args, **kwargs):
+    bound = sig.bind(*args, **kwargs)
+    bound.apply_defaults()
+    result = {}
+    if isinstance(labels, collections.abc.Mapping):
+        for label, spec in labels.items():
+            if callable(spec):
+                result[label] = spec(bound)
+            else:
+                result[label] = bound.arguments[spec]
+    else:
+        result = {label: bound.arguments[label] for label in labels}
+    return result
+
+
+def profile_function(name: Optional[str] = None, labels: _LabelSpec = ()) \
         -> Callable[[Callable], Callable]:
     """Decorator for profiling functions.
 
     It defaults to using the name of the function as the name for the frame,
     and the labels are extracted from the arguments passed to the function.
-
-    Note that :func:`profile` can also be used as a function decorator if one
-    does not need to extract labels.
+    The labels can either be a sequence or a mapping. If a sequence, each
+    element names a function argument to be used as a label. If a mapping,
+    the keys define the labels. Each values can either be the name of a
+    function argument, or a callable that takes
+    :class:`inspect.BoundArguments` and returns the value for the label.
     """
-    labels = list(labels)
-
     def decorator(func: Callable) -> Callable:
         sig = inspect.signature(func)
         try:
@@ -275,15 +293,10 @@ def profile_function(name: Optional[str] = None, labels: Iterable[str] = ()) \
         except AttributeError:
             func_name = '<anonymous function>'
         frame_name = name if name is not None else func_name
-        for label in labels:
-            if label not in sig.parameters:
-                raise KeyError(f'Label {label} is not a parameter of {func_name}')
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            bound = sig.bind(*args, **kwargs)
-            bound.apply_defaults()
-            label_dict = {label: bound.arguments[label] for label in labels}
+            label_dict = _extract_labels(sig, labels, *args, **kwargs)
             with profile(frame_name, label_dict):
                 return func(*args, **kwargs)
 
@@ -291,10 +304,12 @@ def profile_function(name: Optional[str] = None, labels: Iterable[str] = ()) \
     return decorator
 
 
-def profile_generator(name: Optional[str] = None, labels: Iterable[str] = ()) \
+def profile_generator(name: Optional[str] = None, labels: _LabelSpec = ()) \
         -> Callable[[Callable[..., Generator[_T, None, None]]],
                     Callable[..., Generator[_T, None, None]]]:
     """Decorator for profiling generator functions.
+
+    It functions similarly to :func:`profile_function`.
 
     It is only suitable for simple generators intended to be used as
     iterables. It does not support sending values or exceptions into the
@@ -308,17 +323,15 @@ def profile_generator(name: Optional[str] = None, labels: Iterable[str] = ()) \
 
     def decorator(func: Callable) -> Callable:
         sig = inspect.signature(func)
-        func_name = getattr(func, '__name__', '<anonymous function>')
+        try:
+            func_name = f'{func.__module__}.{func.__qualname__}'
+        except AttributeError:
+            func_name = '<anonymous function>'
         frame_name = name if name is not None else func_name
-        for label in labels:
-            if label not in sig.parameters:
-                raise KeyError(f'Label {label} is not a parameter of {func_name}')
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            bound = sig.bind(*args, **kwargs)
-            bound.apply_defaults()
-            label_dict = {label: bound.arguments[label] for label in labels}
+            label_dict = _extract_labels(sig, labels, *args, **kwargs)
             gen = func(*args, **kwargs)
             try:
                 with profile(frame_name, label_dict) as stopwatch:

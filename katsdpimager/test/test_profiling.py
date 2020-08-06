@@ -141,7 +141,7 @@ class TestProfiler:
         assert_equal(self.profiler.records, [Record(frame, 0.0, 1.0)])
 
     @temporary_context
-    def test_profile_function(self, monotonic):
+    def test_profile_function_sequence_labels(self, monotonic):
         @profile_function('blah', ('x', 'y'))
         def inner(y, z, x=4):
             pass
@@ -155,6 +155,19 @@ class TestProfiler:
         ])
 
     @temporary_context
+    def test_profile_function_mapping_labels(self, monotonic):
+        @profile_function('blah',
+                          {'x': 'xx', 'y': lambda bound_args: 2 * bound_args.arguments['y']})
+        def inner(xx, y):
+            pass
+
+        Profiler.set_profiler(self.profiler)
+        inner(2, 3)
+        assert_equal(self.profiler.records, [
+            Record(Frame('blah', {'x': 2, 'y': 6}), 0.0, 0.0)
+        ])
+
+    @temporary_context
     def test_profile_function_auto_name(self, monotonic):
         Profiler.set_profiler(self.profiler)
         empty()
@@ -164,7 +177,7 @@ class TestProfiler:
 
     @temporary_context
     def test_profile_generator(self, monotonic):
-        @profile_generator(labels=('reps',))
+        @profile_generator(name='slow_range', labels=('reps',))
         def slow_range(reps: int) -> Generator[int, None, None]:
             for i in range(reps):
                 monotonic.return_value += 1.0
