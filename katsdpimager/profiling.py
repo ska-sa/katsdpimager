@@ -222,9 +222,9 @@ class Profiler:
             elapsed = round(1000000 * record.elapsed)
             samples[stack] += elapsed
             # We need to produce exclusive counts (time with no child frames
-            # active), so subtract from parent frames.
-            for i in range(1, len(stack) - 1):
-                samples[stack[:i]] -= elapsed
+            # active), so subtract from parent frame.
+            if len(stack) >= 2:
+                samples[stack[:-1]] -= elapsed
 
         with open(filename, 'w') as f:
             for names, value in samples.items():
