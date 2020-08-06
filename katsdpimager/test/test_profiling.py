@@ -87,6 +87,11 @@ def temporary_context(func):
     return wrapper
 
 
+@profile_function()
+def empty():
+    pass
+
+
 @mock.patch('time.monotonic', return_value=0.0)
 class TestProfiler:
     def setUp(self) -> None:
@@ -151,13 +156,11 @@ class TestProfiler:
 
     @temporary_context
     def test_profile_function_auto_name(self, monotonic):
-        @profile_function()
-        def inner():
-            pass
-
         Profiler.set_profiler(self.profiler)
-        inner()
-        assert_equal(self.profiler.records, [Record(Frame('inner', {}), 0.0, 0.0)])
+        empty()
+        assert_equal(self.profiler.records, [
+            Record(Frame('katsdpimager.test.test_profiling.empty', {}), 0.0, 0.0)
+        ])
 
     @temporary_context
     def test_profile_generator(self, monotonic):

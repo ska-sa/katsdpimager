@@ -270,7 +270,10 @@ def profile_function(name: Optional[str] = None, labels: Iterable[str] = ()) \
 
     def decorator(func: Callable) -> Callable:
         sig = inspect.signature(func)
-        func_name = getattr(func, '__name__', '<anonymous function>')
+        try:
+            func_name = f'{func.__module__}.{func.__qualname__}'
+        except AttributeError:
+            func_name = '<anonymous function>'
         frame_name = name if name is not None else func_name
         for label in labels:
             if label not in sig.parameters:
