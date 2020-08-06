@@ -5,6 +5,7 @@ astropy
 bokeh==2.0.2              # katsdpdockerbase currently provides only 1.x
 botocore                  # for S3 authentication in katdal
 certifi                   # via requests
+cffi==1.14.1
 chardet                   # via requests
 cityhash                  # via katdal
 contextvars
@@ -31,6 +32,7 @@ packaging                 # via bokeh
 pandas                    # via katsdpsigproc
 pillow                    # via bokeh
 progress==1.5
+pycparser                 # via cffi
 pycuda
 pyephem                   # via katpoint
 pygelf                    # via katsdpservices

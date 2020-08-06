@@ -15,6 +15,8 @@ from typing import (
     Generator, Union, Optional, TypeVar, Any
 )
 
+from . import nvtx
+
 
 _T = TypeVar('_T')
 _LabelSpec = Union[Sequence[str],
@@ -136,6 +138,7 @@ class Stopwatch(contextlib.ContextDecorator):
         self._profiler = profiler
         self._frame = frame
         self._start_time: Optional[float] = None
+        self._nvtx_ctx = None
 
     def __enter__(self) -> 'Stopwatch':
         self.start()
@@ -149,10 +152,13 @@ class Stopwatch(contextlib.ContextDecorator):
         if self._start_time is not None:
             raise RuntimeError(f'Stopwatch for {self._frame.name} is already running')
         self._start_time = time.monotonic()
+        self._nvtx_range = nvtx.thread_range(self._frame.name)
+        self._nvtx_range.__enter__()
 
     def stop(self) -> None:
         if self._start_time is None:
             raise RuntimeError(f'Stopwatch {self._frame.name} is already stopped')
+        self._nvtx_range.__exit__(None, None, None)
         stop_time = time.monotonic()
         record = Record(self._frame, self._start_time, stop_time)
         self._profiler.records.append(record)
