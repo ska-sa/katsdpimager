@@ -21,6 +21,7 @@ from . import nvtx
 _T = TypeVar('_T')
 _LabelSpec = Union[Sequence[str],
                    Mapping[str, Union[Callable[[inspect.BoundArguments], Any], str]]]
+_domain = nvtx.Domain(__name__)
 
 
 class Frame:
@@ -56,7 +57,7 @@ class Frame:
         frame.name = name
         frame.labels = labels
         frame.parent = parent
-        frame._name_handle = nvtx.register_string(name)
+        frame._name_handle = nvtx.register_string(name, domain=_domain)
         frame._hash = hash((key, parent))
         frame._children = weakref.WeakValueDictionary()
         if parent is not None:
@@ -154,7 +155,7 @@ class Stopwatch(contextlib.ContextDecorator):
         if self._start_time is not None:
             raise RuntimeError(f'Stopwatch for {self._frame.name} is already running')
         self._start_time = time.monotonic()
-        self._nvtx_range = nvtx.thread_range(self._frame._name_handle)
+        self._nvtx_range = nvtx.thread_range(self._frame._name_handle, domain=_domain)
         self._nvtx_range.__enter__()
 
     def stop(self) -> None:
