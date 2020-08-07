@@ -40,6 +40,7 @@ class Frame:
     name: str
     labels: Dict[str, Any]
     parent: Optional['Frame']
+    _name_handle: nvtx.RegisteredString
     _hash: int
     _children: weakref.WeakValueDictionary
 
@@ -55,6 +56,7 @@ class Frame:
         frame.name = name
         frame.labels = labels
         frame.parent = parent
+        frame._name_handle = nvtx.register_string(name)
         frame._hash = hash((key, parent))
         frame._children = weakref.WeakValueDictionary()
         if parent is not None:
@@ -152,7 +154,7 @@ class Stopwatch(contextlib.ContextDecorator):
         if self._start_time is not None:
             raise RuntimeError(f'Stopwatch for {self._frame.name} is already running')
         self._start_time = time.monotonic()
-        self._nvtx_range = nvtx.thread_range(self._frame.name)
+        self._nvtx_range = nvtx.thread_range(self._frame._name_handle)
         self._nvtx_range.__enter__()
 
     def stop(self) -> None:
