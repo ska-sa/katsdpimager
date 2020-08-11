@@ -49,11 +49,11 @@ install_requires = [
     'scipy'
 ]
 
+cffi_modules = []
 if os.path.exists('/usr/local/cuda/include/nvtx3/nvToolsExt.h'):
-    cffi_modules = ['katsdpimager/nvtx_build.py:ffibuilder']
+    cffi_modules.append('katsdpimager/nvtx_build.py:ffibuilder')
+if cffi_modules:
     install_requires.append('cffi')
-else:
-    cffi_modules = []
 
 
 root_dir = os.path.dirname(__file__)
@@ -88,7 +88,7 @@ setup(
              "scripts/imager-mkat-report.py"],
     ext_package='katsdpimager',
     ext_modules=extensions,
-    cffi_modules=['katsdpimager/nvtx_build.py:ffibuilder'],
+    cffi_modules=cffi_modules,
     python_requires='>=3.6',
     install_requires=install_requires,
     tests_require=tests_require,

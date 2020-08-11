@@ -3,12 +3,10 @@
 from cffi import FFI
 
 
-source = "#include <nvtx3/nvToolsExt.h>"
-
 ffibuilder = FFI()
 ffibuilder.set_unicode(True)
 ffibuilder.set_source(
-    "._nvtx", "#include <nvtx3/nvToolsExt.h>",
+    "._nvtx", "#include <nvtx3/nvToolsExt.h>\n",
     include_dirs=['/usr/local/cuda/include']
 )
 ffibuilder.cdef(
