@@ -173,12 +173,12 @@ class NullStopwatch(Stopwatch):
 
     def start(self) -> None:
         if self._start_time is not None:
-            raise RuntimeError(f'Stopwatch {self._name} is already running')
+            raise RuntimeError(f'Stopwatch {self._frame.name} is already running')
         self._start_time = 0.0   # Just for the error checking
 
     def stop(self) -> None:
         if self._start_time is None:
-            raise RuntimeError(f'Stopwatch {self._name} is already stopped')
+            raise RuntimeError(f'Stopwatch {self._frame.name} is already stopped')
         self._start_time = None
 
 
@@ -361,4 +361,4 @@ class NullProfiler(Profiler):
     @contextlib.contextmanager
     def profile(self, name: str,
                 labels: Mapping[str, Any] = {}) -> Generator[Stopwatch, None, None]:
-        yield NullStopwatch(self, name, Frame('', {}))
+        yield NullStopwatch(self, Frame(name, {}))
