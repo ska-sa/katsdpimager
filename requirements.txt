@@ -32,7 +32,7 @@ packaging                 # via bokeh
 pandas                    # via katsdpsigproc
 pillow                    # via bokeh
 progress==1.5
-pycparser                 # via cffi
+pycparser==2.20           # via cffi
 pycuda
 pyephem                   # via katpoint
 pygelf                    # via katsdpservices
