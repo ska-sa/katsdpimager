@@ -8,7 +8,7 @@ certifi                   # via requests
 cffi==1.14.1
 chardet                   # via requests
 cityhash                  # via katdal
-contextvars
+contextvars==2.4
 cycler                    # via matplotlib
 dask                      # via katdal
 decorator                 # via pycuda, katsdpsigproc
