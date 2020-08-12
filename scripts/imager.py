@@ -79,6 +79,8 @@ def get_parser():
                        help='Write primary beam model to FITS file')
     group.add_argument('--write-profile', metavar='FILE',
                        help='Write profiling information to file')
+    group.add_argument('--write-device-profile', metavar='FILE',
+                       help='Write device profiling information to file')
     group.add_argument('--vis-limit', type=int, metavar='N',
                        help='Use only the first N visibilities')
     return parser
@@ -138,7 +140,7 @@ def main():
         if '%' not in args.output_file:
             parser.error('More than one channel selected but no %d in output filename')
     configure_logging(args)
-    if not args.write_profile:
+    if not args.write_profile and not args.write_device_profile:
         profiling.Profiler.set_profiler(profiling.NullProfiler())
 
     queue = None
@@ -156,7 +158,11 @@ def main():
         frontend.run(args, context, queue, dataset, Writer(args, dataset))
 
     if args.write_profile:
-        profiling.Profiler.get_profiler().write_flamegraph(args.write_profile)
+        with open(args.write_profile, 'w') as f:
+            profiling.Profiler.get_profiler().write_flamegraph(f)
+    if args.write_device_profile:
+        with open(args.write_device_profile, 'w') as f:
+            profiling.Profiler.get_profiler().write_device_flamegraph(f)
 
 
 if __name__ == '__main__':

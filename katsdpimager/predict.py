@@ -22,6 +22,7 @@ from astropy import units
 from katsdpsigproc import accel, tune
 
 from . import polarization, types, grid, parameters, numba
+from .profiling import profile_device
 
 
 logger = logging.getLogger(__name__)
@@ -350,23 +351,24 @@ class Predict(grid.VisOperation):
         uv_scale, w_scale, w_bias = _uvw_scale_bias(self.image_parameters, self.grid_parameters)
         w_bias += self._w
 
-        self.command_queue.enqueue_kernel(
-            self._kernel,
-            [
-                vis.buffer,
-                uv.buffer,
-                w_plane.buffer,
-                weights.buffer,
-                lmn.buffer,
-                flux.buffer,
-                np.int32(self.num_vis),
-                np.int32(self.num_sources),
-                np.int32(self.grid_parameters.oversample), np.float32(uv_scale),
-                np.float32(w_scale), np.float32(w_bias)
-            ],
-            global_size=(accel.roundup(self.num_vis, self.template.wgs),),
-            local_size=(self.template.wgs,)
-        )
+        with profile_device(self.command_queue, 'predict'):
+            self.command_queue.enqueue_kernel(
+                self._kernel,
+                [
+                    vis.buffer,
+                    uv.buffer,
+                    w_plane.buffer,
+                    weights.buffer,
+                    lmn.buffer,
+                    flux.buffer,
+                    np.int32(self.num_vis),
+                    np.int32(self.num_sources),
+                    np.int32(self.grid_parameters.oversample), np.float32(uv_scale),
+                    np.float32(w_scale), np.float32(w_bias)
+                ],
+                global_size=(accel.roundup(self.num_vis, self.template.wgs),),
+                local_size=(self.template.wgs,)
+            )
 
 
 @numba.jit(nopython=True)

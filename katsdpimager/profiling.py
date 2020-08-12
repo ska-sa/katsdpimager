@@ -7,13 +7,16 @@ from contextvars import ContextVar
 import csv
 import functools
 import inspect
+import io
 import pathlib
 import weakref
 import typing
 from typing import (
-    List, Tuple, Dict, Mapping, Sequence, Callable,
+    List, Tuple, Dict, Mapping, Sequence, Callable, TextIO,
     Generator, Union, Optional, TypeVar, Any
 )
+
+import katsdpsigproc.abc
 
 from . import nvtx
 
@@ -127,6 +130,25 @@ class Record:
         return f'Record({self.frame!r}, {self.start_time!r}, {self.stop_time!r})'
 
 
+class DeviceRecord:
+    """A record of some on-device process with a start and a stop event."""
+
+    def __init__(self, frame: Frame,
+                 start_event: katsdpsigproc.abc.AbstractEvent,
+                 stop_event: katsdpsigproc.abc.AbstractEvent) -> None:
+        self.frame = frame
+        self.start_event = start_event
+        self.stop_event = stop_event
+
+    @property
+    def elapsed(self) -> float:
+        """Get elapsed time.
+
+        Note that this may block until the stop event completes.
+        """
+        return self.stop_event.time_since(self.start_event)
+
+
 class Stopwatch(contextlib.ContextDecorator):
     """Measures intervals of time and add records of them to a profiler.
 
@@ -187,6 +209,7 @@ class Profiler:
 
     def __init__(self) -> None:
         self.records: List[Record] = []
+        self.device_records: List[DeviceRecord] = []
 
     @contextlib.contextmanager
     def profile(self, name: str,
@@ -199,6 +222,15 @@ class Profiler:
                 yield stopwatch
         finally:
             _current_frame.reset(token)
+
+    @contextlib.contextmanager
+    def profile_device(self, queue: katsdpsigproc.abc.AbstractCommandQueue,
+                       name: str, labels: Mapping[str, Any] = {}):
+        frame = Frame(name, labels, _current_frame.get())
+        start_event = queue.enqueue_marker()
+        yield
+        stop_event = queue.enqueue_marker()
+        self.device_records.append(DeviceRecord(frame, start_event, stop_event))
 
     def write_csv(self, filename: Union[str, pathlib.Path]) -> None:
         labelset = set()
@@ -219,7 +251,7 @@ class Profiler:
                 }
                 writer.writerow(row)
 
-    def write_flamegraph(self, filename: Union[str, pathlib.Path]) -> None:
+    def write_flamegraph(self, file: Union[TextIO, io.TextIOBase]) -> None:
         """Writes data in a form that can be converted to a flame graph.
 
         Specifically, use https://github.com/brendangregg/FlameGraph to
@@ -238,9 +270,25 @@ class Profiler:
             if len(stack) >= 2:
                 samples[stack[:-1]] -= elapsed
 
-        with open(filename, 'w') as f:
-            for names, value in samples.items():
-                print(';'.join(names), value, file=f)
+        for names, value in samples.items():
+            print(';'.join(names), value, file=file)
+
+    def write_device_flamegraph(self, file: Union[TextIO, io.TextIOBase]) -> None:
+        """Writes device records in a form that can be converted to a flame graph.
+
+        See :meth:`write_flamegraph` for details. The full stack frames are
+        emitted, but only time spent in device functions is shown. The
+        flamegraph is only meaningful if kernels do not execute concurrently.
+        """
+        samples: typing.Counter[Tuple[str, ...]] = collections.Counter()
+        for record in self.device_records:
+            stack = tuple(frame.name for frame in record.frame.stack())
+            # flamegraph.pl wants integers, so convert to microseconds
+            elapsed = round(1000000 * record.elapsed)
+            samples[stack] += elapsed
+
+        for names, value in samples.items():
+            print(';'.join(names), value, file=file)
 
     @staticmethod
     def get_profiler() -> 'Profiler':
@@ -362,3 +410,10 @@ class NullProfiler(Profiler):
     def profile(self, name: str,
                 labels: Mapping[str, Any] = {}) -> Generator[Stopwatch, None, None]:
         yield NullStopwatch(self, Frame(name, {}))
+
+
+@contextlib.contextmanager
+def profile_device(queue: katsdpsigproc.abc.AbstractCommandQueue,
+                   name: str, labels: Mapping[str, Any] = {}):
+    with Profiler.get_profiler().profile_device(queue, name, labels):
+        yield

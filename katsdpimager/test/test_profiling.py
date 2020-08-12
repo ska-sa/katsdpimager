@@ -5,7 +5,12 @@ import functools
 from unittest import mock
 from typing import Generator
 
-from nose.tools import assert_equal, assert_not_equal, assert_is, assert_is_none, assert_is_not
+from nose.tools import (
+    assert_equal, assert_not_equal, assert_greater_equal,
+    assert_is, assert_is_none, assert_is_not
+)
+import katsdpsigproc.abc
+from katsdpsigproc.test.test_accel import device_test
 
 from ..profiling import Frame, Record, Profiler, profile, profile_function, profile_generator
 
@@ -97,12 +102,12 @@ class TestProfiler:
     def setUp(self) -> None:
         self.profiler = Profiler()
 
-    def test_simple(self, monotonic):
+    def test_simple(self, monotonic) -> None:
         with self.profiler.profile('foo'):
             monotonic.return_value = 1.0
         assert_equal(self.profiler.records, [Record(Frame('foo'), 0.0, 1.0)])
 
-    def test_nested(self, monotonic):
+    def test_nested(self, monotonic) -> None:
         with self.profiler.profile('foo', {'x': 1}):
             monotonic.return_value += 1.0
             with self.profiler.profile('bar', {'y': 2}):
@@ -115,7 +120,20 @@ class TestProfiler:
             Record(frame1, 0.0, 3.0)
         ])
 
-    def test_pause(self, monotonic):
+    @device_test
+    def test_profile_device(self, monotonic, ctx: katsdpsigproc.abc.AbstractContext,
+                            queue: katsdpsigproc.abc.AbstractCommandQueue) -> None:
+        with self.profiler.profile('foo', {'x': 1}):
+            with self.profiler.profile_device(queue, 'bar', {'y': 2}):
+                pass
+        assert_equal(len(self.profiler.device_records), 1)
+        assert_equal(
+            self.profiler.device_records[0].frame,
+            Frame('bar', {'y': 2}, Frame('foo', {'x': 1}))
+        )
+        assert_greater_equal(self.profiler.device_records[0].elapsed, 0.0)
+
+    def test_pause(self, monotonic) -> None:
         with self.profiler.profile('foo', {'x': 1}) as stopwatch:
             monotonic.return_value += 1.0
             stopwatch.stop()
@@ -128,7 +146,7 @@ class TestProfiler:
             Record(frame, 2.0, 3.0)
         ])
 
-    def test_context(self, monotonic):
+    def test_context(self, monotonic) -> None:
         def inner():
             Profiler.set_profiler(self.profiler)
             with profile('foo', {'x': 1}):

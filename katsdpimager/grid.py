@@ -128,7 +128,7 @@ import katsdpsigproc.tune as tune
 
 import katsdpimager.types
 from . import numba
-from .profiling import profile_function
+from .profiling import profile_function, profile_device
 
 
 logger = logging.getLogger(__name__)
@@ -817,29 +817,30 @@ class Gridder(GridDegrid):
         half_u = weights_grid.shape[1] // 2
         half_v = weights_grid.shape[2] // 2
         weights_address_bias = half_v * weights_grid.padded_shape[2] + half_u
-        command_queue.enqueue_kernel(
-            kernel,
-            [
-                grid.buffer,
-                np.int32(grid.padded_shape[2]),
-                np.int32(grid.padded_shape[1] * grid.padded_shape[2]),
-                weights_grid.buffer,
-                np.int32(weights_grid.padded_shape[2]),
-                np.int32(weights_grid.padded_shape[1] * weights_grid.padded_shape[2]),
-                uv.buffer,
-                w_plane.buffer,
-                vis.buffer,
-                convolve_kernel.buffer,
-                np.int32(uv_bias),
-                np.int32(weights_address_bias),
-                np.int32(vis_per_workgroup),
-                np.int32(num_vis)
-            ],
-            global_size=(wgs_x * tiles_x,
-                         wgs_y * tiles_y,
-                         workgroups_z),
-            local_size=(wgs_x, wgs_y, 1)
-        )
+        with profile_device(command_queue, 'grid'):
+            command_queue.enqueue_kernel(
+                kernel,
+                [
+                    grid.buffer,
+                    np.int32(grid.padded_shape[2]),
+                    np.int32(grid.padded_shape[1] * grid.padded_shape[2]),
+                    weights_grid.buffer,
+                    np.int32(weights_grid.padded_shape[2]),
+                    np.int32(weights_grid.padded_shape[1] * weights_grid.padded_shape[2]),
+                    uv.buffer,
+                    w_plane.buffer,
+                    vis.buffer,
+                    convolve_kernel.buffer,
+                    np.int32(uv_bias),
+                    np.int32(weights_address_bias),
+                    np.int32(vis_per_workgroup),
+                    np.int32(num_vis)
+                ],
+                global_size=(wgs_x * tiles_x,
+                             wgs_y * tiles_y,
+                             workgroups_z),
+                local_size=(wgs_x, wgs_y, 1)
+            )
 
     def _run(self):
         kernel_width = self.template.grid_parameters.kernel_width
@@ -998,25 +999,26 @@ class Degridder(GridDegrid):
         batch_size = wgs_x * wgs_y
         subgroups = accel.divup(num_vis, batch_size)
         workgroups = accel.divup(subgroups, wgs_z)
-        command_queue.enqueue_kernel(
-            kernel,
-            [
-                grid.buffer,
-                np.int32(grid.padded_shape[2]),
-                np.int32(grid.padded_shape[1] * grid.padded_shape[2]),
-                uv.buffer,
-                w_plane.buffer,
-                weights.buffer,
-                vis.buffer,
-                convolve_kernel.buffer,
-                np.int32(uv_bias),
-                np.int32(num_vis)
-            ],
-            global_size=(wgs_x * workgroups,
-                         wgs_y,
-                         wgs_z),
-            local_size=(wgs_x, wgs_y, wgs_z)
-        )
+        with profile_device(command_queue, 'degrid'):
+            command_queue.enqueue_kernel(
+                kernel,
+                [
+                    grid.buffer,
+                    np.int32(grid.padded_shape[2]),
+                    np.int32(grid.padded_shape[1] * grid.padded_shape[2]),
+                    uv.buffer,
+                    w_plane.buffer,
+                    weights.buffer,
+                    vis.buffer,
+                    convolve_kernel.buffer,
+                    np.int32(uv_bias),
+                    np.int32(num_vis)
+                ],
+                global_size=(wgs_x * workgroups,
+                             wgs_y,
+                             wgs_z),
+                local_size=(wgs_x, wgs_y, wgs_z)
+            )
 
     def _run(self):
         kernel_width = self.template.grid_parameters.kernel_width
