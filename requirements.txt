@@ -17,6 +17,7 @@ ephem                     # via pyephem
 future                    # via katdal, katpoint
 h5py                      # via katdal, katsdpmodels
 idna                      # via requests
+immutables==0.14          # via contextvars
 jinja2==2.11.2            # katsdpdockerbase version is currently too old
 jmespath                  # via botocore
 kiwisolver                # via matplotlib
