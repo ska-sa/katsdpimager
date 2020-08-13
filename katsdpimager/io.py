@@ -8,7 +8,8 @@ import astropy.io.fits as fits
 from astropy.time import Time
 
 import katsdpimager
-import katsdpimager.polarization as polarization
+from . import polarization
+from .profiling import profile_function
 
 
 _logger = logging.getLogger(__name__)
@@ -83,6 +84,7 @@ def _fits_polarizations(header, axis, polarizations):
     return pol_permute
 
 
+@profile_function(labels=['channel', 'filename'])
 def write_fits_image(dataset, image, image_parameters, filename, channel,
                      beam=None, bunit='Jy/beam', extra_fits_headers=None):
     """Write an image to a FITS file.
@@ -209,6 +211,7 @@ def _split_array(x, dtype):
     return np.asarray(np.lib.stride_tricks.DummyArray(interface, base=x))
 
 
+@profile_function(labels=['channel', 'filename'])
 def write_fits_grid(grid, image_parameters, filename, channel):
     """Writes a UV grid to a FITS file.
 

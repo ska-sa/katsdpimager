@@ -2,6 +2,7 @@
 import argparse
 import logging
 import os
+import io
 import uuid
 import shutil
 import json
@@ -18,7 +19,9 @@ from katsdpsigproc import accel
 import katsdpimageutils.render
 import astropy.io.fits as fits
 
-from katsdpimager import frontend, loader, io, progress, metadata, arguments
+from katsdpimager import frontend, loader, progress, metadata, arguments, profiling
+from katsdpimager.profiling import profile, profile_function
+import katsdpimager.io    # Use full name to avoid conflict with stdlib io
 
 
 logger = logging.getLogger()
@@ -54,6 +57,7 @@ class Writer(frontend.Writer):
         sub_key = (dataset.raw_target.description, channel)
         return self.telstate.get_indexed('status', sub_key) is not None
 
+    @profile_function(labels=['name', 'channel'])
     def write_fits_image(self, name, description, dataset, image, image_parameters, channel,
                          beam=None, bunit='Jy/beam'):
         if name != 'clean':
@@ -80,19 +84,27 @@ class Writer(frontend.Writer):
         os.mkdir(tmp_dir)
         try:
             with progress.step('Write {}'.format(description)):
-                io.write_fits_image(dataset, image, image_parameters, filename,
-                                    channel, beam, bunit, self.extra_fits_headers)
+                katsdpimager.io.write_fits_image(dataset, image, image_parameters, filename,
+                                                 channel, beam, bunit, self.extra_fits_headers)
             with progress.step('Write PNG'):
-                katsdpimageutils.render.write_image(
-                    filename, filename + '.png',
-                    width=6500, height=5000,
-                    dpi=10 * katsdpimageutils.render.DEFAULT_DPI
-                )
+                with profile(
+                    'katsdpimageutils.render.write_image',
+                    labels={'filename': filename + '.png'}
+                ):
+                    katsdpimageutils.render.write_image(
+                        filename, filename + '.png',
+                        width=6500, height=5000,
+                        dpi=10 * katsdpimageutils.render.DEFAULT_DPI
+                    )
             with progress.step('Write thumbnail'):
-                katsdpimageutils.render.write_image(
-                    filename, filename + '.tnail.png',
-                    width=650, height=500
-                )
+                with profile(
+                    'katsdpimageutils.render.write_image',
+                    labels={'filename': filename + '.tnail.png'}
+                ):
+                    katsdpimageutils.render.write_image(
+                        filename, filename + '.tnail.png',
+                        width=650, height=500
+                    )
             with open(os.path.join(tmp_dir, 'metadata.json'), 'w') as f:
                 json.dump(metadata, f, allow_nan=False, indent=2)
             os.rename(tmp_dir, output_dir)
@@ -104,7 +116,8 @@ class Writer(frontend.Writer):
             # Something in the PNG writing causes memory to not get freed,
             # and the garbage collector is not kicking in properly on its
             # own.
-            gc.collect()
+            with profile('gc.collect'):
+                gc.collect()
 
     def write_fits_grid(self, name, description, fftshift, grid_data, image_parameters, channel):
         pass
@@ -123,6 +136,7 @@ class Writer(frontend.Writer):
         except katsdptelstate.ImmutableKeyError as exc:
             logger.warning("%s", exc)
 
+    @profile_function()
     def statistics(self, dataset, image_parameters, channel, **kwargs):
         sub_key = (dataset.raw_target.description, channel)
         peak = kwargs['peak']
@@ -137,6 +151,18 @@ class Writer(frontend.Writer):
         # statistics() is the last step in process_channel, so if we get this
         # far, the channel is fully processed.
         self.telstate.set_indexed('status', sub_key, 'complete')
+
+    def finalize(self):
+        telstate = self.telstate.wrapped   # TelstateToStr doesn't implement __setitem__
+        profiler = profiling.Profiler.get_profiler()
+
+        flamegraph = io.StringIO()
+        profiler.write_flamegraph(flamegraph)
+        telstate['flamegraph'] = flamegraph.getvalue()
+
+        device_flamegraph = io.StringIO()
+        profiler.write_device_flamegraph(device_flamegraph)
+        telstate['device_flamegraph'] = device_flamegraph.getvalue()
 
 
 def get_parser():
@@ -171,6 +197,7 @@ def main():
         context = accel.create_some_context(interactive=False, device_filter=lambda x: x.is_cuda)
         queue = context.create_command_queue()
         frontend.run(args, context, queue, dataset, writer)
+        writer.finalize()
 
 
 if __name__ == '__main__':
