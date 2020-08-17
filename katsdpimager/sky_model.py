@@ -129,7 +129,9 @@ def catalogue_from_telstate(telstate, capture_block_id, continuum, target):
                 view = telstate.view(stream_name, exclusive=True)
                 view = view.view(telstate.join(capture_block_id, stream_name))
                 stream_type = view.get('stream_type', 'unknown')
-                if stream_type != 'sdp.continuum_image':
+                # The correct value is 'sdp.continuum_image', but due to a bug
+                # there are observations in the wild with just 'continuum_image'.
+                if stream_type not in {'sdp.continuum_image', 'continuum_image'}:
                     continue
                 if continuum is not None:
                     raise NoSkyModelError(
