@@ -74,7 +74,6 @@ class Writer(frontend.Writer):
         metadata = {
             **self.common_metadata,
             'FITSImageFilename': [base_filename],
-            'PNGImageFileName': [base_filename + '.png'],
             'PNGThumbNailFileName': [base_filename + '.tnail.png'],
             'CenterFrequency': freq,
             'MinFreq': freq - 0.5 * channel_width,
@@ -86,16 +85,6 @@ class Writer(frontend.Writer):
             with progress.step('Write {}'.format(description)):
                 katsdpimager.io.write_fits_image(dataset, image, image_parameters, filename,
                                                  channel, beam, bunit, self.extra_fits_headers)
-            with progress.step('Write PNG'):
-                with profile(
-                    'katsdpimageutils.render.write_image',
-                    labels={'filename': filename + '.png'}
-                ):
-                    katsdpimageutils.render.write_image(
-                        filename, filename + '.png',
-                        width=6500, height=5000,
-                        dpi=10 * katsdpimageutils.render.DEFAULT_DPI
-                    )
             with progress.step('Write thumbnail'):
                 with profile(
                     'katsdpimageutils.render.write_image',
