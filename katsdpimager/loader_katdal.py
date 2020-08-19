@@ -23,6 +23,7 @@ from astropy.time import Time
 import astropy.io.fits
 
 from . import polarization, loader_core, sky_model, arguments
+from .profiling import profile, profile_function, profile_generator
 
 
 _logger = logging.getLogger(__name__)
@@ -94,6 +95,7 @@ class LoaderKatdal(loader_core.LoaderBase):
                     raise ValueError('Target index {} is out of range'.format(idx))
                 return idx
 
+    @profile_function()
     def __init__(self, filename, options):
         super().__init__(filename, options)
         parser = argparse.ArgumentParser(
@@ -122,16 +124,18 @@ class LoaderKatdal(loader_core.LoaderBase):
         if args.access_key is not None:
             open_args['credentials'] = (args.access_key, args.secret_key)
 
-        self._file = katdal.open(filename, **open_args)
+        with profile('katdal.open'):
+            self._file = katdal.open(filename, **open_args)
         if args.subarray < 0 or args.subarray >= len(self._file.subarrays):
             raise ValueError('Subarray {} is out of range'.format(args.subarray))
         if args.spw < 0 or args.spw >= len(self._file.spectral_windows):
             raise ValueError('Spectral window {} is out of range'.format(args.spw))
         self._spectral_window = self._file.spectral_windows[args.spw]
         target_idx = self._find_target(args.target)
-        self._file.select(subarray=args.subarray, spw=args.spw,
-                          targets=[target_idx], scans=['track'],
-                          corrprods='cross')
+        with profile('katdal.DataSet.select'):
+            self._file.select(subarray=args.subarray, spw=args.spw,
+                              targets=[target_idx], scans=['track'],
+                              corrprods='cross')
         self._target = self._file.catalogue.targets[target_idx]
         _logger.info('Selected target %r', self._target.description)
         if self._target.body_type != 'radec':
@@ -261,6 +265,7 @@ class LoaderKatdal(loader_core.LoaderBase):
     def channel_enabled(self, channel):
         return self._channel_mask is None or not self._channel_mask[channel]
 
+    @profile_generator(labels=('start_channel', 'stop_channel'))
     def data_iter(self, start_channel, stop_channel, max_chunk_vis=None):
         self._file.select(reset='F')
         n_file_times, n_file_chans, n_file_cp = self._file.shape
@@ -273,7 +278,8 @@ class LoaderKatdal(loader_core.LoaderBase):
         else:
             load_times = max(1, max_chunk_vis // (n_chans * n_file_cp))
         # timestamps is a property, so ensure it's only evaluated once
-        timestamps = self._file.timestamps
+        with profile('katdal.DataSet.timestamps'):
+            timestamps = self._file.timestamps
         baseline_idx = np.arange(len(self._baselines)).astype(np.int32)
         start = 0
         # Determine chunking scheme
@@ -297,13 +303,15 @@ class LoaderKatdal(loader_core.LoaderBase):
             _logger.debug('Loading dumps %d:%d', start, end)
             select = np.s_[start:end, :, :]
             fix = np.s_[:, :, self._corr_product_permutation]
-            if isinstance(self._file.vis, DaskLazyIndexer):
-                vis, weights, flags = DaskLazyIndexer.get(
-                    [self._file.vis, self._file.weights, self._file.flags], select)
-            else:
-                vis = self._file.vis[select]
-                weights = self._file.weights[select]
-                flags = self._file.flags[select]
+            with profile('katdal.lazy_indexer.DaskLazyIndexer.get',
+                         {'start_dump': start, 'end_dump': end}):
+                if isinstance(self._file.vis, DaskLazyIndexer):
+                    vis, weights, flags = DaskLazyIndexer.get(
+                        [self._file.vis, self._file.weights, self._file.flags], select)
+                else:
+                    vis = self._file.vis[select]
+                    weights = self._file.weights[select]
+                    flags = self._file.flags[select]
             _logger.debug('Dumps %d:%d loaded', start, end)
             vis = vis[fix]
             weights = weights[fix]
@@ -312,19 +320,21 @@ class LoaderKatdal(loader_core.LoaderBase):
             if self._missing_corr_products:
                 flags[:, :, self._missing_corr_products] = True
             if self._channel_mask is not None:
-                flags |= self._channel_mask[np.newaxis, start_channel : stop_channel, np.newaxis]
+                flags |= self._channel_mask[np.newaxis, start_channel:stop_channel, np.newaxis]
             # Apply flags to weights
             weights *= np.logical_not(flags)
 
             # Compute per-antenna UVW coordinates and parallactic angles.
-            antenna_uvw = units.Quantity(self._target.uvw(
-                self._file.ants, timestamp=timestamps[start:end], antenna=self._ref_ant))
+            with profile('katpoint.Target.uvw'):
+                antenna_uvw = units.Quantity(self._target.uvw(
+                    self._file.ants, timestamp=timestamps[start:end], antenna=self._ref_ant))
             antenna_uvw = antenna_uvw.T   # Switch from (uvw, time, ant) to (ant, time, uvw)
             # parangle converts to degrees before returning, so we have to
             # convert back to radians.
-            antenna_pa = units.Quantity(
-                self._file.parangle[start:end, :].transpose(),
-                unit=units.deg, dtype=np.float32, copy=False).to(units.rad)
+            with profile('katdal.DataSet.parangle'):
+                antenna_pa = units.Quantity(
+                    self._file.parangle[start:end, :].transpose(),
+                    unit=units.deg, dtype=np.float32, copy=False).to(units.rad)
             # We've mapped H to x and V to y, so we need the angle from x to H
             # rather than from x to V.
             antenna_pa -= math.pi / 2 * units.rad

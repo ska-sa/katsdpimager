@@ -35,6 +35,26 @@ except ImportError:
     pybind11_include_dirs = [Missing('pybind11')]
 
 tests_require = ['nose', 'scipy', 'fakeredis[lua]']
+install_requires = [
+    'ansicolors',
+    'astropy>=1.3',
+    'contextvars; python_version<"3.7"',
+    'h5py',
+    'katsdpsigproc',
+    'katpoint',
+    'numpy>=1.16.0',
+    'progress>=1.5',
+    'pycuda',
+    'scikit-cuda',
+    'scipy'
+]
+
+cffi_modules = []
+if os.path.exists('/usr/local/cuda/include/nvtx3/nvToolsExt.h'):
+    cffi_modules.append('katsdpimager/nvtx_build.py:ffibuilder')
+if cffi_modules:
+    install_requires.append('cffi')
+
 
 root_dir = os.path.dirname(__file__)
 with open(os.path.join(root_dir, 'README.rst')) as f:
@@ -68,11 +88,9 @@ setup(
              "scripts/imager-mkat-report.py"],
     ext_package='katsdpimager',
     ext_modules=extensions,
+    cffi_modules=cffi_modules,
     python_requires='>=3.6',
-    install_requires=[
-        'numpy>=1.16.0', 'scipy', 'katsdpsigproc', 'katpoint', 'astropy>=1.3', 'progress>=1.5',
-        'pycuda', 'scikit-cuda', 'h5py', 'ansicolors'
-    ],
+    install_requires=install_requires,
     tests_require=tests_require,
     extras_require={
         'test': tests_require,

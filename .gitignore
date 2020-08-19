@@ -1,5 +1,6 @@
 /katsdpimager.egg-info
 /katsdpimager/_preprocess*.so
+/katsdpimager/_nvtx*.so
 *.fits
 *.ms
 *.pyc

@@ -10,14 +10,17 @@ import numpy as np
 from astropy import units
 import katsdpsigproc.accel as accel
 
-from . import \
-    loader, loader_core, parameters, polarization, preprocess, clean, weight, sky_model, \
+from . import (
+    loader, loader_core, parameters, polarization, preprocess, clean, weight, sky_model,
     imaging, progress, beam, primary_beam, numba, arguments
+)
+from .profiling import profile_function
 
 
 logger = logging.getLogger(__name__)
 
 
+@profile_function(labels=('start_channel', 'stop_channel'))
 def preprocess_visibilities(dataset, args, start_channel, stop_channel,
                             image_parameters, grid_parameters, polarization_matrices):
     bar = None
@@ -51,6 +54,7 @@ def preprocess_visibilities(dataset, args, start_channel, stop_channel,
     return collector
 
 
+@profile_function()
 def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block, weight_scale):
     imager.clear_weights()
     total = 0
@@ -80,6 +84,7 @@ def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block, wei
     return noise, normalized_noise
 
 
+@profile_function()
 def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block, degrid,
                full_cycle=False, subtract_model=None):
     imager.clear_dirty()
@@ -122,6 +127,7 @@ def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block
             queue.finish()
 
 
+@profile_function()
 def extract_psf(psf, psf_patch):
     """Extract the central region of a PSF.
 
@@ -134,6 +140,7 @@ def extract_psf(psf, psf_patch):
     return psf[..., y0:y1, x0:x1]
 
 
+@profile_function()
 @numba.jit(nopython=True)
 def find_peak(image, pbeam, noise):
     """Heuristically find the peak of the data in the image.
@@ -159,6 +166,7 @@ def find_peak(image, pbeam, noise):
     return peak
 
 
+@profile_function()
 def get_totals(image_parameters, image, restoring_beam):
     """Compute total flux density in each polarization."""
     sums = np.nansum(image, axis=(1, 2), dtype=np.float64)   # Sum separately per polarization
@@ -431,6 +439,7 @@ class Writer:
         """
 
 
+@profile_function(labels={'channel': lambda bound_args: bound_args.arguments['channel_p'].channel})
 def process_channel(dataset, args, start_channel,
                     context, queue, reader, writer, channel_p, array_p, weight_p,
                     subtract_model):
@@ -608,6 +617,7 @@ def process_channel(dataset, args, start_channel,
                       normalized_noise=normalized_noise)
 
 
+@profile_function()
 def run(args, context, queue, dataset, writer):
     # PyCUDA leaks resources that are freed when the corresponding context is
     # not active. We make it active for the rest of the execution to avoid

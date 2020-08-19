@@ -23,7 +23,9 @@ from katsdpsigproc import accel
 import pkg_resources
 
 import katsdpimager.types
-from katsdpimager import numba
+from . import numba
+from .profiling import profile_device
+
 
 #: Use only Stokes I to find peaks
 CLEAN_I = 0
@@ -139,21 +141,22 @@ class PsfPatch(accel.Operation):
             max_y = min(max_y, mid_y + hlimit)
         wg_x = accel.divup(max_x - min_x + 1, self.template.wgsx)
         wg_y = accel.divup(max_y - min_y + 1, self.template.wgsy)
-        self.command_queue.enqueue_kernel(
-            self.kernel,
-            [
-                psf.buffer,
-                np.int32(psf.padded_shape[2]),
-                np.int32(psf.padded_shape[1] * psf.padded_shape[2]),
-                bound.buffer,
-                np.int32(min_x), np.int32(min_y),
-                np.int32(max_x), np.int32(max_y),
-                np.int32(mid_x), np.int32(mid_y),
-                np.float32(threshold)
-            ],
-            global_size=(wg_x * self.template.wgsx, wg_y * self.template.wgsy),
-            local_size=(self.template.wgsx, self.template.wgsy)
-        )
+        with profile_device(self.command_queue, 'psf_patch'):
+            self.command_queue.enqueue_kernel(
+                self.kernel,
+                [
+                    psf.buffer,
+                    np.int32(psf.padded_shape[2]),
+                    np.int32(psf.padded_shape[1] * psf.padded_shape[2]),
+                    bound.buffer,
+                    np.int32(min_x), np.int32(min_y),
+                    np.int32(max_x), np.int32(max_y),
+                    np.int32(mid_x), np.int32(mid_y),
+                    np.float32(threshold)
+                ],
+                global_size=(wg_x * self.template.wgsx, wg_y * self.template.wgsy),
+                local_size=(self.template.wgsx, self.template.wgsy)
+            )
         if isinstance(bound, accel.SVMArray):
             self.command_queue.finish()
         bound.get(self.command_queue, self._bound_host)
@@ -326,21 +329,22 @@ class NoiseEst(accel.Operation):
                 break
             imid = ilow + (ihigh - ilow) // itype(2)
             mid = imid.view(dtype)
-            self.command_queue.enqueue_kernel(
-                self.kernel,
-                [
-                    dirty.buffer,
-                    np.int32(dirty.padded_shape[2]),
-                    np.int32(dirty.padded_shape[1] * dirty.padded_shape[2]),
-                    np.int32(dirty.shape[2] - self.border),
-                    np.int32(dirty.shape[1] - self.border),
-                    np.int32(self.border),
-                    rank.buffer,
-                    mid
-                ],
-                global_size=(self._num_tiles_x * self.template.wgsx,
-                             self._num_tiles_y * self.template.wgsy),
-                local_size=(self.template.wgsx, self.template.wgsy))
+            with profile_device(self.command_queue, 'compute_rank'):
+                self.command_queue.enqueue_kernel(
+                    self.kernel,
+                    [
+                        dirty.buffer,
+                        np.int32(dirty.padded_shape[2]),
+                        np.int32(dirty.padded_shape[1] * dirty.padded_shape[2]),
+                        np.int32(dirty.shape[2] - self.border),
+                        np.int32(dirty.shape[1] - self.border),
+                        np.int32(self.border),
+                        rank.buffer,
+                        mid
+                    ],
+                    global_size=(self._num_tiles_x * self.template.wgsx,
+                                 self._num_tiles_y * self.template.wgsy),
+                    local_size=(self.template.wgsx, self.template.wgsy))
             if isinstance(rank, accel.SVMArray):
                 self.command_queue.finish()
             rank.get(self.command_queue, rank_host)
@@ -461,22 +465,23 @@ class _UpdateTiles(accel.Operation):
         y1 = min(accel.divup(y1 - self.border, self.template.tiley), tile_max.shape[0])
         if x0 < x1 and y0 < y1:
             dirty = self.buffer('dirty')
-            self.command_queue.enqueue_kernel(
-                self.kernel,
-                [
-                    dirty.buffer,
-                    np.int32(dirty.padded_shape[2]),
-                    np.int32(dirty.padded_shape[1] * dirty.padded_shape[2]),
-                    np.int32(dirty.shape[2] - self.border),
-                    np.int32(dirty.shape[1] - self.border),
-                    np.int32(self.border),
-                    tile_max.buffer,
-                    tile_pos.buffer,
-                    np.int32(tile_max.padded_shape[1]),
-                    np.int32(x0), np.int32(y0)
-                ],
-                global_size=((x1 - x0) * self.template.wgsx, (y1 - y0) * self.template.wgsy),
-                local_size=(self.template.wgsx, self.template.wgsy))
+            with profile_device(self.command_queue, 'update_tiles'):
+                self.command_queue.enqueue_kernel(
+                    self.kernel,
+                    [
+                        dirty.buffer,
+                        np.int32(dirty.padded_shape[2]),
+                        np.int32(dirty.padded_shape[1] * dirty.padded_shape[2]),
+                        np.int32(dirty.shape[2] - self.border),
+                        np.int32(dirty.shape[1] - self.border),
+                        np.int32(self.border),
+                        tile_max.buffer,
+                        tile_pos.buffer,
+                        np.int32(tile_max.padded_shape[1]),
+                        np.int32(x0), np.int32(y0)
+                    ],
+                    global_size=((x1 - x0) * self.template.wgsx, (y1 - y0) * self.template.wgsy),
+                    local_size=(self.template.wgsx, self.template.wgsy))
 
 
 class _FindPeakTemplate:
@@ -566,23 +571,24 @@ class _FindPeak(accel.Operation):
         dirty = self.buffer('dirty')
         tile_max = self.buffer('tile_max')
         tile_pos = self.buffer('tile_pos')
-        self.command_queue.enqueue_kernel(
-            self.kernel,
-            [
-                dirty.buffer,
-                np.int32(dirty.padded_shape[2]),
-                np.int32(dirty.padded_shape[1] * dirty.padded_shape[2]),
-                tile_max.buffer,
-                tile_pos.buffer,
-                np.int32(tile_max.padded_shape[1]),
-                np.int32(tile_max.shape[1]), np.int32(tile_max.shape[0]),
-                self.buffer('peak_value').buffer,
-                self.buffer('peak_pos').buffer,
-                self.buffer('peak_pixel').buffer
-            ],
-            global_size=(accel.roundup(tile_max.shape[0], self.template.wgsx),
-                         accel.roundup(tile_max.shape[1], self.template.wgsy)),
-            local_size=(self.template.wgsx, self.template.wgsy))
+        with profile_device(self.command_queue, 'find_peak'):
+            self.command_queue.enqueue_kernel(
+                self.kernel,
+                [
+                    dirty.buffer,
+                    np.int32(dirty.padded_shape[2]),
+                    np.int32(dirty.padded_shape[1] * dirty.padded_shape[2]),
+                    tile_max.buffer,
+                    tile_pos.buffer,
+                    np.int32(tile_max.padded_shape[1]),
+                    np.int32(tile_max.shape[1]), np.int32(tile_max.shape[0]),
+                    self.buffer('peak_value').buffer,
+                    self.buffer('peak_pos').buffer,
+                    self.buffer('peak_pixel').buffer
+                ],
+                global_size=(accel.roundup(tile_max.shape[0], self.template.wgsx),
+                             accel.roundup(tile_max.shape[1], self.template.wgsy)),
+                local_size=(self.template.wgsx, self.template.wgsy))
 
 
 class _SubtractPsfTemplate:
@@ -697,30 +703,31 @@ class _SubtractPsf(accel.Operation):
         psf_y = psf.shape[1] // 2 - psf_patch[1] // 2
         psf_x = psf.shape[2] // 2 - psf_patch[2] // 2
         psf_addr_offset = psf_y * psf.padded_shape[2] + psf_x
-        self.command_queue.enqueue_kernel(
-            self.kernel,
-            [
-                dirty.buffer,
-                model.buffer,
-                np.int32(dirty.padded_shape[2]),
-                np.int32(dirty.padded_shape[1] * dirty.padded_shape[2]),
-                np.int32(dirty.shape[2]),
-                np.int32(dirty.shape[1]),
-                psf.buffer,
-                np.int32(psf.padded_shape[2]),
-                np.int32(psf.padded_shape[1] * psf.padded_shape[2]),
-                np.int32(psf_patch[2]),
-                np.int32(psf_patch[1]),
-                np.int32(psf_addr_offset),
-                self.buffer('peak_pixel').buffer,
-                np.int32(pos[1]), np.int32(pos[0]),
-                np.int32(pos[1] - psf_patch[2] // 2),
-                np.int32(pos[0] - psf_patch[1] // 2),
-                np.float32(self.loop_gain)
-            ],
-            global_size=(accel.roundup(psf_patch[2], self.template.wgsx),
-                         accel.roundup(psf_patch[1], self.template.wgsy)),
-            local_size=(self.template.wgsx, self.template.wgsy))
+        with profile_device(self.command_queue, 'subtract_psf'):
+            self.command_queue.enqueue_kernel(
+                self.kernel,
+                [
+                    dirty.buffer,
+                    model.buffer,
+                    np.int32(dirty.padded_shape[2]),
+                    np.int32(dirty.padded_shape[1] * dirty.padded_shape[2]),
+                    np.int32(dirty.shape[2]),
+                    np.int32(dirty.shape[1]),
+                    psf.buffer,
+                    np.int32(psf.padded_shape[2]),
+                    np.int32(psf.padded_shape[1] * psf.padded_shape[2]),
+                    np.int32(psf_patch[2]),
+                    np.int32(psf_patch[1]),
+                    np.int32(psf_addr_offset),
+                    self.buffer('peak_pixel').buffer,
+                    np.int32(pos[1]), np.int32(pos[0]),
+                    np.int32(pos[1] - psf_patch[2] // 2),
+                    np.int32(pos[0] - psf_patch[1] // 2),
+                    np.float32(self.loop_gain)
+                ],
+                global_size=(accel.roundup(psf_patch[2], self.template.wgsx),
+                             accel.roundup(psf_patch[1], self.template.wgsy)),
+                local_size=(self.template.wgsx, self.template.wgsy))
 
 
 class CleanTemplate:

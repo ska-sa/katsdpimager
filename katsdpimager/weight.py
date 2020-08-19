@@ -51,6 +51,8 @@ import pkg_resources
 import numpy as np
 from katsdpsigproc import accel, fill
 
+from .profiling import profile_device
+
 
 class WeightType(enum.Enum):
     NATURAL = 0
@@ -159,20 +161,21 @@ class GridWeights(accel.Operation):
         half_v = grid.shape[1] // 2
         half_u = grid.shape[2] // 2
         address_bias = half_v * grid.padded_shape[2] + half_u
-        self.command_queue.enqueue_kernel(
-            self._kernel,
-            [
-                grid.buffer,
-                np.int32(grid.padded_shape[2]),
-                np.int32(grid.padded_shape[1] * grid.padded_shape[2]),
-                uv.buffer,
-                weights.buffer,
-                np.int32(address_bias),
-                np.int32(self._num_vis)
-            ],
-            global_size=(accel.roundup(self._num_vis, self.template.wgs),),
-            local_size=(self.template.wgs,)
-        )
+        with profile_device(self.command_queue, 'grid_weights'):
+            self.command_queue.enqueue_kernel(
+                self._kernel,
+                [
+                    grid.buffer,
+                    np.int32(grid.padded_shape[2]),
+                    np.int32(grid.padded_shape[1] * grid.padded_shape[2]),
+                    uv.buffer,
+                    weights.buffer,
+                    np.int32(address_bias),
+                    np.int32(self._num_vis)
+                ],
+                global_size=(accel.roundup(self._num_vis, self.template.wgs),),
+                local_size=(self.template.wgs,)
+            )
 
     def parameters(self):
         return {
@@ -261,22 +264,23 @@ class DensityWeights(accel.Operation):
         grid = self.buffer('grid')
         sums = self.buffer('sums')
         sums.zero(self.command_queue)
-        self.command_queue.enqueue_kernel(
-            self._kernel,
-            [
-                sums.buffer,
-                grid.buffer,
-                np.int32(grid.padded_shape[2]),
-                np.int32(grid.padded_shape[1] * grid.padded_shape[2]),
-                np.int32(grid.shape[2]),
-                np.int32(grid.shape[1]),
-                np.float32(self.a),
-                np.float32(self.b)
-            ],
-            global_size=(accel.roundup(grid.shape[2], self.template.wgs_x),
-                         accel.roundup(grid.shape[1], self.template.wgs_y)),
-            local_size=(self.template.wgs_x, self.template.wgs_y)
-        )
+        with profile_device(self.command_queue, 'density_weights'):
+            self.command_queue.enqueue_kernel(
+                self._kernel,
+                [
+                    sums.buffer,
+                    grid.buffer,
+                    np.int32(grid.padded_shape[2]),
+                    np.int32(grid.padded_shape[1] * grid.padded_shape[2]),
+                    np.int32(grid.shape[2]),
+                    np.int32(grid.shape[1]),
+                    np.float32(self.a),
+                    np.float32(self.b)
+                ],
+                global_size=(accel.roundup(grid.shape[2], self.template.wgs_x),
+                             accel.roundup(grid.shape[1], self.template.wgs_y)),
+                local_size=(self.template.wgs_x, self.template.wgs_y)
+            )
         if isinstance(sums, accel.SVMArray):
             self.command_queue.finish()
         sums.get(self.command_queue, self._sums_host)
@@ -358,19 +362,20 @@ class MeanWeight(accel.Operation):
         grid = self.buffer('grid')
         sums = self.buffer('sums')
         self.command_queue.enqueue_zero_buffer(sums.buffer)
-        self.command_queue.enqueue_kernel(
-            self._kernel,
-            [
-                sums.buffer,
-                grid.buffer,
-                np.int32(grid.padded_shape[-1]),
-                np.int32(grid.shape[2]),
-                np.int32(grid.shape[1])
-            ],
-            global_size=(accel.roundup(grid.shape[2], self.template.wgs_x),
-                         accel.roundup(grid.shape[1], self.template.wgs_y)),
-            local_size=(self.template.wgs_x, self.template.wgs_y)
-        )
+        with profile_device(self.command_queue, 'mean_weight'):
+            self.command_queue.enqueue_kernel(
+                self._kernel,
+                [
+                    sums.buffer,
+                    grid.buffer,
+                    np.int32(grid.padded_shape[-1]),
+                    np.int32(grid.shape[2]),
+                    np.int32(grid.shape[1])
+                ],
+                global_size=(accel.roundup(grid.shape[2], self.template.wgs_x),
+                             accel.roundup(grid.shape[1], self.template.wgs_y)),
+                local_size=(self.template.wgs_x, self.template.wgs_y)
+            )
         if isinstance(sums, accel.SVMArray):
             self.command_queue.finish()
         sums.get(self.command_queue, self._sums_host)

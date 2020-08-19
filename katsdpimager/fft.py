@@ -9,6 +9,7 @@ import skcuda.fft
 from katsdpsigproc import accel
 
 import katsdpimager.types
+from .profiling import profile_device
 
 #: Forward FFT
 FFT_FORWARD = 0
@@ -129,20 +130,21 @@ class Fftshift(accel.Operation):
             items_z = data.shape[0] * int(np.product(data.padded_shape[1:-2]))
         row_stride = data.padded_shape[-1]
         slice_stride = data.padded_shape[-2] * data.padded_shape[-1]
-        self.command_queue.enqueue_kernel(
-            self.kernel,
-            [
-                data.buffer,
-                np.int32(row_stride),
-                np.int32(slice_stride),
-                np.int32(items_x), np.int32(items_y),
-                np.int32(items_y * row_stride)
-            ],
-            global_size=(accel.roundup(items_x, self.template.wgsx),
-                         accel.roundup(items_y, self.template.wgsy),
-                         items_z),
-            local_size=(self.template.wgsx, self.template.wgsy, 1)
-        )
+        with profile_device(self.command_queue, 'fftshift'):
+            self.command_queue.enqueue_kernel(
+                self.kernel,
+                [
+                    data.buffer,
+                    np.int32(row_stride),
+                    np.int32(slice_stride),
+                    np.int32(items_x), np.int32(items_y),
+                    np.int32(items_y * row_stride)
+                ],
+                global_size=(accel.roundup(items_x, self.template.wgsx),
+                             accel.roundup(items_y, self.template.wgsy),
+                             items_z),
+                local_size=(self.template.wgsx, self.template.wgsy, 1)
+            )
 
 
 class FftTemplate:
@@ -261,10 +263,12 @@ class Fft(accel.Operation):
         context = self.template.command_queue.context
         with context:
             if self.mode == FFT_FORWARD:
-                skcuda.fft.fft(_GpudataWrapper(src_buffer), _GpudataWrapper(dest_buffer),
-                               self.template.plan)
+                with profile_device(self.template.command_queue, 'fft'):
+                    skcuda.fft.fft(_GpudataWrapper(src_buffer), _GpudataWrapper(dest_buffer),
+                                   self.template.plan)
             else:
-                skcuda.fft.ifft(_GpudataWrapper(src_buffer), _GpudataWrapper(dest_buffer),
-                                self.template.plan)
+                with profile_device(self.template.command_queue, 'ifft'):
+                    skcuda.fft.ifft(_GpudataWrapper(src_buffer), _GpudataWrapper(dest_buffer),
+                                    self.template.plan)
             if self.template.needs_synchronize_workaround:
                 context._pycuda_context.synchronize()

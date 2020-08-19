@@ -13,6 +13,7 @@ from katsdpsigproc import accel
 
 import katsdpimager.types
 from . import fft
+from .profiling import profile_device
 
 
 class _LayerImageTemplate:
@@ -137,6 +138,7 @@ class _LayerImage(accel.Operation):
         self.slots['image'] = accel.IOSlot(dims, template.real_dtype)
         self.slots['kernel1d'] = accel.IOSlot((shape[-1],), template.real_dtype)
         self.kernel = template.program.get_kernel(kernel_name)
+        self.kernel_name = kernel_name
         self.lm_scale = lm_scale
         self.lm_bias = lm_bias
         self.w = 0
@@ -160,25 +162,26 @@ class _LayerImage(accel.Operation):
         row_stride = image.padded_shape[-1]
         slice_stride = row_stride * image.padded_shape[-2]
         kernel1d = self.buffer('kernel1d')
-        self.command_queue.enqueue_kernel(
-            self.kernel,
-            [
-                image.buffer,
-                layer.buffer,
-                np.int32(self.polarization * slice_stride),
-                np.int32(row_stride),
-                kernel1d.buffer,
-                self.template.real_dtype.type(self.lm_scale),
-                self.template.real_dtype.type(self.lm_bias),
-                np.int32(half_size),
-                np.int32(half_size * row_stride),
-                self.template.real_dtype.type(half_size * self.lm_scale),
-                self.template.real_dtype.type(2 * self.w)
-            ],
-            global_size=(accel.roundup(half_size, self.template.wgs_x),
-                         accel.roundup(half_size, self.template.wgs_y)),
-            local_size=(self.template.wgs_x, self.template.wgs_y)
-        )
+        with profile_device(self.command_queue, self.kernel_name):
+            self.command_queue.enqueue_kernel(
+                self.kernel,
+                [
+                    image.buffer,
+                    layer.buffer,
+                    np.int32(self.polarization * slice_stride),
+                    np.int32(row_stride),
+                    kernel1d.buffer,
+                    self.template.real_dtype.type(self.lm_scale),
+                    self.template.real_dtype.type(self.lm_bias),
+                    np.int32(half_size),
+                    np.int32(half_size * row_stride),
+                    self.template.real_dtype.type(half_size * self.lm_scale),
+                    self.template.real_dtype.type(2 * self.w)
+                ],
+                global_size=(accel.roundup(half_size, self.template.wgs_x),
+                             accel.roundup(half_size, self.template.wgs_y)),
+                local_size=(self.template.wgs_x, self.template.wgs_y)
+            )
 
 
 class LayerToImageTemplate(_LayerImageTemplate):
@@ -350,20 +353,21 @@ class Scale(accel.Operation):
 
     def _run(self):
         data = self.buffer('data')
-        self.command_queue.enqueue_kernel(
-            self.kernel,
-            [
-                data.buffer,
-                np.int32(data.padded_shape[2]),
-                np.int32(data.padded_shape[1] * data.padded_shape[2]),
-                np.int32(data.shape[2]),
-                np.int32(data.shape[1]),
-                self.scale_factor
-            ],
-            global_size=(accel.roundup(data.shape[2], self.template.wgsx),
-                         accel.roundup(data.shape[1], self.template.wgsy)),
-            local_size=(self.template.wgsx, self.template.wgsy)
-        )
+        with profile_device(self.command_queue, 'scale'):
+            self.command_queue.enqueue_kernel(
+                self.kernel,
+                [
+                    data.buffer,
+                    np.int32(data.padded_shape[2]),
+                    np.int32(data.padded_shape[1] * data.padded_shape[2]),
+                    np.int32(data.shape[2]),
+                    np.int32(data.shape[1]),
+                    self.scale_factor
+                ],
+                global_size=(accel.roundup(data.shape[2], self.template.wgsx),
+                             accel.roundup(data.shape[1], self.template.wgsy)),
+                local_size=(self.template.wgsx, self.template.wgsy)
+            )
 
 
 class GridImageTemplate:
