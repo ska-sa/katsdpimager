@@ -182,7 +182,7 @@ class Stopwatch(contextlib.ContextDecorator):
 
     def stop(self) -> None:
         if self._start_time is None:
-            raise RuntimeError(f'Stopwatch {self._frame.name} is already stopped')
+            return
         self._nvtx_range.__exit__(None, None, None)
         stop_time = time.monotonic()
         record = Record(self._frame, self._start_time, stop_time)
@@ -199,8 +199,6 @@ class NullStopwatch(Stopwatch):
         self._start_time = 0.0   # Just for the error checking
 
     def stop(self) -> None:
-        if self._start_time is None:
-            raise RuntimeError(f'Stopwatch {self._frame.name} is already stopped')
         self._start_time = None
 
 
