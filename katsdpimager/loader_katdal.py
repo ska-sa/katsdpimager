@@ -17,6 +17,7 @@ import katdal
 from katdal.lazy_indexer import DaskLazyIndexer
 import katsdpmodels.fetch.requests
 import katsdpmodels.rfi_mask
+import katsdpmodels.band_mask
 import numpy as np
 from astropy import units
 from astropy.time import Time
@@ -187,16 +188,30 @@ class LoaderKatdal(loader_core.LoaderBase):
             corrections = 'none'
         _logger.info('Calibration corrections applied: %s', corrections)
 
-        # Determine RFI mask, if any (TODO: eventually katdal should do some of this)
+        # Determine RFI and band mask, if any. Using the band mask isn't
+        # entirely necessary because those channels will have no un-flagged
+        # data and hence will be skipped anyway, but this causes them to appear
+        # as "masked" rather than "no data" in the MeerKAT pipeline report.
+        # TODO: eventually katdal should do some of this.
         if args.rfi_mask != 'none':
             telstate = self._file.source.telstate
-            base_url = telstate['sdp_model_base_url']
-            rfi_mask_key = telstate.join('model', 'rfi_mask', args.rfi_mask)
-            rel_url = telstate[rfi_mask_key]
-            url = urllib.parse.urljoin(base_url, rel_url)
-            rfi_mask = katsdpmodels.fetch.requests.fetch_model(url, katsdpmodels.rfi_mask.RFIMask)
-            max_length = rfi_mask.max_baseline_length(self._file.channel_freqs * units.Hz)
-            self._channel_mask = max_length > 0
+            with katsdpmodels.fetch.requests.TelescopeStateFetcher(telstate) as fetcher:
+                rfi_mask_key = telstate.join('model', 'rfi_mask', args.rfi_mask)
+                rfi_mask = fetcher.get(rfi_mask_key, katsdpmodels.rfi_mask.RFIMask)
+                # Step vis -> baseline-correlation-products -> antenna-channelised_voltage
+                bcp_stream = telstate['src_streams'][0]
+                acv_stream = telstate.view(bcp_stream, exclusive=True)['src_streams'][0]
+                band_mask_key = telstate.join('model', 'band_mask', args.rfi_mask)
+                telstate_acv = telstate.view(acv_stream)
+                band_mask = fetcher.get(band_mask_key, katsdpmodels.band_mask.BandMask,
+                                        telstate=telstate_acv)
+                channel_freqs = self._file.channel_freqs * units.Hz
+                max_length = rfi_mask.max_baseline_length(channel_freqs)
+                spw = katsdpmodels.band_mask.SpectralWindow(
+                    telstate_acv['bandwidth'] * units.Hz,
+                    telstate_acv['center_freq'] * units.Hz
+                )
+                self._channel_mask = (max_length > 0) | band_mask.is_masked(spw, channel_freqs)
         else:
             self._channel_mask = None
 
