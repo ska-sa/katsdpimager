@@ -169,13 +169,13 @@ Input selection options
      calibration solutions. Refer to the katdal documentation for more
      information.
    rfi-mask=none | fixed | config
-     Skip imaging channels that are known *a priori* to be affected by RFI. The
-     default is ``none``. The other values require a sufficiently recent
-     observation, as well as internet access to retrieve the model. The value
-     ``fixed`` uses a mask that is fixed at the time the observation was made
-     and which will never change, while ``config`` uses a model that is
-     appropriate for the time of the observation but may be refined over
-     time.
+     Skip imaging channels that are known *a priori* to be affected by RFI or
+     weak bandpass response. The default is ``none``. The other values require
+     a sufficiently recent observation, as well as internet access to retrieve
+     the model. The value ``fixed`` uses a mask that is fixed at the time the
+     observation was made and which will never change, while ``config`` uses a
+     model that is appropriate for the time of the observation but may be
+     refined over time.
 
    To provide multiple key-value pairs, specify :option:`-i` multiple times.
 
