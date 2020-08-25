@@ -114,7 +114,7 @@ class LoaderKatdal(loader_core.LoaderBase):
                             help='Comma-separated calibration solutions to pre-apply [%(default)s]')
         parser.add_argument('--rfi-mask', type=str, default='none',
                             choices=('none', 'fixed', 'config'),
-                            help='Use RFI mask from the observation to skip channels')
+                            help='Use RFI and band mask from the observation to skip channels')
         parser.add_argument('--access-key', type=str, help='S3 access key')
         parser.add_argument('--secret-key', type=str, help='S3 secret key')
         args = parser.parse_args(options, namespace=arguments.SmartNamespace())
