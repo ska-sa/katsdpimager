@@ -440,6 +440,8 @@ class Writer:
           Number of major cycles performed.
         minor
           Number of minor cycles (CLEAN components) performed.
+        psf_patch_size
+          Number of a pixels in the PSF patch, as a tuple (x, y).
         """
 
 
@@ -623,7 +625,8 @@ def process_channel(dataset, args, start_channel,
                       major=major, minor=minor,
                       peak=peak, totals=totals, noise=noise,
                       weights_noise=weights_noise,
-                      normalized_noise=normalized_noise)
+                      normalized_noise=normalized_noise,
+                      psf_patch_size=(psf_patch[2], psf_patch[1]))
 
 
 @profile_function()
