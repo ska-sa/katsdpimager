@@ -133,10 +133,10 @@ class Writer(frontend.Writer):
             self._set_statistic('peak', sub_key, peak)
         for pol, total in kwargs['totals'].items():
             self._set_statistic('total', sub_key + (pol,), total)
-        self._set_statistic('noise', sub_key, kwargs['noise'])
         if kwargs.get('weights_noise') is not None:
             self._set_statistic('weights_noise', sub_key, kwargs['weights_noise'])
-        self._set_statistic('normalized_noise', sub_key, kwargs['normalized_noise'])
+        for key in ['noise', 'normalized_noise', 'major', 'minor']:
+            self._set_statistic(key, sub_key, kwargs[key])
         # statistics() is the last step in process_channel, so if we get this
         # far, the channel is fully processed.
         self.telstate.set_indexed('status', sub_key, 'complete')

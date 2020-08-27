@@ -436,6 +436,10 @@ class Writer:
         totals
           Total non-NaN flux density in each Stokes image, as a dictionary
           keyed by string name of the Stokes parameter.
+        major
+          Number of major cycles performed.
+        minor
+          Number of minor cycles (CLEAN components) performed.
         """
 
 
@@ -514,6 +518,8 @@ def process_channel(dataset, args, start_channel,
     # Imaging
     if subtract_model:
         imager.set_sky_model(subtract_model, dataset.phase_centre())
+    major = 0
+    minor = 0
     for i in range(args.major):
         logger.info("Starting major cycle %d/%d", i + 1, args.major)
         make_dirty(queue, reader, rel_channel,
@@ -525,6 +531,7 @@ def process_channel(dataset, args, start_channel,
             writer.write_fits_grid('grid', 'grid', not args.host, grid_data, image_p, channel)
             writer.write_fits_image('dirty', 'dirty image', dataset, dirty, image_p,
                                     channel, restoring_beam)
+        major += 1
 
         # Deconvolution
         noise = imager.noise_est()
@@ -545,6 +552,7 @@ def process_channel(dataset, args, start_channel,
         with progress.make_progressbar('CLEAN', max=clean_p.minor - 1) as bar:
             for j in bar.iter(range(clean_p.minor - 1)):
                 value = imager.clean_cycle(psf_patch, threshold_metric)
+                minor += 1
                 if value is None:
                     break
         if i == args.major - 1:
@@ -612,6 +620,7 @@ def process_channel(dataset, args, start_channel,
     peak = find_peak(model, pbeam, noise)
     totals = get_totals(image_p, model, restoring_beam)
     writer.statistics(dataset, image_p, channel,
+                      major=major, minor=minor,
                       peak=peak, totals=totals, noise=noise,
                       weights_noise=weights_noise,
                       normalized_noise=normalized_noise)
