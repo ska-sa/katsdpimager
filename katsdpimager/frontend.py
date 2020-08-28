@@ -300,7 +300,7 @@ def add_options(parser):
     group.add_argument('--pixels', type=int,
                        help='Number of pixels in image [computed from array]')
     group.add_argument('--stokes', type=polarization.parse_stokes,
-                       default=polarization.parse_stokes('I'),
+                       default='I',
                        help='Stokes parameters to image e.g. IQUV for full-Stokes [%(default)s]')
     group.add_argument('--precision', choices=['single', 'double'], default='single',
                        help='Internal floating-point precision [%(default)s]')
