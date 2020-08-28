@@ -442,6 +442,8 @@ class Writer:
           Number of minor cycles (CLEAN components) performed.
         psf_patch_size
           Number of a pixels in the PSF patch, as a tuple (x, y).
+        compressed_vis
+          Number of compressed visibilities.
         """
 
 
@@ -621,12 +623,15 @@ def process_channel(dataset, args, start_channel,
                             channel, restoring_beam)
     peak = find_peak(model, pbeam, noise)
     totals = get_totals(image_p, model, restoring_beam)
+    compressed_vis = sum(reader.len(rel_channel, w_slice)
+                         for w_slice in range(reader.num_w_slices(rel_channel)))
     writer.statistics(dataset, image_p, channel,
                       major=major, minor=minor,
                       peak=peak, totals=totals, noise=noise,
                       weights_noise=weights_noise,
                       normalized_noise=normalized_noise,
-                      psf_patch_size=(psf_patch[2], psf_patch[1]))
+                      psf_patch_size=(psf_patch[2], psf_patch[1]),
+                      compressed_vis=compressed_vis)
 
 
 @profile_function()

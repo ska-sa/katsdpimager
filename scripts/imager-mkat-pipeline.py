@@ -135,7 +135,8 @@ class Writer(frontend.Writer):
             self._set_statistic('total', sub_key + (pol,), total)
         if kwargs.get('weights_noise') is not None:
             self._set_statistic('weights_noise', sub_key, kwargs['weights_noise'])
-        for key in ['noise', 'normalized_noise', 'major', 'minor', 'psf_patch_size']:
+        for key in ['noise', 'normalized_noise', 'major', 'minor', 'psf_patch_size',
+                    'compressed_vis']:
             self._set_statistic(key, sub_key, kwargs[key])
         # statistics() is the last step in process_channel, so if we get this
         # far, the channel is fully processed.
