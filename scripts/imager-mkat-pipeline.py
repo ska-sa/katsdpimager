@@ -142,17 +142,17 @@ class Writer(frontend.Writer):
         # far, the channel is fully processed.
         self.telstate.set_indexed('status', sub_key, 'complete')
 
-    def finalize(self):
-        telstate = self.telstate.wrapped   # TelstateToStr doesn't implement __setitem__
+    def finalize(self, dataset, start_channel, stop_channel):
+        sub_key = (dataset.raw_target.description, start_channel, stop_channel)
         profiler = profiling.Profiler.get_profiler()
 
         flamegraph = io.StringIO()
         profiler.write_flamegraph(flamegraph)
-        telstate['flamegraph'] = flamegraph.getvalue()
+        self._set_statistic('flamegraph', sub_key, flamegraph.getvalue())
 
         device_flamegraph = io.StringIO()
         profiler.write_device_flamegraph(device_flamegraph)
-        telstate['device_flamegraph'] = device_flamegraph.getvalue()
+        self._set_statistic('device_flamegraph', sub_key, device_flamegraph.getvalue())
 
 
 def get_parser():
@@ -187,7 +187,9 @@ def main():
         context = accel.create_some_context(interactive=False, device_filter=lambda x: x.is_cuda)
         queue = context.create_command_queue()
         frontend.run(args, context, queue, dataset, writer)
-        writer.finalize()
+        # frontend.run modifies args.stop_channel in place, so even if it
+        # wasn't specified by the user it will now be valid.
+        writer.finalize(dataset, args.start_channel, args.stop_channel)
 
 
 if __name__ == '__main__':
