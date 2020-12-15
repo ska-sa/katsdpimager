@@ -31,7 +31,7 @@ catchError {
                 sh 'pip check'
                 dir(testdir) {
                     sh './images_report.py --start-channel=2 --stop-channel=4 simple.ms report'
-                    sh 'cp simple.lsm.txt makems.cfg batch.tdlconf report/'
+                    sh 'cp meerkat_antennas.txt lsm.txt simulate.py report/'
                 }
             }
             publishHTML(target: [reportName: 'Test images',
