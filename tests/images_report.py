@@ -232,7 +232,7 @@ def main():
     katsdpimager_common = [
         'imager.py',
         '--stokes=${stokes}',
-        '--input-option', 'data=CORRECTED_DATA',
+        '--input-option', 'data=DATA',
         '--eps-w=0.001', '--major=5',
         '--start-channel=${channels[0]}',
         '--stop-channel=${channels[-1] + 1}',
@@ -244,7 +244,7 @@ def main():
         'chanstart=${channels[0]}', 'nchan=${len(channels)}',
         'img_chanstart=${channels[0]}', 'img_nchan=${len(channels)}',
         'cellsize={}arcsec'.format(pixel_size), 'wprojplanes=128', 'threshold=0.01Jy',
-        'weight=natural', 'stokes=${stokes}', 'data=CORRECTED_DATA']
+        'weight=natural', 'stokes=${stokes}', 'data=DATA']
     images = [
         Image('WSClean', 'wsclean',
               'wsclean-{rel_channel:04}-{stokes}-image.fits',
