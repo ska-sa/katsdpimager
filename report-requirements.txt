@@ -21,3 +21,4 @@ reproject==0.7.1          # via aplpy
 scikit-image==0.18.0      # via aplpy
 shapely==1.7.1            # via aplpy
 six                       # via cycler, python-dateutil
+tifffile==2020.7.24       # via scikit-image
