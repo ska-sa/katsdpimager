@@ -19,7 +19,7 @@ catchError {
              * katpoint that is incompatible with katsdpimager. So put it
              * in a separate venv.
              */
-            katsdp.virtualenv('venv-simulate', create=true) {
+            katsdp.virtualenv('venv-simulate', true) {
                 sh('pip install -r git/simulation-requirements.txt')
                 dir(testdir) {
                     sh './simulate.py'
