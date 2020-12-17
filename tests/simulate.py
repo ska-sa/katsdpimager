@@ -39,7 +39,7 @@ import rascil.processing_components         # noqa: E402
 freqs = 856e6 + 214e6 * np.arange(5)
 start_time = Time('2014-01-01T15:00:00.0', format='isot', scale='utc')
 time_step = 4.0 * u.s
-times = start_time + time_step * (np.arange(36) + 0.5)
+times = start_time + time_step * (np.arange(3600) + 0.5)
 phase_centre = SkyCoord(ra='3h30m00s', dec='-35d00m00s', frame='icrs')
 
 lsm = astropy.io.ascii.read('lsm.txt')
