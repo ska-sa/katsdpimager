@@ -5,7 +5,7 @@ katsdpimager is a GPU-accelerated spectral line imager for radio astronomy.
 Installation
 ============
 
-Only Python 3.5+ is supported. You will also need an NVIDIA GPU with the
+Only Python 3.6+ is supported. You will also need an NVIDIA GPU with the
 CUDA toolkit and drivers. At least version 6.0 is required, but testing is only
 done with 10.0 and later (but see :ref:`cpu`).
 
