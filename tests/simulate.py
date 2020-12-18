@@ -36,7 +36,7 @@ import rascil.data_models                   # noqa: E402
 import rascil.processing_components         # noqa: E402
 
 
-freqs = 856e6 + 214e6 * np.arange(5)
+freqs = 856e6 + 214e6 * (np.arange(4) + 0.5)
 start_time = Time('2014-01-01T15:00:00.0', format='isot', scale='utc')
 time_step = 4.0 * u.s
 times = start_time + time_step * (np.arange(3600) + 0.5)
