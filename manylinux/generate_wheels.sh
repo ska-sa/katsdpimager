@@ -3,7 +3,7 @@ set -e
 
 cd /tmp/katsdpimager
 mkdir -p /output
-for d in /opt/python/cp{36,37,38}*; do
+for d in /opt/python/cp{36,37,38,39}*; do
     git clean -xdf
     # We know the compiler supports C++17, and using it avoids the need for Boost
     KATSDPIMAGER_STD_CXX=c++17 $d/bin/pip wheel --no-deps .
