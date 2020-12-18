@@ -216,7 +216,7 @@ class LoaderBase(ABC):
 
         This is only called after iterating over the data with
         :meth:`data_iter`, so it is possible for :meth:`data_iter` to compute
-        data that will be used here. However, note that when :opt:`--vis-limit`
+        data that will be used here. However, note that when :option:`--vis-limit`
         is specified the data iterator will be closed early.
 
         Returns

@@ -250,7 +250,7 @@ Imaging control options
 
    In the final image, pixels corresponding to points in the primary beam with
    less than this amount of power are discarded when using
-   :opt:`--primary-beam`. This avoids polluting the image with high levels of
+   :option:`--primary-beam`. This avoids polluting the image with high levels of
    noise from the null of the primary beam. Note that this only affects the
    output; sufficiently bright sources in the null will still be cleaned.
 

@@ -9,7 +9,7 @@ Changelog
   channels that the observation indicates are known to be affected by RFI.
 - Workaround for a small number of MeerKAT observations that had the
   incorrect stream type in the katdal data set.
-- Fix help text for :opt:`--stokes` parameter.
+- Fix help text for :option:`--stokes` parameter.
 - There are a number of changes that are only visible when run as part of the
   MeerKAT imaging pipeline, and not when used as a standalone imager:
 
