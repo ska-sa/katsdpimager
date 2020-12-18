@@ -1,2 +1,2 @@
 [build-system]
-requires = ["setuptools", "wheel", "pkgconfig==1.5.1", "katversion==0.9", "pybind11==2.5.0", "cffi==1.14.1"]
+requires = ["setuptools", "wheel", "pkgconfig==1.5.1", "katversion==0.9", "pybind11==2.6.1", "cffi==1.14.1"]
