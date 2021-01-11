@@ -206,12 +206,15 @@ class LoaderKatdal(loader_core.LoaderBase):
                 band_mask = fetcher.get(band_mask_key, katsdpmodels.band_mask.BandMask,
                                         telstate=telstate_acv)
                 channel_freqs = self._file.channel_freqs * units.Hz
-                max_length = rfi_mask.max_baseline_length(channel_freqs)
                 spw = katsdpmodels.band_mask.SpectralWindow(
                     telstate_acv['bandwidth'] * units.Hz,
                     telstate_acv['center_freq'] * units.Hz
                 )
-                self._channel_mask = (max_length > 0) | band_mask.is_masked(spw, channel_freqs)
+                channel_width = spw.bandwidth / telstate_acv['n_chans']
+                max_length = rfi_mask.max_baseline_length(channel_freqs, channel_width)
+                self._channel_mask = (
+                    (max_length > 0) | band_mask.is_masked(spw, channel_freqs, channel_width)
+                )
         else:
             self._channel_mask = None
 
