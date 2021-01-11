@@ -1,6 +1,24 @@
 Changelog
 =========
 
+.. rubric:: 1.4
+
+- Fix estimation of image noise (estimates were about 2.7× too high).
+- Add command-line arguments as HISTORY keywords in the output FITS files.
+- New command-line option ``-i rfi-mask`` for katdal data sets, to skip
+  channels that the observation indicates are known to be affected by RFI.
+- Workaround for a small number of MeerKAT observations that had the
+  incorrect stream type in the katdal data set.
+- Fix help text for :option:`--stokes` parameter.
+- There are a number of changes that are only visible when run as part of the
+  MeerKAT imaging pipeline, and not when used as a standalone imager:
+
+  - Various metrics are stored in the telescope state, and can be extracted to
+    generate a report.
+  - Profiling information can be stored in the telescope state.
+  - If the imager crashes after processing a subset of channels, they will be
+    skipped the next time.
+
 .. rubric:: 1.3
 
 - Add support for primary beam correction (MeerKAT only).

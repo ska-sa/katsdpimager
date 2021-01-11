@@ -5,7 +5,7 @@ katsdpimager is a GPU-accelerated spectral line imager for radio astronomy.
 Installation
 ============
 
-Only Python 3.5+ is supported. You will also need an NVIDIA GPU with the
+Only Python 3.6+ is supported. You will also need an NVIDIA GPU with the
 CUDA toolkit and drivers. At least version 6.0 is required, but testing is only
 done with 10.0 and later (but see :ref:`cpu`).
 
@@ -250,7 +250,7 @@ Imaging control options
 
    In the final image, pixels corresponding to points in the primary beam with
    less than this amount of power are discarded when using
-   :opt:`--primary-beam`. This avoids polluting the image with high levels of
+   :option:`--primary-beam`. This avoids polluting the image with high levels of
    noise from the null of the primary beam. Note that this only affects the
    output; sufficiently bright sources in the null will still be cleaned.
 
