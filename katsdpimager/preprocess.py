@@ -354,18 +354,21 @@ class VisibilityReaderHDF5(VisibilityReader):
         buf3d = np.rec.recarray((1, 1, block_size), self._dataset.dtype)
         buf = buf3d[0, 0, :]
         N = self.len(channel, w_slice)
+        # NB: the output slice expressions need to be 0 : 1 rather than just :,
+        # due to a bug in h5py 3.0 and 3.1 (possibly
+        # https://github.com/h5py/h5py/issues/1773).
         for start in range(0, N - block_size + 1, block_size):
             self._dataset.read_direct(
                 buf3d,
                 np.s_[channel : channel+1, w_slice : w_slice+1, start : start+block_size],
-                np.s_[:, :, 0 : block_size])
+                np.s_[0 : 1, 0 : 1, 0 : block_size])
             yield buf
         last = N % block_size
         if last > 0:
             self._dataset.read_direct(
                 buf3d,
                 np.s_[channel : channel+1, w_slice : w_slice+1, N - last : N],
-                np.s_[:, :, 0 : last])
+                np.s_[0 : 1, 0 : 1, 0 : last])
             yield buf[:last]
 
     @property
