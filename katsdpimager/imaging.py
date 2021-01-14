@@ -5,7 +5,7 @@ import numpy as np
 from katsdpsigproc import accel
 
 from . import grid, predict, weight, image, clean
-from .profiling import profile_function
+from .profiling import profile_function, profile_device
 
 
 class ImagingTemplate:
@@ -178,17 +178,20 @@ class Imaging(accel.OperationSequence):
     @profile_function()
     def clear_grid(self):
         self.ensure_all_bound()
-        self.buffer('grid').zero(self.command_queue)
+        with profile_device(self.command_queue, 'clear_grid'):
+            self.buffer('grid').zero(self.command_queue)
 
     @profile_function()
     def clear_dirty(self):
         self.ensure_all_bound()
-        self.buffer('dirty').zero(self.command_queue)
+        with profile_device(self.command_queue, 'clear_dirty'):
+            self.buffer('dirty').zero(self.command_queue)
 
     @profile_function()
     def clear_model(self):
         self.ensure_all_bound()
-        self.buffer('model').zero(self.command_queue)
+        with profile_device(self.command_queue, 'clear_model'):
+            self.buffer('model').zero(self.command_queue)
 
     @profile_function()
     def set_coordinates(self, *args, **kwargs):
