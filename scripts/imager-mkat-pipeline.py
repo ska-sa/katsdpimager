@@ -18,6 +18,7 @@ import katdal
 from katsdpsigproc import accel
 import katsdpimageutils.render
 import astropy.io.fits as fits
+import astropy.units as u
 
 from katsdpimager import frontend, loader, progress, metadata, arguments, profiling
 from katsdpimager.profiling import profile, profile_function
@@ -126,7 +127,7 @@ class Writer(frontend.Writer):
             logger.warning("%s", exc)
 
     @profile_function()
-    def statistics(self, dataset, image_parameters, channel, **kwargs):
+    def statistics(self, dataset, channel, **kwargs):
         sub_key = (dataset.raw_target.description, channel)
         peak = kwargs['peak']
         if np.isfinite(peak):
@@ -138,6 +139,17 @@ class Writer(frontend.Writer):
         for key in ['noise', 'normalized_noise', 'major', 'minor', 'psf_patch_size',
                     'compressed_vis']:
             self._set_statistic(key, sub_key, kwargs[key])
+
+        image_p = kwargs['image_parameters']
+        self._set_statistic('pixel_size', sub_key, float(image_p.pixel_size))
+        self._set_statistic('pixels', sub_key, image_p.pixels)
+        self._set_statistic('cell_size', sub_key, image_p.cell_size.to_value(u.m))
+
+        grid_p = kwargs['grid_parameters']
+        for key in ['image_oversample', 'w_slices', 'w_planes', 'kernel_width']:
+            self._set_statistic(key, sub_key, getattr(grid_p, key))
+        self._set_statistic('grid_oversample', sub_key, grid_p.oversample)
+
         # statistics() is the last step in process_channel, so if we get this
         # far, the channel is fully processed.
         self.telstate.set_indexed('status', sub_key, 'complete')
