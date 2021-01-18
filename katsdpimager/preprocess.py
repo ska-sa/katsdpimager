@@ -32,7 +32,8 @@ import h5py
 import numpy as np
 from astropy import units
 
-from katsdpimager import _preprocess
+from . import _preprocess
+from .profiling import profile_generator
 
 
 logger = logging.getLogger(__name__)
@@ -348,6 +349,7 @@ class VisibilityReaderHDF5(VisibilityReader):
     def len(self, channel, w_slice):
         return self._length[channel, w_slice]
 
+    @profile_generator(labels=['channel', 'w_slice'])
     def iter_slice(self, channel, w_slice, block_size=None):
         if block_size is None:
             block_size = self._dataset.chunks[2]
@@ -389,6 +391,7 @@ class VisibilityReaderMem(VisibilityReader):
         super().__init__(collector)
         self.datasets = collector.datasets
 
+    @profile_generator(labels=['channel', 'w_slice'])
     def _iter_slice_blocked(self, channel, w_slice, block_size):
         dataset = self.datasets[channel][w_slice]
         if not dataset:
