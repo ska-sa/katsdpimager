@@ -205,14 +205,19 @@ class TestProfiler:
         Profiler.set_profiler(self.profiler)
         result = []
         for item in slow_range(3):
-            monotonic.return_value += 2.0
-            result.append(item)
+            with profile('other_work'):
+                monotonic.return_value += 2.0
+                result.append(item)
 
         assert_equal(result, [0, 1, 2])
         frame = Frame('slow_range', {'reps': 3})
+        frame2 = Frame('other_work')
         assert_equal(self.profiler.records, [
             Record(frame, 0.0, 1.0),
+            Record(frame2, 1.0, 3.0),
             Record(frame, 3.0, 4.0),
+            Record(frame2, 4.0, 6.0),
             Record(frame, 6.0, 7.0),
+            Record(frame2, 7.0, 9.0),
             Record(frame, 9.0, 9.5)
         ])
