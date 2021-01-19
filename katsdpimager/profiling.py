@@ -3,7 +3,7 @@
 import time
 import collections.abc
 import contextlib
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 import csv
 import functools
 import inspect
@@ -163,6 +163,7 @@ class Stopwatch(contextlib.ContextDecorator):
         self._profiler = profiler
         self._frame = frame
         self._start_time: Optional[float] = None
+        self._token: Optional[Token] = None
         self._nvtx_ctx = None
 
     def __enter__(self) -> 'Stopwatch':
@@ -179,10 +180,14 @@ class Stopwatch(contextlib.ContextDecorator):
         self._start_time = time.monotonic()
         self._nvtx_range = nvtx.thread_range(self._frame._name_handle, domain=_domain)
         self._nvtx_range.__enter__()
+        self._token = _current_frame.set(self._frame)
 
     def stop(self) -> None:
         if self._start_time is None:
             return
+        assert self._token is not None
+        _current_frame.reset(self._token)
+        self._token = None
         self._nvtx_range.__exit__(None, None, None)
         stop_time = time.monotonic()
         record = Record(self._frame, self._start_time, stop_time)
@@ -214,12 +219,8 @@ class Profiler:
                 labels: Mapping[str, Any] = {}) -> Generator[Stopwatch, None, None]:
         """Context manager that runs code under a :class:`Stopwatch` with a new Frame."""
         frame = Frame(name, labels, _current_frame.get())
-        token = _current_frame.set(frame)
-        try:
-            with Stopwatch(self, frame) as stopwatch:
-                yield stopwatch
-        finally:
-            _current_frame.reset(token)
+        with Stopwatch(self, frame) as stopwatch:
+            yield stopwatch
 
     @contextlib.contextmanager
     def profile_device(self, queue: katsdpsigproc.abc.AbstractCommandQueue,
