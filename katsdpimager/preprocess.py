@@ -235,7 +235,6 @@ class VisibilityCollectorHDF5(VisibilityCollector):
             "vis", (self.num_channels, max_w_slices, 0),
             maxshape=(self.num_channels, max_w_slices, None),
             dtype=self.store_dtype,
-            compression='gzip',
             chunks=(1, 1, chunk_elements))
 
     def _emit(self, elements):
