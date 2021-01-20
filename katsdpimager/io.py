@@ -162,8 +162,11 @@ def write_fits_image(dataset, image, image_parameters, filename, channel,
         header['BMIN'] = minor.to(units.deg).value
         header['BPA'] = beam.theta.to(units.deg).value
     _fits_polarizations(header, 3, image_parameters.polarizations)
-    datamin = float(np.nanmin(image))
-    datamax = float(np.nanmax(image))
+    # This is basically np.nanmin and np.nanmax, but the implementations of
+    # those take a slow, safe path if the array is a subclass of ndarray. In
+    # our case it is but the fast path still works so we use it directly.
+    datamin = float(np.fmin.reduce(image, axis=None))
+    datamax = float(np.fmax.reduce(image, axis=None))
     if not np.isnan(datamin):
         header['DATAMIN'] = datamin
         header['DATAMAX'] = datamax
