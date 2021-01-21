@@ -803,9 +803,9 @@ class Clean(accel.OperationSequence):
         if `image_parameters` is inconsistent with the template
     """
     def __init__(self, template, command_queue, image_parameters, allocator=None):
-        if image_parameters.real_dtype != template.dtype:
+        if image_parameters.fixed.real_dtype != template.dtype:
             raise ValueError('dtype mismatch')
-        image_shape = (len(image_parameters.polarizations),
+        image_shape = (len(image_parameters.fixed.polarizations),
                        image_parameters.pixels, image_parameters.pixels)
         self._update_tiles = template._update_tiles.instantiate(
             command_queue, image_shape, template.clean_parameters.border, allocator)
@@ -993,7 +993,7 @@ class CleanHost:
         border = self.clean_parameters.border
         tiles_x = accel.divup(image.shape[2] - 2 * border, self.tile_size)
         tiles_y = accel.divup(image.shape[1] - 2 * border, self.tile_size)
-        self._tile_max = np.zeros((tiles_y, tiles_x), self.image_parameters.real_dtype)
+        self._tile_max = np.zeros((tiles_y, tiles_x), self.image_parameters.fixed.real_dtype)
         self._tile_pos = np.empty((tiles_y, tiles_x, 2), np.int32)
 
     def _update_tile(self, y, x):

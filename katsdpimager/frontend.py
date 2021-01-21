@@ -177,7 +177,7 @@ def get_totals(image_parameters, image, restoring_beam):
     sums /= beam_area
     return {
         polarization.STOKES_NAMES[pol]: float(s)
-        for pol, s in zip(image_parameters.polarizations, sums)
+        for pol, s in zip(image_parameters.fixed.polarizations, sums)
     }
 
 
@@ -219,10 +219,13 @@ class ChannelParameters:
 
     def __init__(self, args, dataset, channel, array_p):
         self.channel = channel
+        fixed_image_p = parameters.FixedImageParameters(
+            args.stokes,
+            np.float32 if args.precision == 'single' else np.float64
+        )
         self.image_p = parameters.ImageParameters(
-            args.q_fov, args.image_oversample,
-            dataset.frequency(channel), array_p, args.stokes,
-            (np.float32 if args.precision == 'single' else np.float64),
+            fixed_image_p, args.q_fov, args.image_oversample,
+            dataset.frequency(channel), array_p,
             args.pixel_size, args.pixels)
         if args.max_w is None:
             max_w = array_p.longest_baseline
@@ -253,9 +256,10 @@ class ChannelParameters:
             beams = None
         else:
             raise ValueError(f'Unexpected value {args.primary_beam} for --primary-beam')
-        self.grid_p = parameters.GridParameters(
+        fixed_grid_p = parameters.FixedGridParameters(
             args.aa_width, args.grid_oversample, args.kernel_image_oversample,
-            w_slices, w_planes, max_w, args.kernel_width, args.degrid, beams)
+            max_w, args.kernel_width, args.degrid, beams)
+        self.grid_p = parameters.GridParameters(fixed_grid_p, w_slices, w_planes)
         if args.clean_mode == 'I':
             clean_mode = clean.CLEAN_I
         elif args.clean_mode == 'IQUV':
@@ -501,7 +505,7 @@ def process_channel(dataset, args, start_channel,
                             dataset, imager.buffer('weights_grid'), image_p, channel, bunit=None)
 
     # Create PSF
-    slice_w_step = float(grid_p.max_w / image_p.wavelength / (grid_p.w_slices - 0.5))
+    slice_w_step = float(grid_p.fixed.max_w / image_p.wavelength / (grid_p.w_slices - 0.5))
     mid_w = np.arange(grid_p.w_slices) * slice_w_step
     make_dirty(queue, reader, rel_channel,
                'PSF', 'weights', imager, mid_w, args.vis_block, args.degrid)
@@ -549,7 +553,7 @@ def process_channel(dataset, args, start_channel,
         peak_value = imager.clean_cycle(psf_patch)
         peak_power = clean.metric_to_power(clean_p.mode, peak_value)
         noise_threshold = noise * clean.noise_threshold_scale(
-            clean_p.mode, clean_p.threshold, len(image_p.polarizations))
+            clean_p.mode, clean_p.threshold, len(image_p.fixed.polarizations))
         mgain_threshold = (1.0 - clean_p.major_gain) * peak_power
         logger.info('Threshold from noise estimate: %g', noise_threshold)
         logger.info('Threshold from mgain:          %g', mgain_threshold)
@@ -571,8 +575,8 @@ def process_channel(dataset, args, start_channel,
         queue.finish()
 
     # Scale by primary beam
-    if grid_p.beams:
-        pbeam_model = grid_p.beams.sample()
+    if grid_p.fixed.beams:
+        pbeam_model = grid_p.fixed.beams.sample()
         # Sample beam model at the pixel grid. It's circularly symmetric, so
         # we don't need to worry about parallactic angle rotations or the
         # different sign conventions for azimuth versus RA.
@@ -606,7 +610,7 @@ def process_channel(dataset, args, start_channel,
     # NaNs in the model will mess up the convolution, so zero them. They will
     # become NaNs again when the residuals are added (assuming the NaNs are
     # due to the primary beam mask).
-    if grid_p.beams:
+    if grid_p.fixed.beams:
         model[np.isnan(model)] = 0.0
     # Convolve with restoring beam, and add residuals back in
     if args.host:

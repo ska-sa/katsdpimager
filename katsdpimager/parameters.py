@@ -34,6 +34,21 @@ class ArrayParameters:
         self.longest_baseline = longest_baseline
 
 
+class FixedImageParameters:
+    """Properties of an image that are frequency-independent.
+
+    polarizations : list
+        List of polarizations that will appear in the image
+    dtype : {np.float32, np.complex64}
+        Floating-point type for image and grid
+    """
+
+    def __init__(self, polarizations, dtype):
+        self.polarizations = list(polarizations)
+        self.real_dtype = np.dtype(dtype)
+        self.complex_dtype = katsdpimager.types.real_to_complex(dtype)
+
+
 class ImageParameters:
     """Physical properties associated with an image.
 
@@ -41,6 +56,8 @@ class ImageParameters:
 
     Parameters
     ----------
+    fixed : ImageFixedParameters
+        Frequency-independent parameters.
     q_fov : float
         Scale factor for field of view. 1.0 specifies the first null of the
         primary beam (computed just from an Airy disk, not a measured beam
@@ -53,18 +70,15 @@ class ImageParameters:
     array : :class:`ArrayParameters`
         Properties of the array. It is not needed if both `pixel_size` and
         `pixels` are specified.
-    polarizations : list
-        List of polarizations that will appear in the image
-    dtype : {np.float32, np.complex64}
-        Floating-point type for image and grid
     pixel_size : Quantity or float, optional
         Angular size of a single pixel, or dimensionless to specify l or m
         size directly. If specified, `image_oversample` is ignored.
     pixels : int, optional
         Number of pixels in the image. If specified, `q_fov` is ignored.
     """
-    def __init__(self, q_fov, image_oversample, frequency, array, polarizations,
-                 dtype, pixel_size=None, pixels=None):
+    def __init__(self, fixed, q_fov, image_oversample, frequency, array,
+                 pixel_size=None, pixels=None):
+        self.fixed = fixed
         self.wavelength = frequency.to(units.m, equivalencies=units.spectral())
         # Compute pixel size
         if pixel_size is None:
@@ -96,12 +110,9 @@ class ImageParameters:
                     recommended += 1
                 raise ValueError("Image size {} not supported - try {}".format(pixels, recommended))
         assert pixels % 2 == 0
-        self.real_dtype = np.dtype(dtype)
-        self.complex_dtype = katsdpimager.types.real_to_complex(dtype)
         self.pixels = pixels
         self.image_size = self.pixel_size * pixels
         self.cell_size = self.wavelength / self.image_size
-        self.polarizations = polarizations
 
     def __str__(self):
         from . import polarization
@@ -117,8 +128,8 @@ Precision: {} bit
            self.pixels,
            np.arcsin(self.pixel_size * self.pixels).to(units.deg),
            self.cell_size, self.wavelength,
-           ','.join([polarization.STOKES_NAMES[i] for i in self.polarizations]),
-           32 if self.real_dtype == np.float32 else 64)
+           ','.join([polarization.STOKES_NAMES[i] for i in self.fixed.polarizations]),
+           32 if self.fixed.real_dtype == np.float32 else 64)
 
 
 def w_kernel_width(image_parameters, w, eps_w, antialias_width=0):
@@ -194,8 +205,8 @@ class WeightParameters:
         return 'Image weights: ' + ans
 
 
-class GridParameters:
-    """Parameters affecting gridding algorithm.
+class FixedGridParameters:
+    """Parameters affecting gridding algorithm that are frequency-independent.
 
     Parameters
     ----------
@@ -205,10 +216,6 @@ class GridParameters:
         Number of UV sub-cells per cell, for sampling kernels
     image_oversample : int
         Oversampling in image plane during kernel generation
-    w_slices : int
-        Number of slices for w-stacking
-    w_planes : int
-        Number of samples to take in w within each slice
     max_w : Quantity
         Maximum absolute w value, as a distance quantity
     kernel_width : int
@@ -219,30 +226,47 @@ class GridParameters:
         Primary beam models for correction.
     """
     def __init__(self, antialias_width, oversample, image_oversample,
-                 w_slices, w_planes, max_w, kernel_width, degrid=False, beams=None):
+                 max_w, kernel_width, degrid=False, beams=None):
         if max_w.unit.physical_type != 'length':
             raise TypeError('max W must be specified as a length')
         self.antialias_width = antialias_width
         self.oversample = oversample
         self.image_oversample = image_oversample
-        self.w_slices = w_slices
-        self.w_planes = w_planes
         self.max_w = max_w
         self.kernel_width = kernel_width
         self.degrid = degrid
         self.beams = beams
 
+
+class GridParameters:
+    """Parameters affecting gridding algorithm.
+
+    Parameters
+    ----------
+    fixed : FixedGridParameters
+        Frequency-independent parameters.
+    w_slices : int
+        Number of slices for w-stacking
+    w_planes : int
+        Number of samples to take in w within each slice
+    """
+
+    def __init__(self, fixed, w_slices, w_planes):
+        self.fixed = fixed
+        self.w_slices = w_slices
+        self.w_planes = w_planes
+
     def __str__(self):
-        prediction = 'degridding' if self.degrid else 'direct'
-        beam_correction = 'yes' if self.beams else 'no'
+        prediction = 'degridding' if self.fixed.degrid else 'direct'
+        beam_correction = 'yes' if self.fixed.beams else 'no'
         return """\
-Grid oversampling: {self.oversample}
-Image oversample: {self.image_oversample}
+Grid oversampling: {self.fixed.oversample}
+Image oversample: {self.fixed.image_oversample}
 W slices: {self.w_slices}
 W planes per slice: {self.w_planes}
-Maximum W: {self.max_w:.3f}
-Antialiasing support: {self.antialias_width} cells
-Kernel support: {self.kernel_width} cells
+Maximum W: {self.fixed.max_w:.3f}
+Antialiasing support: {self.fixed.antialias_width} cells
+Kernel support: {self.fixed.kernel_width} cells
 Prediction: {prediction}
 Primary beam correction: {beam_correction}""".format(**locals())
 

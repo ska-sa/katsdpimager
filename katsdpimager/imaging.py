@@ -21,7 +21,7 @@ class ImagingTemplate:
         self.grid_parameters = grid_parameters
         self.clean_parameters = clean_parameters
         context = command_queue.context
-        num_polarizations = len(image_parameters.polarizations)
+        num_polarizations = len(image_parameters.fixed.polarizations)
         image_shape = (num_polarizations,
                        image_parameters.pixels,
                        image_parameters.pixels)
@@ -33,23 +33,23 @@ class ImagingTemplate:
             context, weight_parameters.weight_type, num_polarizations)
         self.gridder = grid.GridderTemplate(context, image_parameters, grid_parameters)
         self.predict = predict.PredictTemplate(
-            context, image_parameters.real_dtype, num_polarizations)
+            context, image_parameters.fixed.real_dtype, num_polarizations)
         self.grid_image = image.GridImageTemplate(
-            command_queue, layer_shape, padded_layer_shape, image_parameters.real_dtype)
+            command_queue, layer_shape, padded_layer_shape, image_parameters.fixed.real_dtype)
         self.psf_patch = clean.PsfPatchTemplate(
-            context, image_parameters.real_dtype, num_polarizations)
+            context, image_parameters.fixed.real_dtype, num_polarizations)
         self.noise_est = clean.NoiseEstTemplate(
-            context, image_parameters.real_dtype, num_polarizations)
+            context, image_parameters.fixed.real_dtype, num_polarizations)
         self.clean = clean.CleanTemplate(
-            context, clean_parameters, image_parameters.real_dtype, num_polarizations)
+            context, clean_parameters, image_parameters.fixed.real_dtype, num_polarizations)
         self.scale = image.ScaleTemplate(
-            context, image_parameters.real_dtype, num_polarizations)
+            context, image_parameters.fixed.real_dtype, num_polarizations)
         self.taper1d = accel.SVMArray(
-            context, (image_parameters.pixels,), image_parameters.real_dtype)
+            context, (image_parameters.pixels,), image_parameters.fixed.real_dtype)
         self.gridder.convolve_kernel.taper(image_parameters.pixels, self.taper1d)
-        if grid_parameters.degrid:
+        if grid_parameters.fixed.degrid:
             self.untaper1d = accel.SVMArray(
-                context, (image_parameters.pixels,), image_parameters.real_dtype)
+                context, (image_parameters.pixels,), image_parameters.fixed.real_dtype)
             self.degridder = grid.DegridderTemplate(context, image_parameters, grid_parameters)
             self.degridder.convolve_kernel.taper(image_parameters.pixels, self.untaper1d)
         else:
@@ -66,7 +66,7 @@ class Imaging(accel.OperationSequence):
         self.template = template
         lm_scale = float(template.image_parameters.pixel_size)
         lm_bias = -0.5 * template.image_parameters.pixels * lm_scale
-        image_shape = (len(template.image_parameters.polarizations),
+        image_shape = (len(template.image_parameters.fixed.polarizations),
                        template.image_parameters.pixels,
                        template.image_parameters.pixels)
         self._gridder = template.gridder.instantiate(
@@ -89,7 +89,7 @@ class Imaging(accel.OperationSequence):
         self._scale = template.scale.instantiate(
             template.command_queue, image_shape, allocator)
         self._grid_to_image.bind(kernel1d=template.taper1d)
-        if template.grid_parameters.degrid:
+        if template.grid_parameters.fixed.degrid:
             self._predict = template.degridder.instantiate(
                 template.command_queue, template.array_parameters, max_vis, allocator)
             degrid_shape = self._predict.slots['grid'].shape
@@ -131,7 +131,7 @@ class Imaging(accel.OperationSequence):
             'peak_pos': ['clean:peak_pos'],
             'peak_pixel': ['clean:peak_pixel']
         }
-        if template.grid_parameters.degrid:
+        if template.grid_parameters.fixed.degrid:
             operations.append(('image_to_grid', self._image_to_grid))
             compounds['degrid'] = ['predict:grid', 'image_to_grid:grid']
             compounds['layer'].append('image_to_grid:layer')
@@ -222,7 +222,7 @@ class Imaging(accel.OperationSequence):
     @profile_function()
     def predict(self, w):
         self.ensure_all_bound()
-        if not self.template.grid_parameters.degrid:
+        if not self.template.grid_parameters.fixed.degrid:
             self._predict.set_w(w)
         self._predict()
 
@@ -252,7 +252,7 @@ class Imaging(accel.OperationSequence):
 
     @profile_function()
     def model_to_predict(self):
-        if self.template.grid_parameters.degrid:
+        if self.template.grid_parameters.fixed.degrid:
             raise RuntimeError('Can only use model_to_predict with direct prediction')
         # It's computed on the CPU, so we need to be sure that device work is complete
         self._predict.command_queue.finish()
@@ -306,16 +306,16 @@ class ImagingHost:
         self._weights_grid = self._gridder.weights_grid
         self._weights = weight.WeightsHost(weight_parameters.weight_type, self._weights_grid)
         self._weights.robustness = weight_parameters.robustness
-        self._layer = np.empty(self._grid.shape, image_parameters.complex_dtype)
-        self._dirty = np.empty(self._grid.shape, image_parameters.real_dtype)
-        self._model = np.empty(self._grid.shape, image_parameters.real_dtype)
-        self._psf = np.empty(self._grid.shape, image_parameters.real_dtype)
+        self._layer = np.empty(self._grid.shape, image_parameters.fixed.complex_dtype)
+        self._dirty = np.empty(self._grid.shape, image_parameters.fixed.real_dtype)
+        self._model = np.empty(self._grid.shape, image_parameters.fixed.real_dtype)
+        self._psf = np.empty(self._grid.shape, image_parameters.fixed.real_dtype)
         self._grid_to_image = image.GridToImageHost(
             self._grid, self._layer, self._dirty,
             self._gridder.kernel.taper(image_parameters.pixels), lm_scale, lm_bias)
         self._clean = clean.CleanHost(image_parameters, clean_parameters,
                                       self._dirty, self._psf, self._model)
-        if grid_parameters.degrid:
+        if grid_parameters.fixed.degrid:
             self._predict = grid.DegridderHost(image_parameters, grid_parameters)
             self._degrid = self._predict.values
             self._image_to_grid = image.ImageToGridHost(
