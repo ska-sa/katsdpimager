@@ -260,20 +260,10 @@ class ChannelParameters:
             args.aa_width, args.grid_oversample, args.kernel_image_oversample,
             max_w, args.kernel_width, args.degrid, beams)
         self.grid_p = parameters.GridParameters(fixed_grid_p, w_slices, w_planes)
-        if args.clean_mode == 'I':
-            clean_mode = clean.CLEAN_I
-        elif args.clean_mode == 'IQUV':
-            clean_mode = clean.CLEAN_SUMSQ
-        else:
-            raise ValueError('Unhandled --clean-mode {}'.format(args.clean_mode))
-        self.clean_p = parameters.CleanParameters(
-            args.minor, args.loop_gain, args.major_gain, args.threshold,
-            clean_mode, args.psf_cutoff, args.psf_limit, args.border)
 
     def log_parameters(self, suffix=''):
         log_parameters("Image parameters" + suffix, self.image_p)
         log_parameters("Grid parameters" + suffix, self.grid_p)
-        log_parameters("CLEAN parameters" + suffix, self.clean_p)
 
 
 def prepend_dashes(value):
@@ -457,13 +447,13 @@ class Writer:
 
 @profile_function(labels={'channel': lambda bound_args: bound_args.arguments['channel_p'].channel})
 def process_channel(dataset, args, start_channel,
-                    context, queue, reader, writer, channel_p, array_p, weight_p,
+                    context, queue, reader, writer,
+                    channel_p, array_p, weight_p, clean_p,
                     subtract_model):
     channel = channel_p.channel
     rel_channel = channel - start_channel
     image_p = channel_p.image_p
     grid_p = channel_p.grid_p
-    clean_p = channel_p.clean_p
 
     # Check if there is anything to do
     if writer.channel_already_done(dataset, channel):
@@ -668,6 +658,16 @@ def run(args, context, queue, dataset, writer):
         weight_p = parameters.WeightParameters(
             weight.WeightType[args.weight_type.upper()], args.robustness)
 
+        if args.clean_mode == 'I':
+            clean_mode = clean.CLEAN_I
+        elif args.clean_mode == 'IQUV':
+            clean_mode = clean.CLEAN_SUMSQ
+        else:
+            raise ValueError('Unhandled --clean-mode {}'.format(args.clean_mode))
+        clean_p = parameters.CleanParameters(
+            args.minor, args.loop_gain, args.major_gain, args.threshold,
+            clean_mode, args.psf_cutoff, args.psf_limit, args.border)
+
         if args.stop_channel - args.start_channel > 1:
             ChannelParameters(
                 args, dataset, args.start_channel, array_p).log_parameters(' [first channel]')
@@ -676,6 +676,7 @@ def run(args, context, queue, dataset, writer):
         else:
             ChannelParameters(args, dataset, args.start_channel, array_p).log_parameters()
         log_parameters("Weight parameters", weight_p)
+        log_parameters("CLEAN parameters", clean_p)
 
         if args.subtract == 'auto':
             subtract_model = dataset.sky_model()
@@ -699,4 +700,5 @@ def run(args, context, queue, dataset, writer):
             # Do the work
             for channel_p in params:
                 process_channel(dataset, args, start_channel, context, queue,
-                                reader, writer, channel_p, array_p, weight_p, subtract_model)
+                                reader, writer, channel_p, array_p, weight_p, clean_p,
+                                subtract_model)
