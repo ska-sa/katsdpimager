@@ -34,7 +34,7 @@ class _TestPsfPatchBase:
         self.psf_host[0, 0, 0] = 0.4
         self.psf_host[3, 205, 303] = 0.3
         self.psf_host[1, 110, 150] = 0.2
-        assert_equal((4, 15, 5), self._test(limit=50))
+        assert_equal((4, 15, 5), self._test(limit=50 / 206))
 
 
 class TestPsfPatch(_TestPsfPatchBase):

@@ -134,7 +134,7 @@ class PsfPatch(accel.Operation):
         mid_x = psf.shape[2] // 2
         mid_y = psf.shape[1] // 2
         if limit is not None:
-            hlimit = (limit - 1) // 2
+            hlimit = (round(limit * min(psf.shape[1], psf.shape[2])) - 1) // 2
             min_x = max(min_x, mid_x - hlimit)
             min_y = max(min_y, mid_y - hlimit)
             max_x = min(max_x, mid_x + hlimit)
@@ -912,7 +912,7 @@ def psf_patch_host(psf, threshold, limit=None):
         dimensions. The size is always even.
     """
     if limit is not None:
-        hlimit = (limit - 1) // 2
+        hlimit = (round(limit * min(psf.shape[1], psf.shape[2])) - 1) // 2
         mid_x = psf.shape[2] // 2
         mid_y = psf.shape[1] // 2
         min_x = max(0, mid_x - hlimit)

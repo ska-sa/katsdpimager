@@ -286,13 +286,13 @@ class CleanParameters:
         self.border = border
 
     def __str__(self):
-        return """\
+        mode = 'I' if self.mode == clean.CLEAN_I else 'I^2+Q^2+U^2+V^2'
+        return f"""\
 Loop gain: {self.loop_gain}
 Major cycle gain: {self.major_gain}
 Threshold: {self.threshold} sigma
 Max minor cycles: {self.minor}
 PSF cutoff: {self.psf_cutoff}
-PSF limit: {self.psf_limit} pixels
+PSF limit: {self.psf_limit * 100}%
 Peak function: {mode}
-Border: {100 * self.border}%""".format(
-            self=self, mode='I' if self.mode == clean.CLEAN_I else 'I^2+Q^2+U^2+V^2')
+Border: {self.border * 100}%"""
