@@ -14,6 +14,7 @@ class ImagingTemplate:
     @profile_function()
     def __init__(self, context, array_parameters, image_parameters,
                  weight_parameters, grid_parameters, clean_parameters):
+        self.context = context
         self.array_parameters = array_parameters
         self.image_parameters = image_parameters
         self.weight_parameters = weight_parameters
@@ -35,16 +36,9 @@ class ImagingTemplate:
             context, clean_parameters, image_parameters.fixed.real_dtype, num_polarizations)
         self.scale = image.ScaleTemplate(
             context, image_parameters.fixed.real_dtype, num_polarizations)
-        self.taper1d = accel.SVMArray(
-            context, (image_parameters.pixels,), image_parameters.fixed.real_dtype)
-        self.gridder.convolve_kernel.taper(image_parameters.pixels, self.taper1d)
         if grid_parameters.fixed.degrid:
-            self.untaper1d = accel.SVMArray(
-                context, (image_parameters.pixels,), image_parameters.fixed.real_dtype)
             self.degridder = grid.DegridderTemplate(context, image_parameters, grid_parameters)
-            self.degridder.convolve_kernel.taper(image_parameters.pixels, self.untaper1d)
         else:
-            self.untaper1d = None
             self.degridder = None
 
     def instantiate(self, *args, **kwargs):
@@ -86,14 +80,26 @@ class Imaging(accel.OperationSequence):
             command_queue, template.image_parameters, allocator)
         self._scale = template.scale.instantiate(
             command_queue, image_shape, allocator)
-        self._grid_to_image.bind(kernel1d=template.taper1d)
+
+        # TODO: handle taper1d/untaper1d as standard slots
+        taper1d = accel.SVMArray(
+            template.context,
+            (template.image_parameters.pixels,),
+            template.image_parameters.fixed.real_dtype)
+        self._gridder.convolve_kernel.taper(template.image_parameters.pixels, taper1d)
+        self._grid_to_image.bind(kernel1d=taper1d)
         if template.grid_parameters.fixed.degrid:
+            untaper1d = accel.SVMArray(
+                template.context,
+                (template.image_parameters.pixels,),
+                template.image_parameters.fixed.real_dtype)
             self._predict = template.degridder.instantiate(
                 command_queue, template.array_parameters, max_vis, allocator)
+            self._predict.convolve_kernel.taper(template.image_parameters.pixels, untaper1d)
             degrid_shape = self._predict.slots['grid'].shape
             self._image_to_grid = template.grid_image.instantiate_image_to_grid(
                 command_queue, degrid_shape, lm_scale, lm_bias, fft_plan, allocator)
-            self._image_to_grid.bind(kernel1d=template.untaper1d)
+            self._image_to_grid.bind(kernel1d=untaper1d)
         else:
             max_components = min(template.image_parameters.pixels**2,
                                  (major - 1) * template.clean_parameters.minor)
