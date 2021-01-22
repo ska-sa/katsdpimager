@@ -12,15 +12,13 @@ class ImagingTemplate:
     """Template holding all the other templates for imaging."""
 
     @profile_function()
-    def __init__(self, command_queue, array_parameters, image_parameters,
+    def __init__(self, context, array_parameters, image_parameters,
                  weight_parameters, grid_parameters, clean_parameters):
-        self.command_queue = command_queue
         self.array_parameters = array_parameters
         self.image_parameters = image_parameters
         self.weight_parameters = weight_parameters
         self.grid_parameters = grid_parameters
         self.clean_parameters = clean_parameters
-        context = command_queue.context
         num_polarizations = len(image_parameters.fixed.polarizations)
         self.weights = weight.WeightsTemplate(
             context, weight_parameters.weight_type, num_polarizations)
@@ -55,7 +53,7 @@ class ImagingTemplate:
 
 class Imaging(accel.OperationSequence):
     @profile_function()
-    def __init__(self, template, max_vis, max_sources, major, allocator=None):
+    def __init__(self, template, command_queue, max_vis, max_sources, major, allocator=None):
         self.template = template
         lm_scale = float(template.image_parameters.pixel_size)
         lm_bias = -0.5 * template.image_parameters.pixels * lm_scale
@@ -67,40 +65,40 @@ class Imaging(accel.OperationSequence):
         # by deferring creation of the FFT plan until instantiation.
         padded_layer_shape = layer_shape = image_shape[1:]
         fft_plan = template.grid_image.make_fft_plan(
-            template.command_queue, layer_shape, padded_layer_shape)
+            command_queue, layer_shape, padded_layer_shape)
 
         self._gridder = template.gridder.instantiate(
-            template.command_queue, template.array_parameters, max_vis, allocator)
+            command_queue, template.array_parameters, max_vis, allocator)
         self._continuum_predict = template.predict.instantiate(
-            template.command_queue, template.image_parameters, template.grid_parameters,
+            command_queue, template.image_parameters, template.grid_parameters,
             max_vis, max_sources, allocator)
         grid_shape = self._gridder.slots['grid'].shape
         self._weights = template.weights.instantiate(
-            template.command_queue, grid_shape, max_vis, allocator)
+            command_queue, grid_shape, max_vis, allocator)
         self._weights.robustness = template.weight_parameters.robustness
         self._grid_to_image = template.grid_image.instantiate_grid_to_image(
-            template.command_queue, grid_shape, lm_scale, lm_bias, fft_plan, allocator)
+            command_queue, grid_shape, lm_scale, lm_bias, fft_plan, allocator)
         self._psf_patch = template.psf_patch.instantiate(
-            template.command_queue, image_shape, allocator)
+            command_queue, image_shape, allocator)
         self._noise_est = template.noise_est.instantiate(
-            template.command_queue, image_shape, template.clean_parameters.border, allocator)
+            command_queue, image_shape, template.clean_parameters.border, allocator)
         self._clean = template.clean.instantiate(
-            template.command_queue, template.image_parameters, allocator)
+            command_queue, template.image_parameters, allocator)
         self._scale = template.scale.instantiate(
-            template.command_queue, image_shape, allocator)
+            command_queue, image_shape, allocator)
         self._grid_to_image.bind(kernel1d=template.taper1d)
         if template.grid_parameters.fixed.degrid:
             self._predict = template.degridder.instantiate(
-                template.command_queue, template.array_parameters, max_vis, allocator)
+                command_queue, template.array_parameters, max_vis, allocator)
             degrid_shape = self._predict.slots['grid'].shape
             self._image_to_grid = template.grid_image.instantiate_image_to_grid(
-                template.command_queue, degrid_shape, lm_scale, lm_bias, fft_plan, allocator)
+                command_queue, degrid_shape, lm_scale, lm_bias, fft_plan, allocator)
             self._image_to_grid.bind(kernel1d=template.untaper1d)
         else:
             max_components = min(template.image_parameters.pixels**2,
                                  (major - 1) * template.clean_parameters.minor)
             self._predict = template.predict.instantiate(
-                template.command_queue, template.image_parameters, template.grid_parameters,
+                command_queue, template.image_parameters, template.grid_parameters,
                 max_vis, max_components, allocator)
         operations = [
             ('weights', self._weights),
@@ -141,7 +139,7 @@ class Imaging(accel.OperationSequence):
         # TODO: could alias noise_est:rank with something, since it's only
         # needed at the start of the minor cycles (it is small though).
         super().__init__(
-            template.command_queue, operations, compounds, allocator=allocator)
+            command_queue, operations, compounds, allocator=allocator)
         # dirty_to_psf swaps the dirty and PSF images, so they need to have
         # compatible padding.
         for x, y in zip(self.slots['dirty'].dimensions, self.slots['psf'].dimensions):
