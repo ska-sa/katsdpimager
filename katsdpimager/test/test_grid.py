@@ -141,9 +141,14 @@ class TestGridder(BaseTest):
     @device_test
     def test(self, context, command_queue):
         def callback(max_vis, vis):
-            template = grid.GridderTemplate(context, self.image_parameters, self.grid_parameters)
-            fn = template.instantiate(command_queue, self.array_parameters, max_vis,
-                                      allocator=accel.SVMAllocator(context))
+            template = grid.GridderTemplate(
+                context, self.image_parameters.fixed, self.grid_parameters.fixed)
+            fn = template.instantiate(
+                command_queue,
+                self.array_parameters,
+                self.image_parameters,
+                self.grid_parameters,
+                max_vis, allocator=accel.SVMAllocator(context))
             fn.ensure_all_bound()
             grid_data = fn.buffer('grid')
             grid_data.fill(0)
@@ -163,7 +168,7 @@ class TestGridder(BaseTest):
     @force_autotune
     def test_autotune(self, context, queue):
         """Check that the autotuner runs successfully"""
-        grid.GridderTemplate(context, self.image_parameters_sp, self.grid_parameters)
+        grid.GridderTemplate(context, self.image_parameters_sp.fixed, self.grid_parameters.fixed)
 
 
 class TestGridderHost(BaseTest):
@@ -187,9 +192,14 @@ class TestDegridder(BaseTest):
     def test(self, context, command_queue):
         def callback(max_vis, grid_data, weights, vis):
             n_vis = len(self.w_plane)
-            template = grid.DegridderTemplate(context, self.image_parameters, self.grid_parameters)
-            fn = template.instantiate(command_queue, self.array_parameters, max_vis,
-                                      allocator=accel.SVMAllocator(context))
+            template = grid.DegridderTemplate(
+                context, self.image_parameters.fixed, self.grid_parameters.fixed)
+            fn = template.instantiate(
+                command_queue,
+                self.array_parameters,
+                self.image_parameters,
+                self.grid_parameters,
+                max_vis, allocator=accel.SVMAllocator(context))
             fn.ensure_all_bound()
             grid_buffer = fn.buffer('grid')
             grid_buffer.set(command_queue, _middle(grid_data, grid_buffer.shape))
@@ -206,7 +216,7 @@ class TestDegridder(BaseTest):
     @force_autotune
     def test_autotune(self, context, queue):
         """Check that the autotuner runs successfully"""
-        grid.DegridderTemplate(context, self.image_parameters_sp, self.grid_parameters)
+        grid.DegridderTemplate(context, self.image_parameters_sp.fixed, self.grid_parameters.fixed)
 
 
 class TestDegridderHost(BaseTest):

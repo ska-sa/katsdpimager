@@ -23,7 +23,8 @@ class ImagingTemplate:
         num_polarizations = len(image_parameters.fixed.polarizations)
         self.weights = weight.WeightsTemplate(
             context, weight_parameters.weight_type, num_polarizations)
-        self.gridder = grid.GridderTemplate(context, image_parameters, grid_parameters)
+        self.gridder = grid.GridderTemplate(
+            context, image_parameters.fixed, grid_parameters.fixed)
         self.predict = predict.PredictTemplate(
             context, image_parameters.fixed.real_dtype, num_polarizations)
         self.grid_image = image.GridImageTemplate(
@@ -37,7 +38,8 @@ class ImagingTemplate:
         self.scale = image.ScaleTemplate(
             context, image_parameters.fixed.real_dtype, num_polarizations)
         if grid_parameters.fixed.degrid:
-            self.degridder = grid.DegridderTemplate(context, image_parameters, grid_parameters)
+            self.degridder = grid.DegridderTemplate(
+                context, image_parameters.fixed, grid_parameters.fixed)
         else:
             self.degridder = None
 
@@ -62,7 +64,12 @@ class Imaging(accel.OperationSequence):
             command_queue, layer_shape, padded_layer_shape)
 
         self._gridder = template.gridder.instantiate(
-            command_queue, template.array_parameters, max_vis, allocator)
+            command_queue,
+            template.array_parameters,
+            template.image_parameters,
+            template.grid_parameters,
+            max_vis,
+            allocator)
         self._continuum_predict = template.predict.instantiate(
             command_queue, template.image_parameters, template.grid_parameters,
             max_vis, max_sources, allocator)
@@ -94,7 +101,12 @@ class Imaging(accel.OperationSequence):
                 (template.image_parameters.pixels,),
                 template.image_parameters.fixed.real_dtype)
             self._predict = template.degridder.instantiate(
-                command_queue, template.array_parameters, max_vis, allocator)
+                command_queue,
+                template.array_parameters,
+                template.image_parameters,
+                template.grid_parameters,
+                max_vis,
+                allocator)
             self._predict.convolve_kernel.taper(template.image_parameters.pixels, untaper1d)
             degrid_shape = self._predict.slots['grid'].shape
             self._image_to_grid = template.grid_image.instantiate_image_to_grid(
