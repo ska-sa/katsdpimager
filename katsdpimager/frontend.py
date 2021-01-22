@@ -213,52 +213,27 @@ class ChannelParameters:
         Image parameters
     grid_p : :class:`katsdpimager.parameters.GridParameters`
         Gridding parameters
-    clean_p : :class:`katsdpimage.parameters.CleanParameters`
-        CLEAN parameters
     """
 
-    def __init__(self, args, dataset, channel, array_p):
+    def __init__(self, args, dataset, channel, array_p, fixed_image_p, fixed_grid_p):
         self.channel = channel
-        fixed_image_p = parameters.FixedImageParameters(
-            args.stokes,
-            np.float32 if args.precision == 'single' else np.float64
-        )
         self.image_p = parameters.ImageParameters(
             fixed_image_p, args.q_fov, args.image_oversample,
             dataset.frequency(channel), array_p,
             args.pixel_size, args.pixels)
-        if args.max_w is None:
-            max_w = array_p.longest_baseline
-        elif args.max_w.unit.physical_type == 'dimensionless':
-            max_w = args.max_w * self.image_p.wavelength
-        else:
-            max_w = args.max_w
         if args.w_slices is None:
-            w_slices = parameters.w_slices(self.image_p, max_w, args.eps_w,
+            w_slices = parameters.w_slices(self.image_p, fixed_grid_p.max_w, args.eps_w,
                                            args.kernel_width, args.aa_width)
         else:
             w_slices = args.w_slices
         if args.w_step.unit.physical_type == 'length':
-            w_planes = float(max_w / args.w_step)
+            w_planes = float(fixed_grid_p.max_w / args.w_step)
         elif args.w_step.unit.physical_type == 'dimensionless':
             w_step = args.w_step * self.image_p.cell_size / args.grid_oversample
-            w_planes = float(max_w / w_step)
+            w_planes = float(fixed_grid_p.max_w / w_step)
         else:
             raise ValueError('--w-step must be dimensionless or a length')
         w_planes = int(np.ceil(w_planes / w_slices))
-        if args.primary_beam in {'meerkat', 'meerkat:1'}:
-            band = dataset.band()
-            if band is None:
-                raise ValueError(
-                    'Data set does not specify a band, so --primary-beam cannot be used')
-            beams = primary_beam.MeerkatBeamModelSet1(band)
-        elif args.primary_beam == 'none':
-            beams = None
-        else:
-            raise ValueError(f'Unexpected value {args.primary_beam} for --primary-beam')
-        fixed_grid_p = parameters.FixedGridParameters(
-            args.aa_width, args.grid_oversample, args.kernel_image_oversample,
-            max_w, args.kernel_width, args.degrid, beams)
         self.grid_p = parameters.GridParameters(fixed_grid_p, w_slices, w_planes)
 
     def log_parameters(self, suffix=''):
@@ -316,7 +291,7 @@ def add_options(parser):
                        help='Separation between W planes, in subgrid cells or a distance '
                             '[%(default)s]')
     group.add_argument('--max-w', type=units.Quantity,
-                       help='Largest w, as either distance or wavelengths [longest baseline]')
+                       help='Largest w, in units of distance [longest baseline]')
     group.add_argument('--aa-width', type=float, default=7,
                        help='Support of anti-aliasing kernel [%(default)s]')
     group.add_argument('--kernel-width', type=int, default=60,
@@ -447,7 +422,8 @@ class Writer:
 
 @profile_function(labels={'channel': lambda bound_args: bound_args.arguments['channel_p'].channel})
 def process_channel(dataset, args, start_channel,
-                    context, queue, reader, writer,
+                    context, queue, imager_template,
+                    reader, writer,
                     channel_p, array_p, weight_p, clean_p,
                     subtract_model):
     channel = channel_p.channel
@@ -474,8 +450,6 @@ def process_channel(dataset, args, start_channel,
         imager = imaging.ImagingHost(image_p, weight_p, grid_p, clean_p)
     else:
         allocator = accel.SVMAllocator(context)
-        imager_template = imaging.ImagingTemplate(
-            context, array_p, image_p.fixed, weight_p, grid_p.fixed, clean_p)
         n_sources = len(subtract_model) if subtract_model else 0
         imager = imager_template.instantiate(
             queue, image_p, grid_p, args.vis_block, n_sources, args.major, allocator)
@@ -668,13 +642,40 @@ def run(args, context, queue, dataset, writer):
             args.minor, args.loop_gain, args.major_gain, args.threshold,
             clean_mode, args.psf_cutoff, args.psf_limit, args.border)
 
+        fixed_image_p = parameters.FixedImageParameters(
+            args.stokes,
+            np.float32 if args.precision == 'single' else np.float64
+        )
+
+        if args.max_w is None:
+            max_w = array_p.longest_baseline
+        else:
+            max_w = args.max_w
+        if args.primary_beam in {'meerkat', 'meerkat:1'}:
+            band = dataset.band()
+            if band is None:
+                raise ValueError(
+                    'Data set does not specify a band, so --primary-beam cannot be used')
+            beams = primary_beam.MeerkatBeamModelSet1(band)
+        elif args.primary_beam == 'none':
+            beams = None
+        else:
+            raise ValueError(f'Unexpected value {args.primary_beam} for --primary-beam')
+        fixed_grid_p = parameters.FixedGridParameters(
+            args.aa_width, args.grid_oversample, args.kernel_image_oversample,
+            max_w, args.kernel_width, args.degrid, beams
+        )
+
         if args.stop_channel - args.start_channel > 1:
             ChannelParameters(
-                args, dataset, args.start_channel, array_p).log_parameters(' [first channel]')
+                args, dataset, args.start_channel,
+                array_p, fixed_image_p, fixed_grid_p).log_parameters(' [first channel]')
             ChannelParameters(
-                args, dataset, args.stop_channel - 1, array_p).log_parameters(' [last channel]')
+                args, dataset, args.stop_channel - 1,
+                array_p, fixed_image_p, fixed_grid_p).log_parameters(' [last channel]')
         else:
-            ChannelParameters(args, dataset, args.start_channel, array_p).log_parameters()
+            ChannelParameters(args, dataset, args.start_channel,
+                              array_p, fixed_image_p, fixed_grid_p).log_parameters()
         log_parameters("Weight parameters", weight_p)
         log_parameters("CLEAN parameters", clean_p)
 
@@ -685,10 +686,15 @@ def run(args, context, queue, dataset, writer):
         else:
             subtract_model = None
 
+        if not args.host:
+            imager_template = imaging.ImagingTemplate(
+                context, array_p, fixed_image_p, weight_p, fixed_grid_p, clean_p)
+
         for start_channel in range(args.start_channel, args.stop_channel, args.channel_batch):
             stop_channel = min(args.stop_channel, start_channel + args.channel_batch)
             channels = range(start_channel, stop_channel)
-            params = [ChannelParameters(args, dataset, channel, array_p)
+            params = [ChannelParameters(args, dataset, channel,
+                                        array_p, fixed_image_p, fixed_grid_p)
                       for channel in channels]
             # Preprocess visibilities
             image_ps = [channel_p.image_p for channel_p in params]
@@ -699,6 +705,7 @@ def run(args, context, queue, dataset, writer):
 
             # Do the work
             for channel_p in params:
-                process_channel(dataset, args, start_channel, context, queue,
+                process_channel(dataset, args, start_channel,
+                                context, queue, imager_template,
                                 reader, writer, channel_p, array_p, weight_p, clean_p,
                                 subtract_model)
