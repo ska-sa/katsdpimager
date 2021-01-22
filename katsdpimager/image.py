@@ -387,22 +387,40 @@ class GridImageTemplate:
 
     Parameters
     ----------
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue`
-        Command queue for the operation
-    shape_layer : tuple of int
-        Shape for the intermediate layer, as (height, width)
-    padded_shape_layer : tuple of int
-        Padded shape of the intermediate layer
+    context : |Context|
+        Context for which kernels will be compiled
     real_dtype : {`np.float32`, `np.float64`}
         Precision
     """
 
-    def __init__(self, command_queue, shape_layer, padded_shape_layer, real_dtype):
-        complex_dtype = katsdpimager.types.real_to_complex(real_dtype)
-        self.fft = fft.FftTemplate(command_queue, 2, shape_layer, complex_dtype, complex_dtype,
-                                   padded_shape_layer, padded_shape_layer)
-        self.layer_to_image = LayerToImageTemplate(command_queue.context, real_dtype)
-        self.image_to_layer = ImageToLayerTemplate(command_queue.context, real_dtype)
+    def __init__(self, context, real_dtype):
+        self.real_dtype = real_dtype
+        self.layer_to_image = LayerToImageTemplate(context, real_dtype)
+        self.image_to_layer = ImageToLayerTemplate(context, real_dtype)
+
+    def make_fft_plan(self, command_queue, shape_layer, padded_shape_layer):
+        """Create an FFT plan.
+
+        The plan should be passed to :meth:`instantiate_grid_to_image` and
+        :meth:`instantiate_image_to_grid`.
+
+        .. warning::
+            Instances created from the same plan cannot be executed
+            simultaneously, due to limitations of CUFFT (work area is part of the
+            plan).
+
+        Parameters
+        ----------
+        command_queue : :class:`katsdpsigproc.cuda.CommandQueue`
+            Command queue for the operation
+        shape_layer : tuple of int
+            Shape for the intermediate layer, as (height, width)
+        padded_shape_layer : tuple of int
+            Padded shape of the intermediate layer
+        """
+        complex_dtype = katsdpimager.types.real_to_complex(self.real_dtype)
+        return fft.FftTemplate(command_queue, 2, shape_layer, complex_dtype, complex_dtype,
+                               padded_shape_layer, padded_shape_layer)
 
     def instantiate_grid_to_image(self, *args, **kwargs):
         return GridToImage(self, *args, **kwargs)
@@ -418,18 +436,22 @@ class GridToImage(accel.OperationSequence):
     ----------
     template : :class:`GridImageTemplate`
         Operation template
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue`
+        Command queue for the operation
     shape_grid : tuple of int
         Shape of the grid, as (polarizations, height, width)
     lm_scale,lm_bias : float
         See :class:`LayerToImage`
+    fft_plan : :class:`fft.FftTemplate`
+        See :meth:`GridImageTemplate.make_fft_plan`
     allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
         Allocator used to allocate unbound slots
     """
-    def __init__(self, template, shape_grid, lm_scale, lm_bias, allocator=None):
-        command_queue = template.fft.command_queue
-        self._ifft = template.fft.instantiate(fft.FFT_INVERSE, allocator)
+    def __init__(self, template, command_queue, shape_grid,
+                 lm_scale, lm_bias, fft_plan, allocator=None):
+        self._ifft = fft_plan.instantiate(fft.FFT_INVERSE, allocator)
         polarizations = shape_grid[0]
-        shape_image = (polarizations,) + tuple(template.fft.shape)
+        shape_image = (polarizations,) + tuple(fft_plan.shape)
         self._layer_to_image = template.layer_to_image.instantiate(
             command_queue, shape_image, lm_scale, lm_bias, allocator)
         operations = [
@@ -442,7 +464,7 @@ class GridToImage(accel.OperationSequence):
             'kernel1d': ['layer_to_image:kernel1d']
         }
         super().__init__(command_queue, operations, compounds, allocator=allocator)
-        self.slots['grid'] = accel.IOSlot(shape_grid, template.fft.dtype_src)
+        self.slots['grid'] = accel.IOSlot(shape_grid, fft_plan.dtype_src)
 
     def set_w(self, w):
         self._layer_to_image.set_w(w)
@@ -481,18 +503,22 @@ class ImageToGrid(accel.OperationSequence):
     ----------
     template : :class:`GridImageTemplate`
         Operation template
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue`
+        Command queue for the operation
     shape_grid : tuple of int
         Shape of the grid, as (polarizations, height, width)
     lm_scale,lm_bias : float
         See :class:`ImageToLayer`
+    fft_plan : :class:`fft.FftTemplate`
+        See :meth:`GridImageTemplate.make_fft_plan`
     allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
         Allocator used to allocate unbound slots
     """
-    def __init__(self, template, shape_grid, lm_scale, lm_bias, allocator=None):
-        command_queue = template.fft.command_queue
+    def __init__(self, template, command_queue, shape_grid,
+                 lm_scale, lm_bias, fft_plan, allocator=None):
         polarizations = shape_grid[0]
-        shape_image = (polarizations,) + tuple(template.fft.shape)
-        self._fft = template.fft.instantiate(fft.FFT_FORWARD, allocator)
+        shape_image = (polarizations,) + tuple(fft_plan.shape)
+        self._fft = fft_plan.instantiate(fft.FFT_FORWARD, allocator)
         self._image_to_layer = template.image_to_layer.instantiate(
             command_queue, shape_image, lm_scale, lm_bias, allocator)
         operations = [
@@ -505,7 +531,7 @@ class ImageToGrid(accel.OperationSequence):
             'kernel1d': ['image_to_layer:kernel1d']
         }
         super().__init__(command_queue, operations, compounds, allocator=allocator)
-        self.slots['grid'] = accel.IOSlot(shape_grid, template.fft.dtype_dest)
+        self.slots['grid'] = accel.IOSlot(shape_grid, fft_plan.dtype_dest)
 
     def set_w(self, w):
         self._image_to_layer.set_w(w)
