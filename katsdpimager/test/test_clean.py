@@ -79,7 +79,8 @@ class TestClean:
     @device_test
     def test_update_tiles(self, context, command_queue):
         image_shape = (4, 567, 456)
-        border = 65
+        border_pixels = 65
+        border = border_pixels / image_shape[2]
         rs = np.random.RandomState(seed=1)
         template = clean._UpdateTilesTemplate(context, np.float32, 4, clean.CLEAN_I)
         fn = template.instantiate(command_queue, image_shape, border)
@@ -104,10 +105,10 @@ class TestClean:
                     assert_equal(0, tile_pos[y, x, 0])
                     assert_equal(0, tile_pos[y, x, 1])
                 else:
-                    y0 = y * template.tiley + border
-                    x0 = x * template.tilex + border
-                    y1 = min(y0 + template.tiley, dirty.shape[1] - border)
-                    x1 = min(x0 + template.tilex, dirty.shape[2] - border)
+                    y0 = y * template.tiley + border_pixels
+                    x0 = x * template.tilex + border_pixels
+                    y1 = min(y0 + template.tiley, dirty.shape[1] - border_pixels)
+                    x1 = min(x0 + template.tilex, dirty.shape[2] - border_pixels)
                     tile = np.abs(dirty[0, y0:y1, x0:x1])
                     pos = np.unravel_index(np.argmax(tile), tile.shape)
                     assert_equal(tile[pos], tile_max[y, x])
@@ -173,12 +174,13 @@ class TestClean:
     def _test_noise(self, context, command_queue, std, rtol):
         rs = np.random.RandomState(seed=1)
         image_shape = (4, 400, 544)
-        border = 45
+        border_pixels = 45
+        border = border_pixels / image_shape[1]
         # Start with a standard normal distribution
         dirty = rs.standard_normal(image_shape).astype(np.float32)
         # Scale it up only inside the border, to ensure that the border value
         # is being respected.
-        dirty[:, border:-border, border:-border] *= std
+        dirty[:, border_pixels:-border_pixels, border_pixels:-border_pixels] *= std
         # Add some big values to ensure robustness
         dirty.flat[rs.choice(dirty.size, 1000, replace=False)] += 1e6
 

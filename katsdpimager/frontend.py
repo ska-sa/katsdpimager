@@ -266,11 +266,10 @@ class ChannelParameters:
             clean_mode = clean.CLEAN_SUMSQ
         else:
             raise ValueError('Unhandled --clean-mode {}'.format(args.clean_mode))
-        border = int(round(self.image_p.pixels * args.border))
         limit = int(round(self.image_p.pixels * args.psf_limit))
         self.clean_p = parameters.CleanParameters(
             args.minor, args.loop_gain, args.major_gain, args.threshold,
-            clean_mode, args.psf_cutoff, limit, border)
+            clean_mode, args.psf_cutoff, limit, args.border)
 
     def log_parameters(self, suffix=''):
         log_parameters("Image parameters" + suffix, self.image_p)

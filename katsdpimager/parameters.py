@@ -294,5 +294,5 @@ Max minor cycles: {self.minor}
 PSF cutoff: {self.psf_cutoff}
 PSF limit: {self.psf_limit} pixels
 Peak function: {mode}
-Border: {self.border} pixels""".format(
+Border: {100 * self.border}%""".format(
             self=self, mode='I' if self.mode == clean.CLEAN_I else 'I^2+Q^2+U^2+V^2')
