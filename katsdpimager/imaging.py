@@ -12,34 +12,34 @@ class ImagingTemplate:
     """Template holding all the other templates for imaging."""
 
     @profile_function()
-    def __init__(self, context, array_parameters, image_parameters,
-                 weight_parameters, grid_parameters, clean_parameters):
+    def __init__(self, context, array_parameters, fixed_image_parameters,
+                 weight_parameters, fixed_grid_parameters, clean_parameters):
         self.context = context
         self.array_parameters = array_parameters
-        self.image_parameters = image_parameters
+        self.fixed_image_parameters = fixed_image_parameters
         self.weight_parameters = weight_parameters
-        self.grid_parameters = grid_parameters
+        self.fixed_grid_parameters = fixed_grid_parameters
         self.clean_parameters = clean_parameters
-        num_polarizations = len(image_parameters.fixed.polarizations)
+        num_polarizations = len(fixed_image_parameters.polarizations)
         self.weights = weight.WeightsTemplate(
             context, weight_parameters.weight_type, num_polarizations)
         self.gridder = grid.GridderTemplate(
-            context, image_parameters.fixed, grid_parameters.fixed)
+            context, fixed_image_parameters, fixed_grid_parameters)
         self.predict = predict.PredictTemplate(
-            context, image_parameters.fixed.real_dtype, num_polarizations)
+            context, fixed_image_parameters.real_dtype, num_polarizations)
         self.grid_image = image.GridImageTemplate(
-            context, image_parameters.fixed.real_dtype)
+            context, fixed_image_parameters.real_dtype)
         self.psf_patch = clean.PsfPatchTemplate(
-            context, image_parameters.fixed.real_dtype, num_polarizations)
+            context, fixed_image_parameters.real_dtype, num_polarizations)
         self.noise_est = clean.NoiseEstTemplate(
-            context, image_parameters.fixed.real_dtype, num_polarizations)
+            context, fixed_image_parameters.real_dtype, num_polarizations)
         self.clean = clean.CleanTemplate(
-            context, clean_parameters, image_parameters.fixed.real_dtype, num_polarizations)
+            context, clean_parameters, fixed_image_parameters.real_dtype, num_polarizations)
         self.scale = image.ScaleTemplate(
-            context, image_parameters.fixed.real_dtype, num_polarizations)
-        if grid_parameters.fixed.degrid:
+            context, fixed_image_parameters.real_dtype, num_polarizations)
+        if fixed_grid_parameters.degrid:
             self.degridder = grid.DegridderTemplate(
-                context, image_parameters.fixed, grid_parameters.fixed)
+                context, fixed_image_parameters, fixed_grid_parameters)
         else:
             self.degridder = None
 
@@ -49,13 +49,18 @@ class ImagingTemplate:
 
 class Imaging(accel.OperationSequence):
     @profile_function()
-    def __init__(self, template, command_queue, max_vis, max_sources, major, allocator=None):
+    def __init__(
+            self, template, command_queue,
+            image_parameters, grid_parameters,
+            max_vis, max_sources, major, allocator=None):
+        assert image_parameters.fixed == template.fixed_image_parameters
+        assert grid_parameters.fixed == template.fixed_grid_parameters
         self.template = template
-        lm_scale = float(template.image_parameters.pixel_size)
-        lm_bias = -0.5 * template.image_parameters.pixels * lm_scale
-        image_shape = (len(template.image_parameters.fixed.polarizations),
-                       template.image_parameters.pixels,
-                       template.image_parameters.pixels)
+        lm_scale = float(image_parameters.pixel_size)
+        lm_bias = -0.5 * image_parameters.pixels * lm_scale
+        image_shape = (len(image_parameters.fixed.polarizations),
+                       image_parameters.pixels,
+                       image_parameters.pixels)
         # Currently none of the kernels accessing the layer need any padding.
         # It would be nice if there was a cleaner way to handle this; possibly
         # by deferring creation of the FFT plan until instantiation.
@@ -66,12 +71,12 @@ class Imaging(accel.OperationSequence):
         self._gridder = template.gridder.instantiate(
             command_queue,
             template.array_parameters,
-            template.image_parameters,
-            template.grid_parameters,
+            image_parameters,
+            grid_parameters,
             max_vis,
             allocator)
         self._continuum_predict = template.predict.instantiate(
-            command_queue, template.image_parameters, template.grid_parameters,
+            command_queue, image_parameters, grid_parameters,
             max_vis, max_sources, allocator)
         grid_shape = self._gridder.slots['grid'].shape
         self._weights = template.weights.instantiate(
@@ -84,39 +89,39 @@ class Imaging(accel.OperationSequence):
         self._noise_est = template.noise_est.instantiate(
             command_queue, image_shape, template.clean_parameters.border, allocator)
         self._clean = template.clean.instantiate(
-            command_queue, template.image_parameters, allocator)
+            command_queue, image_parameters, allocator)
         self._scale = template.scale.instantiate(
             command_queue, image_shape, allocator)
 
         # TODO: handle taper1d/untaper1d as standard slots
         taper1d = accel.SVMArray(
             template.context,
-            (template.image_parameters.pixels,),
-            template.image_parameters.fixed.real_dtype)
-        self._gridder.convolve_kernel.taper(template.image_parameters.pixels, taper1d)
+            (image_parameters.pixels,),
+            image_parameters.fixed.real_dtype)
+        self._gridder.convolve_kernel.taper(image_parameters.pixels, taper1d)
         self._grid_to_image.bind(kernel1d=taper1d)
-        if template.grid_parameters.fixed.degrid:
+        if grid_parameters.fixed.degrid:
             untaper1d = accel.SVMArray(
                 template.context,
-                (template.image_parameters.pixels,),
-                template.image_parameters.fixed.real_dtype)
+                (image_parameters.pixels,),
+                image_parameters.fixed.real_dtype)
             self._predict = template.degridder.instantiate(
                 command_queue,
                 template.array_parameters,
-                template.image_parameters,
-                template.grid_parameters,
+                image_parameters,
+                grid_parameters,
                 max_vis,
                 allocator)
-            self._predict.convolve_kernel.taper(template.image_parameters.pixels, untaper1d)
+            self._predict.convolve_kernel.taper(image_parameters.pixels, untaper1d)
             degrid_shape = self._predict.slots['grid'].shape
             self._image_to_grid = template.grid_image.instantiate_image_to_grid(
                 command_queue, degrid_shape, lm_scale, lm_bias, fft_plan, allocator)
             self._image_to_grid.bind(kernel1d=untaper1d)
         else:
-            max_components = min(template.image_parameters.pixels**2,
+            max_components = min(image_parameters.pixels**2,
                                  (major - 1) * template.clean_parameters.minor)
             self._predict = template.predict.instantiate(
-                command_queue, template.image_parameters, template.grid_parameters,
+                command_queue, image_parameters, grid_parameters,
                 max_vis, max_components, allocator)
         operations = [
             ('weights', self._weights),
@@ -147,7 +152,7 @@ class Imaging(accel.OperationSequence):
             'peak_pos': ['clean:peak_pos'],
             'peak_pixel': ['clean:peak_pixel']
         }
-        if template.grid_parameters.fixed.degrid:
+        if grid_parameters.fixed.degrid:
             operations.append(('image_to_grid', self._image_to_grid))
             compounds['degrid'] = ['predict:grid', 'image_to_grid:grid']
             compounds['layer'].append('image_to_grid:layer')
@@ -238,7 +243,7 @@ class Imaging(accel.OperationSequence):
     @profile_function()
     def predict(self, w):
         self.ensure_all_bound()
-        if not self.template.grid_parameters.fixed.degrid:
+        if not self.template.fixed_grid_parameters.degrid:
             self._predict.set_w(w)
         self._predict()
 
@@ -268,7 +273,7 @@ class Imaging(accel.OperationSequence):
 
     @profile_function()
     def model_to_predict(self):
-        if self.template.grid_parameters.fixed.degrid:
+        if self.template.fixed_grid_parameters.degrid:
             raise RuntimeError('Can only use model_to_predict with direct prediction')
         # It's computed on the CPU, so we need to be sure that device work is complete
         self._predict.command_queue.finish()

@@ -487,10 +487,10 @@ def process_channel(dataset, args, start_channel,
     else:
         allocator = accel.SVMAllocator(context)
         imager_template = imaging.ImagingTemplate(
-            context, array_p, image_p, weight_p, grid_p, clean_p)
+            context, array_p, image_p.fixed, weight_p, grid_p.fixed, clean_p)
         n_sources = len(subtract_model) if subtract_model else 0
         imager = imager_template.instantiate(
-            queue, args.vis_block, n_sources, args.major, allocator)
+            queue, image_p, grid_p, args.vis_block, n_sources, args.major, allocator)
         imager.ensure_all_bound()
     psf = imager.buffer('psf')
     dirty = imager.buffer('dirty')
