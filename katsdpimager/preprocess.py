@@ -108,7 +108,7 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
     def num_channels(self):
         return len(self.image_parameters)
 
-    def _emit(self, elements):
+    def _emit(self, channel, elements):
         """Write an array of compressed elements with the same channel and w
         slice to the backing store. The caller must provide a non-empty
         array.
@@ -237,9 +237,8 @@ class VisibilityCollectorHDF5(VisibilityCollector):
             dtype=self.store_dtype,
             chunks=(1, 1, chunk_elements))
 
-    def _emit(self, elements):
+    def _emit(self, channel, elements):
         N = elements.shape[0]
-        channel = elements[0]['channel']
         w_slice = elements[0]['w_slice']
         old_length = self._length[channel, w_slice]
         self._length[channel, w_slice] += N
@@ -287,8 +286,8 @@ class VisibilityCollectorMem(VisibilityCollector):
             [[] for w_slice in range(self.grid_parameters[channel].w_slices)]
             for channel in range(self.num_channels)]
 
-    def _emit(self, elements):
-        dataset = self.datasets[elements[0]['channel']][elements[0]['w_slice']]
+    def _emit(self, channel, elements):
+        dataset = self.datasets[channel][elements[0]['w_slice']]
         # Work around FutureWarning in numpy 1.12 by first creating a view of
         # elements that contains only the fields we want.
         elements = np.ndarray(elements.shape, self.store_dtype, elements, 0, elements.strides)

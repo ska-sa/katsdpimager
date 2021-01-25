@@ -45,7 +45,6 @@ struct vis_t
     std::complex<float> vis[P];
     std::int16_t w_plane;    ///< Plane within W slice
     std::int16_t w_slice;    ///< W-stacking slice
-    std::int32_t channel;
     std::int32_t baseline;   ///< Baseline ID
     std::uint32_t index;     ///< Original position, for sort stability
 };
@@ -104,8 +103,8 @@ class visibility_collector_base
 protected:
     // Gridding parameters
     py::array_t<channel_config, array_flags> config;
-    /// Callback function called with compressed data as a numpy array
-    std::function<void(py::array)> emit_callback;
+    /// Callback function called with channel and compressed data as a numpy array
+    std::function<void(int, py::array)> emit_callback;
 
 public:
     std::int64_t num_input = 0, num_output = 0;
@@ -114,7 +113,7 @@ public:
 
     visibility_collector_base(
         py::array_t<channel_config, array_flags> config,
-        std::function<void(py::array)> emit_callback);
+        std::function<void(int, py::array)> emit_callback);
     virtual ~visibility_collector_base() {}
 
     /**
@@ -161,7 +160,7 @@ public:
 
 visibility_collector_base::visibility_collector_base(
     py::array_t<channel_config, array_flags> config,
-    std::function<void(py::array)> emit_callback)
+    std::function<void(int, py::array)> emit_callback)
     : config(std::move(config)), emit_callback(std::move(emit_callback))
 {
     check_dimensions(this->config, -1);
@@ -251,13 +250,13 @@ private:
      * numpy object to wrap the memory. @a data must be pointer into
      * @ref buffer_storage.
      */
-    void emit(vis_t<P> data[], std::size_t N);
+    void emit(int channel, vis_t<P> data[], std::size_t N);
 
     /**
      * Sort and compress the buffer, and call emit for each contiguous
      * portion that belongs to the same w plane and channel.
      */
-    void compress();
+    void compress(int channel);
 
     template<int Q, typename Generator>
     void add_impl2(
@@ -281,7 +280,7 @@ private:
 public:
     visibility_collector(
         py::array_t<channel_config, array_flags> config,
-        std::function<void(py::array)> emit_callback,
+        std::function<void(int, py::array)> emit_callback,
         std::size_t buffer_capacity);
 
     virtual void add(
@@ -326,9 +325,7 @@ struct compare
 {
     bool operator()(const T &a, const T &b) const
     {
-        if (a.channel != b.channel)
-            return a.channel < b.channel;
-        else if (a.w_slice != b.w_slice)
+        if (a.w_slice != b.w_slice)
             return a.w_slice < b.w_slice;
         else if (a.baseline != b.baseline)
             return a.baseline < b.baseline;
@@ -338,15 +335,15 @@ struct compare
 };
 
 template<int P>
-void visibility_collector<P>::emit(vis_t<P> data[], std::size_t N)
+void visibility_collector<P>::emit(int channel, vis_t<P> data[], std::size_t N)
 {
     py::array_t<vis_t<P>> array(N, data, buffer_storage);
     num_output += N;
-    emit_callback(array);
+    emit_callback(channel, array);
 }
 
 template<int P>
-void visibility_collector<P>::compress()
+void visibility_collector<P>::compress(int channel)
 {
     if (buffer_size == 0)
         return;  // some code will break on an empty buffer
@@ -357,13 +354,12 @@ void visibility_collector<P>::compress()
     for (std::size_t i = 1; i < buffer_size; i++)
     {
         const vis_t<P> &element = buffer[i];
-        if (element.channel != last.channel
-            || element.w_slice != last.w_slice)
+        if (element.w_slice != last.w_slice)
         {
-            // Moved to the next channel/slice, so pass what we have
+            // Moved to the next slice, so pass what we have
             // back to Python
             buffer[out_pos++] = last;
-            emit(buffer, out_pos);
+            emit(channel, buffer, out_pos);
             out_pos = 0;
             last = element;
         }
@@ -388,7 +384,7 @@ void visibility_collector<P>::compress()
     }
     // Emit the final batch
     buffer[out_pos++] = last;
-    emit(buffer, out_pos);
+    emit(channel, buffer, out_pos);
     buffer_size = 0;
 }
 
@@ -443,7 +439,7 @@ void visibility_collector<P>::add_impl2(
                 continue;
             }
             if (buffer_size == buffer_capacity)
-                compress();
+                compress(channel);
 
             VectorPcf xvis = (convert[i].template cast<MulZ<std::complex<float>>>() * vis.col(i))
                              .template cast<std::complex<float>>();
@@ -496,7 +492,6 @@ void visibility_collector<P>::add_impl2(
             // TODO convert from here
             subpixel_coord(u, conf.oversample, out.uv[0], out.sub_uv[0]);
             subpixel_coord(v, conf.oversample, out.uv[1], out.sub_uv[1]);
-            out.channel = channel;
             out.w_plane = w_slice_plane % conf.w_planes;
             out.w_slice = w_slice_plane / conf.w_planes;
             out.baseline = baselines[i];
@@ -505,12 +500,9 @@ void visibility_collector<P>::add_impl2(
             out.index = (std::uint32_t) buffer_size;
             buffer_size++;
         }
-        if (channel + 1 < num_channels())
-        {
-            // Not needed for correctness, but avoids putting the next channel
-            // in the same buffer where it is unlikely to combine well.
-            compress();
-        }
+
+        // Flush anything left in the buffer
+        compress(channel);
     }
     num_input += num_channels() * N;
 }
@@ -611,13 +603,12 @@ void visibility_collector<P>::add(
 template<int P>
 void visibility_collector<P>::close()
 {
-    compress();
 }
 
 template<int P>
 visibility_collector<P>::visibility_collector(
     py::array_t<channel_config, array_flags> config,
-    std::function<void(py::array)> emit_callback,
+    std::function<void(int, py::array)> emit_callback,
     std::size_t buffer_capacity)
     : visibility_collector_base(std::move(config), std::move(emit_callback)),
     buffer_storage(buffer_capacity),
@@ -633,7 +624,7 @@ static std::unique_ptr<visibility_collector_base>
 make_visibility_collector(
     int polarizations,
     py::array_t<channel_config, array_flags> config,
-    std::function<void(py::array)> emit_callback,
+    std::function<void(int, py::array)> emit_callback,
     std::size_t buffer_capacity)
 {
     if (polarizations > P || polarizations <= 0)
@@ -660,7 +651,7 @@ template<int P>
 static typename std::enable_if<0 < P>::type register_vis_dtypes()
 {
     register_vis_dtypes<P - 1>();
-    PYBIND11_NUMPY_DTYPE(vis_t<P>, uv, sub_uv, weights, vis, w_plane, w_slice, channel, baseline, index);
+    PYBIND11_NUMPY_DTYPE(vis_t<P>, uv, sub_uv, weights, vis, w_plane, w_slice, baseline, index);
 }
 
 } // anonymous namespace
