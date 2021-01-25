@@ -161,7 +161,7 @@ def write_fits_image(dataset, image, image_parameters, filename, channel,
         header['BMAJ'] = major.to(units.deg).value
         header['BMIN'] = minor.to(units.deg).value
         header['BPA'] = beam.theta.to(units.deg).value
-    _fits_polarizations(header, 3, image_parameters.polarizations)
+    _fits_polarizations(header, 3, image_parameters.fixed.polarizations)
     # This is basically np.nanmin and np.nanmax, but the implementations of
     # those take a slow, safe path if the array is a subclass of ndarray. In
     # our case it is but the fast path still works so we use it directly.
@@ -235,7 +235,7 @@ def write_fits_grid(grid, image_parameters, filename, channel):
         If the set of `polarizations` cannot be represented as a linear
         transform in the FITS header.
     """
-    grid = _split_array(grid, image_parameters.real_dtype)
+    grid = _split_array(grid, image_parameters.fixed.real_dtype)
     grid = grid.transpose(3, 0, 1, 2)
 
     header = fits.Header()
@@ -249,7 +249,7 @@ def write_fits_grid(grid, image_parameters, filename, channel):
     header['CRPIX2'] = grid.shape[2] // 2 + 1.0
     header['CRVAL2'] = 0.0
     header['CDELT2'] = float(image_parameters.cell_size / units.m)
-    pol_permute = _fits_polarizations(header, 3, image_parameters.polarizations)
+    pol_permute = _fits_polarizations(header, 3, image_parameters.fixed.polarizations)
     header['CTYPE4'] = 'COMPLEX'
     header['CRPIX4'] = 1.0
     header['CRVAL4'] = 1.0

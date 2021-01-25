@@ -87,16 +87,16 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
         Number of visibilities to buffer, prior to compression
     """
     def __init__(self, image_parameters, grid_parameters, buffer_size):
-        num_polarizations = len(image_parameters[0].polarizations)
+        num_polarizations = len(image_parameters[0].fixed.polarizations)
         if len(image_parameters) != len(grid_parameters):
             raise ValueError('Inconsistent lengths of image_parameters and grid_parameters')
         num_channels = len(image_parameters)
         config = np.zeros(num_channels, _preprocess.CHANNEL_CONFIG_DTYPE)
         for i, grid_p in enumerate(grid_parameters):
-            config[i]["max_w"] = grid_p.max_w.to(units.m).value
+            config[i]["max_w"] = grid_p.fixed.max_w.to(units.m).value
             config[i]["w_slices"] = grid_p.w_slices
             config[i]["w_planes"] = grid_p.w_planes
-            config[i]["oversample"] = grid_p.oversample
+            config[i]["oversample"] = grid_p.fixed.oversample
             config[i]["cell_size"] = image_parameters[i].cell_size.to(units.m).value
         super().__init__(
             num_polarizations, config, self._emit, buffer_size)

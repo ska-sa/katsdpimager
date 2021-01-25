@@ -345,19 +345,21 @@ class ConvolutionKernel:
     """
     def __init__(self, image_parameters, grid_parameters, data=None):
         self.grid_parameters = grid_parameters
-        shape = (grid_parameters.w_planes, grid_parameters.oversample, grid_parameters.kernel_width)
+        shape = (grid_parameters.w_planes,
+                 grid_parameters.fixed.oversample,
+                 grid_parameters.fixed.kernel_width)
         if data is None:
             self.data = np.empty(shape, np.complex64)
         else:
             self.data = data
         cell_wavelengths = float(image_parameters.cell_size / image_parameters.wavelength)
         # Separation in w between slices
-        w_slice_wavelengths = float(grid_parameters.max_w
+        w_slice_wavelengths = float(grid_parameters.fixed.max_w
                                     / (grid_parameters.w_slices * image_parameters.wavelength))
         # Separation in w between planes
         w_plane_wavelengths = w_slice_wavelengths / grid_parameters.w_planes
         # Puts the first null of the taper function at the edge of the image
-        self.beta = math.pi * math.sqrt(0.25 * grid_parameters.antialias_width**2 - 1.0)
+        self.beta = math.pi * math.sqrt(0.25 * grid_parameters.fixed.antialias_width**2 - 1.0)
         # Move the null outside the image, to avoid numerical instabilities.
         # This will cause a small amount of aliasing at the edges, which
         # ideally should be handled by clipping the image.
@@ -369,20 +371,20 @@ class ConvolutionKernel:
         ws = np.linspace(-max_w_wavelengths, max_w_wavelengths, grid_parameters.w_planes)
         for i, w in enumerate(ws):
             antialias_w_kernel(
-                cell_wavelengths, w, grid_parameters.kernel_width,
-                grid_parameters.oversample,
-                grid_parameters.antialias_width,
-                grid_parameters.image_oversample,
+                cell_wavelengths, w, grid_parameters.fixed.kernel_width,
+                grid_parameters.fixed.oversample,
+                grid_parameters.fixed.antialias_width,
+                grid_parameters.fixed.image_oversample,
                 self.beta, out=self.data[i, ...])
 
     @classmethod
-    def get_bin_size(cls, grid_parameters, tile_x, tile_y, pad):
+    def get_bin_size(cls, fixed_grid_parameters, tile_x, tile_y, pad):
         """Determine appropriate bin size given alignment restrictions."""
         size = max(tile_x, tile_y)
         # Round up to a power of 2
-        while size < grid_parameters.kernel_width + pad:
+        while size < fixed_grid_parameters.kernel_width + pad:
             size *= 2
-        if size != grid_parameters.kernel_width + pad:
+        if size != fixed_grid_parameters.kernel_width + pad:
             logger.info("kernel size rounded up to %d", size)
         assert size % tile_x == 0
         assert size % tile_y == 0
@@ -405,20 +407,21 @@ class ConvolutionKernel:
             If provided, is used to store the result
         """
         x = np.arange(N) / N - 0.5
-        out = kaiser_bessel_fourier(x, self.grid_parameters.antialias_width, self.beta, out)
-        out *= np.sinc(x / self.grid_parameters.oversample)
+        out = kaiser_bessel_fourier(x, self.grid_parameters.fixed.antialias_width, self.beta, out)
+        out *= np.sinc(x / self.grid_parameters.fixed.oversample)
         return out
 
 
 class ConvolutionKernelDevice(ConvolutionKernel):
     """A :class:`ConvolutionKernel` that stores data in a device array."""
+
     def __init__(self, context, image_parameters, grid_parameters, pad=0, allocator=None):
         if allocator is None:
             allocator = accel.DeviceAllocator(context)
         out = allocator.allocate(
             (grid_parameters.w_planes,
-             grid_parameters.oversample,
-             grid_parameters.kernel_width + 2 * pad),
+             grid_parameters.fixed.oversample,
+             grid_parameters.fixed.kernel_width + 2 * pad),
             np.complex64)
         if isinstance(out, accel.SVMArray):
             host = out
@@ -426,7 +429,10 @@ class ConvolutionKernelDevice(ConvolutionKernel):
             host = out.empty_like()
         host.fill(0)
         super().__init__(
-            image_parameters, grid_parameters, host[:, :, pad:grid_parameters.kernel_width + pad])
+            image_parameters,
+            grid_parameters,
+            host[:, :, pad:grid_parameters.fixed.kernel_width + pad]
+        )
         if not isinstance(out, accel.SVMArray):
             queue = context.create_command_queue()
             out.set(queue, host)
@@ -437,14 +443,16 @@ class ConvolutionKernelDevice(ConvolutionKernel):
     def bin_size(self):
         return self.data.shape[-1] + self.pad
 
-    def parameters(self):
+    @classmethod
+    def parameters(self, fixed_grid_parameters, pad):
         """Parameters for templating CUDA/OpenCL kernels"""
+        slice_stride = fixed_grid_parameters.kernel_width + 2 * pad
+        bin_size = fixed_grid_parameters.kernel_width + pad
         return {
-            'convolve_kernel_slice_stride':
-                self.padded_data.padded_shape[2],
-            'convolve_kernel_w_stride': np.product(self.padded_data.padded_shape[1:]),
-            'bin_x': self.bin_size,
-            'bin_y': self.bin_size,
+            'convolve_kernel_slice_stride': slice_stride,
+            'convolve_kernel_w_stride': slice_stride * fixed_grid_parameters.oversample,
+            'bin_x': bin_size,
+            'bin_y': bin_size
         }
 
 
@@ -534,13 +542,14 @@ def _autotune_arrays(command_queue, oversample, real_dtype, num_polarizations, b
 class GridderTemplate:
     autotune_version = 6
 
-    def __init__(self, context, image_parameters, grid_parameters, tuning=None):
+    def __init__(self, context, fixed_image_parameters, fixed_grid_parameters, tuning=None):
         if tuning is None:
             tuning = self.autotune(
-                context, grid_parameters.oversample, image_parameters.real_dtype,
-                len(image_parameters.polarizations))
-        self.grid_parameters = grid_parameters
-        self.image_parameters = image_parameters
+                context, fixed_grid_parameters.oversample, fixed_image_parameters.real_dtype,
+                len(fixed_image_parameters.polarizations))
+        self.context = context
+        self.fixed_grid_parameters = fixed_grid_parameters
+        self.fixed_image_parameters = fixed_image_parameters
         self.wgs_x = tuning['wgs_x']
         self.wgs_y = tuning['wgs_y']
         self.multi_x = tuning['multi_x']
@@ -549,19 +558,18 @@ class GridderTemplate:
         self.tile_x = self.wgs_x * self.multi_x
         self.tile_y = self.wgs_y * self.multi_y
         bin_size = ConvolutionKernel.get_bin_size(
-            grid_parameters, self.tile_x, self.tile_y, min_pad)
-        pad = bin_size - grid_parameters.kernel_width
-        self.convolve_kernel = ConvolutionKernelDevice(
-            context, image_parameters, grid_parameters, pad)
+            fixed_grid_parameters, self.tile_x, self.tile_y, min_pad)
+        self.kernel_pad = bin_size - fixed_grid_parameters.kernel_width
         parameters = {
-            'real_type': katsdpimager.types.dtype_to_ctype(image_parameters.real_dtype),
+            'real_type': katsdpimager.types.dtype_to_ctype(fixed_image_parameters.real_dtype),
             'multi_x': self.multi_x,
             'multi_y': self.multi_y,
             'wgs_x': self.wgs_x,
             'wgs_y': self.wgs_y,
-            'num_polarizations': len(image_parameters.polarizations)
+            'num_polarizations': len(fixed_image_parameters.polarizations)
         }
-        parameters.update(self.convolve_kernel.parameters())
+        parameters.update(
+            ConvolutionKernelDevice.parameters(fixed_grid_parameters, self.kernel_pad))
         self.program = accel.build(
             context, "imager_kernels/grid.mako", parameters,
             extra_dirs=[pkg_resources.resource_filename(__name__, '')])
@@ -732,6 +740,10 @@ class GridDegrid(VisOperation):
         Command queue for the operation
     array_parameters : :class:`~katsdpimager.parameters.ArrayParameters`
         Array parameters
+    image_parameters : :class:`katsdpimager.parameters.ImageParameters`
+        Channel-specific image parameters
+    grid_parameters : :class:`katsdpimager.parameters.GridParameters`
+        Channel-specific gridding parameters
     max_vis : int
         Number of visibilities that can be supported per kernel invocation
     allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
@@ -743,27 +755,36 @@ class GridDegrid(VisOperation):
         If the longest baseline is too large to find within the grid
     """
     def __init__(self, template, command_queue, array_parameters,
-                 max_vis, allocator=None):
-        num_polarizations = len(template.image_parameters.polarizations)
+                 image_parameters, grid_parameters, max_vis, allocator=None):
+        assert image_parameters.fixed == template.fixed_image_parameters
+        assert grid_parameters.fixed == template.fixed_grid_parameters
+        num_polarizations = len(image_parameters.fixed.polarizations)
         super().__init__(command_queue, num_polarizations, max_vis, allocator)
+        self.convolve_kernel = ConvolutionKernelDevice(
+            template.context,
+            image_parameters,
+            grid_parameters,
+            template.kernel_pad)
         # Check that longest baseline won't cause an out-of-bounds access
-        max_uv_src = float(array_parameters.longest_baseline / template.image_parameters.cell_size)
-        convolve_kernel_size = template.convolve_kernel.padded_data.shape[-1]
+        max_uv_src = float(array_parameters.longest_baseline / image_parameters.cell_size)
+        convolve_kernel_size = self.convolve_kernel.padded_data.shape[-1]
         # I don't think the + 1 is actually needed, but it's a safety factor in
         # case I've made an off-by-one error in the maths.
         grid_pixels = 2 * (int(max_uv_src) + convolve_kernel_size // 2 + 1)
-        if grid_pixels > template.image_parameters.pixels:
+        if grid_pixels > image_parameters.pixels:
             raise ValueError('image_oversample is too small '
                              'to capture all visibilities in the UV plane')
         self.template = template
+        self.image_parameters = image_parameters
+        self.grid_parameters = grid_parameters
         self.slots['grid'] = accel.IOSlot(
             (num_polarizations, grid_pixels, grid_pixels),
-            template.image_parameters.complex_dtype)
+            image_parameters.fixed.complex_dtype)
 
     def parameters(self):
         return {
-            'grid_parameters': self.template.grid_parameters,
-            'image_parameters': self.template.image_parameters
+            'grid_parameters': self.grid_parameters,
+            'image_parameters': self.image_parameters
         }
 
 
@@ -843,14 +864,14 @@ class Gridder(GridDegrid):
             )
 
     def _run(self):
-        kernel_width = self.template.grid_parameters.kernel_width
-        uv_bias = ((kernel_width - 1) // 2 + self.template.convolve_kernel.pad
+        kernel_width = self.grid_parameters.fixed.kernel_width
+        uv_bias = ((kernel_width - 1) // 2 + self.convolve_kernel.pad
                    - self.slots['grid'].shape[-1] // 2)
         self.static_run(
             self.command_queue, self._kernel,
             self.template.wgs_x, self.template.wgs_y,
             self.template.tile_x, self.template.tile_y,
-            self.template.convolve_kernel.bin_size,
+            self.convolve_kernel.bin_size,
             self.num_vis,
             uv_bias,
             self.buffer('grid'),
@@ -858,19 +879,20 @@ class Gridder(GridDegrid):
             self.buffer('uv'),
             self.buffer('w_plane'),
             self.buffer('vis'),
-            self.template.convolve_kernel.padded_data)
+            self.convolve_kernel.padded_data)
 
 
 class DegridderTemplate:
     autotune_version = 3
 
-    def __init__(self, context, image_parameters, grid_parameters, tuning=None):
+    def __init__(self, context, fixed_image_parameters, fixed_grid_parameters, tuning=None):
         if tuning is None:
             tuning = self.autotune(
-                context, grid_parameters.oversample, image_parameters.real_dtype,
-                len(image_parameters.polarizations))
-        self.grid_parameters = grid_parameters
-        self.image_parameters = image_parameters
+                context, fixed_grid_parameters.oversample, fixed_image_parameters.real_dtype,
+                len(fixed_image_parameters.polarizations))
+        self.context = context
+        self.fixed_grid_parameters = fixed_grid_parameters
+        self.fixed_image_parameters = fixed_image_parameters
         self.wgs_x = tuning['wgs_x']
         self.wgs_y = tuning['wgs_y']
         self.wgs_z = tuning['wgs_z']
@@ -879,25 +901,20 @@ class DegridderTemplate:
         self.tile_x = self.wgs_x * self.multi_x
         self.tile_y = self.wgs_y * self.multi_y
         min_pad = max(self.multi_x, self.multi_y) - 1
-        bin_size = ConvolutionKernel.get_bin_size(grid_parameters, self.tile_x, self.tile_y,
-                                                  min_pad)
-        pad = bin_size - grid_parameters.kernel_width
-        # Note: we can't necessarily use the same kernel as for gridding,
-        # because different tuning parameters will affect the kernel padding.
-        # TODO: should still reuse the work done to compute the function, and
-        # simply adjust the padding.
-        self.convolve_kernel = ConvolutionKernelDevice(
-            context, image_parameters, grid_parameters, pad)
+        bin_size = ConvolutionKernel.get_bin_size(
+            fixed_grid_parameters, self.tile_x, self.tile_y, min_pad)
+        self.kernel_pad = bin_size - fixed_grid_parameters.kernel_width
         parameters = {
-            'real_type': katsdpimager.types.dtype_to_ctype(image_parameters.real_dtype),
+            'real_type': katsdpimager.types.dtype_to_ctype(fixed_image_parameters.real_dtype),
             'multi_x': self.multi_x,
             'multi_y': self.multi_y,
             'wgs_x': self.wgs_x,
             'wgs_y': self.wgs_y,
             'wgs_z': self.wgs_z,
-            'num_polarizations': len(image_parameters.polarizations)
+            'num_polarizations': len(fixed_image_parameters.polarizations)
         }
-        parameters.update(self.convolve_kernel.parameters())
+        parameters.update(
+            ConvolutionKernelDevice.parameters(fixed_grid_parameters, self.kernel_pad))
         self.program = accel.build(
             context, "imager_kernels/degrid.mako", parameters,
             extra_dirs=[pkg_resources.resource_filename(__name__, '')])
@@ -975,7 +992,7 @@ class Degridder(GridDegrid):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        num_polarizations = len(self.template.image_parameters.polarizations)
+        num_polarizations = len(self.image_parameters.fixed.polarizations)
         self.slots['weights'] = accel.IOSlot(
             (self.max_vis, accel.Dimension(num_polarizations, exact=True)), np.float32)
         self._kernel = self.template.program.get_kernel('degrid')
@@ -1021,8 +1038,8 @@ class Degridder(GridDegrid):
             )
 
     def _run(self):
-        kernel_width = self.template.grid_parameters.kernel_width
-        uv_bias = ((kernel_width - 1) // 2 + self.template.convolve_kernel.pad
+        kernel_width = self.grid_parameters.fixed.kernel_width
+        uv_bias = ((kernel_width - 1) // 2 + self.convolve_kernel.pad
                    - self.slots['grid'].shape[-1] // 2)
         self.static_run(
             self.command_queue, self._kernel,
@@ -1034,7 +1051,7 @@ class Degridder(GridDegrid):
             self.buffer('w_plane'),
             self.buffer('weights'),
             self.buffer('vis'),
-            self.template.convolve_kernel.padded_data)
+            self.convolve_kernel.padded_data)
 
 
 @numba.jit(nopython=True)
@@ -1120,8 +1137,8 @@ class GridDegridHost(VisOperationHost):
         self.grid_parameters = grid_parameters
         self.kernel = ConvolutionKernel(image_parameters, grid_parameters)
         pixels = image_parameters.pixels
-        shape = (len(image_parameters.polarizations), pixels, pixels)
-        self.values = np.empty(shape, image_parameters.complex_dtype)
+        shape = (len(image_parameters.fixed.polarizations), pixels, pixels)
+        self.values = np.empty(shape, image_parameters.fixed.complex_dtype)
 
 
 class GridderHost(GridDegridHost):

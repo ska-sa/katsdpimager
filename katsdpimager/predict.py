@@ -59,12 +59,12 @@ def _extract_sky_model(image_parameters, grid_parameters, model, phase_centre):
     #
     # I'm not sure that this is mathematically defensible, but the results
     # look good.
-    taper = np.sinc(lmn[:, 0:2] / float(ip.image_size * grid_parameters.oversample))
+    taper = np.sinc(lmn[:, 0:2] / float(ip.image_size * grid_parameters.fixed.oversample))
     flux *= np.product(taper, axis=1, keepdims=True)
 
     # For each image polarization, find the corresponding index in IQUV
     # for advanced indexing.
-    pol_index = [polarization.STOKES_IQUV.index(pol) for pol in ip.polarizations]
+    pol_index = [polarization.STOKES_IQUV.index(pol) for pol in ip.fixed.polarizations]
     flux = flux[:, pol_index]
     return lmn.astype(np.float32), flux.astype(np.float32)
 
@@ -111,7 +111,7 @@ def _extract_sky_image(image_parameters, grid_parameters, image):
     lmn[:, 2] = n1
     flux = image[:, pos[0], pos[1]].T
     # See :func:`_extract_sky_model` for explanation of this tapering
-    taper_scale = float(image_parameters.image_size * grid_parameters.oversample)
+    taper_scale = float(image_parameters.image_size * grid_parameters.fixed.oversample)
     taper = np.sinc(l / taper_scale) * np.sinc(m / taper_scale)
     flux *= taper[:, np.newaxis]
     return lmn, flux
@@ -135,8 +135,8 @@ def _uvw_scale_bias(image_parameters, grid_parameters):
     gp = grid_parameters
 
     # uv is first computed in subpixels, hence need to / by oversample
-    uv_scale = ip.cell_size / gp.oversample
-    w_scale = gp.max_w / ((gp.w_slices - 0.5) * gp.w_planes)
+    uv_scale = ip.cell_size / gp.fixed.oversample
+    w_scale = gp.fixed.max_w / ((gp.w_slices - 0.5) * gp.w_planes)
 
     # The above give uvw in length, but we want it in wavelengths. We then
     # convert the (unitless, but possibly not scale-free) Quantity to a
@@ -201,10 +201,28 @@ class PredictTemplate:
         # The values don't make any difference to auto-tuning; they just affect
         # scale factors that have no impact on control flow.
         image_parameters = parameters.ImageParameters(
-            1, 3, 0.21 * units.m, None, polarization.STOKES_IQUV[:num_polarizations],
-            real_dtype, 1 * units.arcsec, 4096)
+            parameters.FixedImageParameters(
+                polarizations=polarization.STOKES_IQUV[:num_polarizations],
+                dtype=real_dtype
+            ),
+            q_fov=1.0,
+            image_oversample=3.0,
+            frequency=0.21 * units.m,
+            array=None,
+            pixel_size=1 * units.arcsec,
+            pixels=4096
+        )
         grid_parameters = parameters.GridParameters(
-            7.0, 8, 5, 5, 5, 1 * units.m, 64)
+            parameters.FixedGridParameters(
+                antialias_width=7.0,
+                oversample=8,
+                image_oversample=5,
+                max_w=1 * units.m,
+                kernel_width=64
+            ),
+            w_slices=5,
+            w_planes=5
+        )
 
         def generate(wgs):
             template = cls(context, real_dtype, num_polarizations, {'wgs': wgs})
@@ -265,7 +283,7 @@ class Predict(grid.VisOperation):
     """
     def __init__(self, template, command_queue, image_parameters, grid_parameters,
                  max_vis, max_sources, allocator=None):
-        if len(image_parameters.polarizations) != template.num_polarizations:
+        if len(image_parameters.fixed.polarizations) != template.num_polarizations:
             raise ValueError('Mismatch in number of polarizations')
         super().__init__(command_queue, template.num_polarizations, max_vis,
                          allocator)
@@ -363,7 +381,7 @@ class Predict(grid.VisOperation):
                     flux.buffer,
                     np.int32(self.num_vis),
                     np.int32(self.num_sources),
-                    np.int32(self.grid_parameters.oversample), np.float32(uv_scale),
+                    np.int32(self.grid_parameters.fixed.oversample), np.float32(uv_scale),
                     np.float32(w_scale), np.float32(w_bias)
                 ],
                 global_size=(accel.roundup(self.num_vis, self.template.wgs),),
@@ -442,7 +460,7 @@ class PredictHost(grid.VisOperationHost):
         w_bias += self._w
         _predict_host(self.vis, self.uv, self.sub_uv, self.w_plane, self.weights,
                       self.lmn, self.flux,
-                      np.float32(self.grid_parameters.oversample),
+                      np.float32(self.grid_parameters.fixed.oversample),
                       np.float32(uv_scale), np.float32(w_scale), np.float32(w_bias),
-                      np.zeros(len(self.image_parameters.polarizations),
-                               self.image_parameters.complex_dtype))
+                      np.zeros(len(self.image_parameters.fixed.polarizations),
+                               self.image_parameters.fixed.complex_dtype))

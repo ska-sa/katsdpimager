@@ -22,23 +22,29 @@ class BaseTestVisibilityCollector:
     def setup(self):
         self.image_parameters = []
         self.grid_parameters = []
+        fixed_image_parameters = parameters.FixedImageParameters(
+            polarizations=polarization.STOKES_IQUV,
+            dtype=np.float32
+        )
+        fixed_grid_parameters = parameters.FixedGridParameters(
+            antialias_width=7.0,
+            oversample=8,
+            image_oversample=4.0,
+            max_w=400 * units.m,
+            kernel_width=64
+        )
         for wavelength in np.array([0.25, 0.125]) * units.m:
             self.image_parameters.append(parameters.ImageParameters(
+                fixed_image_parameters,
                 q_fov=1.0,
                 image_oversample=5.0,
                 frequency=wavelength, array=None,
-                polarizations=polarization.STOKES_IQUV,
-                dtype=np.float32,
                 pixel_size=1.0/(4096.0*wavelength.value),
                 pixels=2048))
             self.grid_parameters.append(parameters.GridParameters(
-                antialias_width=7.0,
-                oversample=8,
-                image_oversample=4.0,
+                fixed_grid_parameters,
                 w_slices=1,
-                w_planes=128,
-                max_w=400 * units.m,
-                kernel_width=64))
+                w_planes=128))
 
     def check(self, collector, expected):
         reader = collector.reader()

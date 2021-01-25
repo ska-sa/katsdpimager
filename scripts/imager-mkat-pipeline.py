@@ -146,9 +146,11 @@ class Writer(frontend.Writer):
         self._set_statistic('cell_size', sub_key, image_p.cell_size.to_value(u.m))
 
         grid_p = kwargs['grid_parameters']
-        for key in ['image_oversample', 'w_slices', 'w_planes', 'kernel_width']:
+        for key in ['image_oversample', 'kernel_width']:
+            self._set_statistic(key, sub_key, getattr(grid_p.fixed, key))
+        for key in ['w_slices', 'w_planes']:
             self._set_statistic(key, sub_key, getattr(grid_p, key))
-        self._set_statistic('grid_oversample', sub_key, grid_p.oversample)
+        self._set_statistic('grid_oversample', sub_key, grid_p.fixed.oversample)
 
         # statistics() is the last step in process_channel, so if we get this
         # far, the channel is fully processed.

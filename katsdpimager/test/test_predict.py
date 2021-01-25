@@ -21,24 +21,27 @@ class TestPredict:
                 polarization.STOKES_Q,
                 polarization.STOKES_V]
         self.image_parameters = parameters.ImageParameters(
+            parameters.FixedImageParameters(
+                polarizations=pols,
+                dtype=np.float64
+            ),
             q_fov=1.0,
             image_oversample=None,
             frequency=0.2 * units.m,
             array=None,
-            polarizations=pols,
-            dtype=np.float64,
             pixel_size=0.00001,
             pixels=4096)
         oversample = 8
         w_planes = 100
         self.grid_parameters = parameters.GridParameters(
-            antialias_width=7.0,
-            oversample=oversample,
-            image_oversample=4,
+            parameters.FixedGridParameters(
+                antialias_width=7.0,
+                oversample=oversample,
+                image_oversample=4,
+                max_w=5 * units.m,
+                kernel_width=7),
             w_slices=10,
-            w_planes=w_planes,
-            max_w=5 * units.m,
-            kernel_width=7)
+            w_planes=w_planes)
         catalogue = katpoint.Catalogue([
             "dummy0, radec, 19:39:25.03, -63:42:45.7, (200.0 12000.0 -11.11 7.777 -1.231 0 0 0 1 0.1 0 0)",       # noqa: E501
             "dummy1, radec, 19:39:20.38, -63:42:09.1, (800.0 8400.0 -3.708 3.807 -0.7202 0 0 0 1 0.2 0.2 0.2)",   # noqa: E501
@@ -54,13 +57,13 @@ class TestPredict:
         gp = self.grid_parameters
         rs = RandomState(seed=1)
         uv = rs.random_integers(-2048, 2048, size=(n_vis, 2)).astype(np.int16)
-        sub_uv = rs.random_integers(0, gp.oversample - 1, size=(n_vis, 2)).astype(np.int16)
+        sub_uv = rs.random_integers(0, gp.fixed.oversample - 1, size=(n_vis, 2)).astype(np.int16)
         w_plane = rs.random_integers(0, gp.w_planes - 1, size=n_vis).astype(np.int16)
-        weights = rs.uniform(size=(n_vis, len(ip.polarizations))).astype(np.float32)
-        vis = rs.complex_normal(size=(n_vis, len(ip.polarizations)))
+        weights = rs.uniform(size=(n_vis, len(ip.fixed.polarizations))).astype(np.float32)
+        vis = rs.complex_normal(size=(n_vis, len(ip.fixed.polarizations)))
 
         allocator = accel.SVMAllocator(context)
-        template = predict.PredictTemplate(context, np.float32, len(ip.polarizations))
+        template = predict.PredictTemplate(context, np.float32, len(ip.fixed.polarizations))
         fn = template.instantiate(queue, ip, gp,
                                   n_vis, len(self.model), allocator=allocator)
         fn.ensure_all_bound()
@@ -104,7 +107,7 @@ class TestPredict:
 
     def test_extract_sky_image(self):
         ip = self.image_parameters
-        image = np.zeros((len(ip.polarizations), ip.pixels, ip.pixels), np.float32)
+        image = np.zeros((len(ip.fixed.polarizations), ip.pixels, ip.pixels), np.float32)
         # Note: first index is m, not l
         image[:, 2048, 2048] = [1, 2, 3]
         image[:, 1024, 512] = [2.5, 1.5, 0.0]
