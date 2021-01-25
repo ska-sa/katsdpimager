@@ -25,6 +25,7 @@
 #include <complex>
 #include <memory>
 #include <utility>
+#include <vector>
 #include <type_traits>
 #include <Eigen/Core>
 #include "optional.h"
@@ -410,6 +411,11 @@ void visibility_collector<P>::add_impl2(
      */
     constexpr auto data_major = (Q == 1) ? Eigen::RowMajor : Eigen::ColMajor;
 
+    std::vector<MatrixPQcf> convert;
+    convert.reserve(N);
+    for (std::size_t i = 0; i < N; i++)
+        convert.push_back(gen(i));
+
     for (std::size_t channel = 0; channel < num_channels(); channel++)
     {
         const Eigen::Map<Eigen::Matrix<MulZ<std::complex<float>>, Q, Eigen::Dynamic, data_major>> vis(
@@ -439,9 +445,7 @@ void visibility_collector<P>::add_impl2(
             if (buffer_size == buffer_capacity)
                 compress();
 
-            // TODO: amortise this computation across channels
-            const MatrixPQcf &convert = gen(i);
-            VectorPcf xvis = (convert.template cast<MulZ<std::complex<float>>>() * vis.col(i))
+            VectorPcf xvis = (convert[i].template cast<MulZ<std::complex<float>>>() * vis.col(i))
                              .template cast<std::complex<float>>();
 
             /* Transform weights. Weights are proportional to inverse variance, so we
@@ -454,7 +458,7 @@ void visibility_collector<P>::add_impl2(
              * rather than +Inf.
              */
             VectorPf xweights =
-                (convert.cwiseAbs2().template cast<MulZ<float>>()
+                (convert[i].cwiseAbs2().template cast<MulZ<float>>()
                  * weights.col(i).cwiseAbs().cwiseInverse())
                 .template cast<float>().cwiseInverse();
 
