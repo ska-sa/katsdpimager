@@ -689,6 +689,8 @@ def run(args, context, queue, dataset, writer):
         if not args.host:
             imager_template = imaging.ImagingTemplate(
                 context, array_p, fixed_image_p, weight_p, fixed_grid_p, clean_p)
+        else:
+            imager_template = None
 
         for start_channel in range(args.start_channel, args.stop_channel, args.channel_batch):
             stop_channel = min(args.stop_channel, start_channel + args.channel_batch)
