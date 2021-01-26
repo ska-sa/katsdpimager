@@ -135,9 +135,11 @@ public:
      * feed_angle2 and @a mueller_circular. In this case, @a mueller_stokes
      * converts directly from @a vis to the output Stokes parameters.
      *
+     * Autocorrelations must be either excised, or flagged by setting the
+     * weights to zero.
+     *
      * @param uvw          UVW coordinates, Nx3, float32
      * @param weights      Imaging weights, CxNxQ, float32
-     * @param baselines    Baseline indices, N, int32 (negative for autocorrelations)
      * @param vis          Visibilities (in arbitrary frame), CxNxQ, complex64
      * @param feed_angle1, feed_angle2  Feed angles in radians for the two
      *                     antennas in the baseline, for rotating from
@@ -151,7 +153,6 @@ public:
     virtual void add(
         py::array_t<float, array_flags> uvw,
         py::array_t<float, array_flags> weights,
-        py::array_t<std::int32_t, array_flags> baselines,
         py::array_t<std::complex<float>, array_flags> vis,
         optional<py::array_t<float, array_flags>> feed_angle1,
         optional<py::array_t<float, array_flags>> feed_angle2,
@@ -268,7 +269,7 @@ private:
     void add_impl2(
         std::size_t N,
         const float uvw[][3], const float weights[],
-        const std::int32_t baselines[], const std::complex<float> vis[],
+        const std::complex<float> vis[],
         const Generator &gen);
 
     // Handles *up to* Q input polarizations
@@ -276,7 +277,6 @@ private:
     void add_impl(
         py::array_t<float, array_flags> uvw,
         py::array_t<float, array_flags> weights,
-        py::array_t<std::int32_t, array_flags> baselines,
         py::array_t<std::complex<float>, array_flags> vis,
         optional<py::array_t<float, array_flags>> feed_angle1,
         optional<py::array_t<float, array_flags>> feed_angle2,
@@ -292,7 +292,6 @@ public:
     virtual void add(
         py::array_t<float, array_flags> uvw,
         py::array_t<float, array_flags> weights,
-        py::array_t<std::int32_t, array_flags> baselines,
         py::array_t<std::complex<float>, array_flags> vis,
         optional<py::array_t<float, array_flags>> feed_angle1,
         optional<py::array_t<float, array_flags>> feed_angle2,
@@ -394,7 +393,7 @@ template<int Q, typename Generator>
 void visibility_collector<P>::add_impl2(
     std::size_t N,
     const float uvw[][3], const float weights_raw[],
-    const std::int32_t baselines[], const std::complex<float> vis_raw[],
+    const std::complex<float> vis_raw[],
     const Generator &gen)
 {
     typedef Eigen::Matrix<std::complex<float>, P, Q> MatrixPQcf;
@@ -428,8 +427,6 @@ void visibility_collector<P>::add_impl2(
         int max_slice_plane = conf.w_slices * conf.w_planes - 1; // TODO: check for overflow? precompute?
         for (std::size_t i = 0; i < N; i++)
         {
-            if (baselines[i] < 0)
-                continue;   // autocorrelation
             if (weights.col(i).cwiseEqual(0.0f).any())
             {
                 /* Discard visibilities with zero weight on any polarisation.
@@ -509,7 +506,6 @@ template<int Q>
 void visibility_collector<P>::add_impl(
     py::array_t<float, array_flags> uvw_array,
     py::array_t<float, array_flags> weights_array,
-    py::array_t<std::int32_t, array_flags> baselines_array,
     py::array_t<std::complex<float>, array_flags> vis_array,
     optional<py::array_t<float, array_flags>> feed_angle1_array,
     optional<py::array_t<float, array_flags>> feed_angle2_array,
@@ -521,7 +517,6 @@ void visibility_collector<P>::add_impl(
         return add_impl<Q == 1 ? 1 : Q - 1>(
             std::move(uvw_array),
             std::move(weights_array),
-            std::move(baselines_array),
             std::move(vis_array),
             std::move(feed_angle1_array),
             std::move(feed_angle2_array),
@@ -532,11 +527,9 @@ void visibility_collector<P>::add_impl(
     const std::size_t N = uvw_array.shape(0);
     const std::size_t C = num_channels();
     check_dimensions(weights_array, C, N, Q);
-    check_dimensions(baselines_array, N);
     check_dimensions(vis_array, C, N, Q);
 
     const float (*uvw)[3] = reinterpret_cast<const float(*)[3]>(uvw_array.data());
-    auto baselines = baselines_array.data();
     auto vis = vis_array.data();
     auto weights = weights_array.data();
 
@@ -550,7 +543,7 @@ void visibility_collector<P>::add_impl(
         auto mueller_stokes = mueller_stokes_array.cast<mueller_stokes_t>();
         mueller_generator_simple<P, Q> gen(mueller_stokes);
         add_impl2<Q, mueller_generator_simple<P, Q>>(
-            N, uvw, weights, baselines, vis, gen);
+            N, uvw, weights, vis, gen);
     }
     else
     {
@@ -567,7 +560,7 @@ void visibility_collector<P>::add_impl(
         mueller_generator_parallactic<P, Q> gen(feed_angle1, feed_angle2,
                                                 mueller_stokes, mueller_circular);
         add_impl2<Q, mueller_generator_parallactic<P, Q>>(
-            N, uvw, weights, baselines, vis, gen);
+            N, uvw, weights, vis, gen);
     }
 }
 
@@ -575,7 +568,6 @@ template<int P>
 void visibility_collector<P>::add(
     py::array_t<float, array_flags> uvw,
     py::array_t<float, array_flags> weights,
-    py::array_t<std::int32_t, array_flags> baselines,
     py::array_t<std::complex<float>, array_flags> vis,
     optional<py::array_t<float, array_flags>> feed_angle1,
     optional<py::array_t<float, array_flags>> feed_angle2,
@@ -589,7 +581,6 @@ void visibility_collector<P>::add(
     add_impl<4>(
         std::move(uvw),
         std::move(weights),
-        std::move(baselines),
         std::move(vis),
         std::move(feed_angle1),
         std::move(feed_angle2),

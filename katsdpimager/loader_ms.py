@@ -467,7 +467,6 @@ class LoaderMS(loader_core.LoaderBase):
             order = np.argsort(baseline, kind='stable')
             ret = dict(uvw=uvw[order],
                        weights=np.swapaxes(weight, 0, 1)[:, order],
-                       baselines=baseline[order],
                        vis=np.swapaxes(data, 0, 1)[:, order],
                        progress=end,
                        total=self._main.nrows())

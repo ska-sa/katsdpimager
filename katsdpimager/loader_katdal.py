@@ -298,7 +298,6 @@ class LoaderKatdal(loader_core.LoaderBase):
         # timestamps is a property, so ensure it's only evaluated once
         with profile('katdal.DataSet.timestamps'):
             timestamps = self._file.timestamps
-        baseline_idx = np.arange(len(self._baselines)).astype(np.int32)
         start = 0
         # Determine chunking scheme
         if isinstance(self._file.vis, DaskLazyIndexer):
@@ -378,7 +377,6 @@ class LoaderKatdal(loader_core.LoaderBase):
             yield dict(
                 uvw=uvw.reshape(-1, 3),
                 weights=reorder(weights),
-                baselines=np.repeat(baseline_idx, end - start),
                 vis=reorder(vis),
                 feed_angle1=feed_angle1.reshape(-1),
                 feed_angle2=feed_angle2.reshape(-1),

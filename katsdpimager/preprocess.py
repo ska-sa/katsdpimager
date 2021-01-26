@@ -117,10 +117,13 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
         """
         raise NotImplementedError()
 
-    def add(self, uvw, weights, baselines, vis,
+    def add(self, uvw, weights, vis,
             feed_angle1, feed_angle2, mueller_stokes, mueller_circular):
-        """Add a set of visibilities to the collector. Each of the provided
-        arrays must have the same size on the N axis.
+        """Add a set of visibilities to the collector.
+
+        Each of the provided arrays must have the same size on the N axis.
+        For best performance, order the visibilities by baseline then time,
+        so that consecutive visibilities have similar UVW coordinates.
 
         Parameters
         ----------
@@ -130,12 +133,6 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
             C×N×Q array of weights, where C is the number of channels and
             Q is the number of input polarizations. Flags must be folded into
             the weights.
-        baselines : array, int
-            1D array of integer, indicating baseline IDs. The IDs are
-            arbitrary and need not be contiguous, and are used only to
-            associate visibilities from the same baseline together.
-            Negative baseline IDs indicate autocorrelations, which will
-            be discarded.
         vis : array, complex64
             C×N×Q array of visibilities.
         feed_angle1, feed_angle2 : array, float32
@@ -152,7 +149,7 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
         uvw = units.Quantity(uvw, unit=units.m, copy=False)
         uvw = np.require(uvw.value, np.float32, 'C')
         super().add(
-            uvw, weights, baselines, vis, feed_angle1, feed_angle2,
+            uvw, weights, vis, feed_angle1, feed_angle2,
             mueller_stokes, mueller_circular)
 
     def reader(self):
