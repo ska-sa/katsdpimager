@@ -463,15 +463,17 @@ class LoaderMS(loader_core.LoaderBase):
                                    start, nrows)[valid, ...]
             weight = weight * np.logical_not(flag)
             baseline = (antenna1 * self._antenna.nrows() + antenna2)
-            ret = dict(uvw=uvw,
-                       weights=np.swapaxes(weight, 0, 1),
-                       baselines=baseline,
-                       vis=np.swapaxes(data, 0, 1),
+            # Order data by baseline to facilitate compression
+            order = np.argsort(baseline, kind='stable')
+            ret = dict(uvw=uvw[order],
+                       weights=np.swapaxes(weight, 0, 1)[:, order],
+                       baselines=baseline[order],
+                       vis=np.swapaxes(data, 0, 1)[:, order],
                        progress=end,
                        total=self._main.nrows())
             if self._feed_angle_correction:
-                ret['feed_angle1'] = feed_angle1
-                ret['feed_angle2'] = feed_angle2
+                ret['feed_angle1'] = feed_angle1[order]
+                ret['feed_angle2'] = feed_angle2[order]
             yield ret
 
     @property
