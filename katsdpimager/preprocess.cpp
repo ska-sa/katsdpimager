@@ -39,14 +39,16 @@ namespace py = pybind11;
 template<int P>
 struct vis_t
 {
+    /* NB: be careful about modifying the type or order of fields: for efficiency, memcmp is
+     * used to compare the prefix of two vis_t's to determine if they can be merged.
+     */
     std::int16_t uv[2];
     std::int16_t sub_uv[2];
-    float weights[P];
-    std::complex<float> vis[P];
     std::int16_t w_plane;    ///< Plane within W slice
     std::int16_t w_slice;    ///< W-stacking slice
-    std::int32_t baseline;   ///< Baseline ID
-    std::uint32_t index;     ///< Original position, for sort stability
+
+    float weights[P];
+    std::complex<float> vis[P];
 };
 
 struct channel_config
@@ -156,6 +158,8 @@ public:
         py::array_t<std::complex<float>, array_flags> mueller_stokes,
         optional<py::array_t<std::complex<float>, array_flags>> mueller_circular) = 0;
     virtual void close() = 0;
+
+    virtual py::dtype get_dtype() const = 0;
 };
 
 visibility_collector_base::visibility_collector_base(
@@ -237,9 +241,11 @@ class visibility_collector : public visibility_collector_base
 {
 private:
     /// Storage for buffered visibilities
-    py::array_t<vis_t<P>> buffer_storage;
+    py::array_t<vis_t<P>> buffer_storage, sorted_buffer_storage;
     /// Pointer to start of @ref buffer_storage
     vis_t<P> *buffer;
+    /// Pointer to start of @ref sorted_buffer_storage
+    vis_t<P> *sorted_buffer;
     /// Allocated memory for @ref buffer
     std::size_t buffer_capacity;
     /// Number of valid entries in @ref buffer
@@ -248,7 +254,7 @@ private:
     /**
      * Wrapper around @ref visibility_collector_base::emit. It constructs the
      * numpy object to wrap the memory. @a data must be pointer into
-     * @ref buffer_storage.
+     * @ref sorted_buffer_storage.
      */
     void emit(int channel, vis_t<P> data[], std::size_t N);
 
@@ -294,6 +300,8 @@ public:
         optional<py::array_t<std::complex<float>, array_flags>> mueller_circular) override;
 
     virtual void close() override;
+
+    virtual py::dtype get_dtype() const override;
 };
 
 /**
@@ -313,31 +321,10 @@ void subpixel_coord(float x, std::int32_t oversample, std::int16_t &pixel, std::
     }
 }
 
-/**
- * Sort comparison operator for visibilities. It sorts first by channel and w
- * slice, then by baseline, then by original position (i.e., making it
- * stable). This is done rather than using std::stable_sort, because the
- * std::stable_sort in libstdc++ uses a temporary memory allocation while
- * std::sort is in-place.
- */
-template<typename T>
-struct compare
-{
-    bool operator()(const T &a, const T &b) const
-    {
-        if (a.w_slice != b.w_slice)
-            return a.w_slice < b.w_slice;
-        else if (a.baseline != b.baseline)
-            return a.baseline < b.baseline;
-        else
-            return a.index < b.index;
-    }
-};
-
 template<int P>
 void visibility_collector<P>::emit(int channel, vis_t<P> data[], std::size_t N)
 {
-    py::array_t<vis_t<P>> array(N, data, buffer_storage);
+    py::array_t<vis_t<P>> array(N, data, sorted_buffer_storage);
     num_output += N;
     emit_callback(channel, array);
 }
@@ -347,27 +334,16 @@ void visibility_collector<P>::compress(int channel)
 {
     if (buffer_size == 0)
         return;  // some code will break on an empty buffer
-    std::sort(buffer, buffer + buffer_size, compare<vis_t<P> >());
     std::size_t out_pos = 0;
     // Currently accumulating visibility
     vis_t<P> last = buffer[0];
+    // Number of output visibilities per w_slice
+    int w_slices = config.at(channel).w_slices;
+    std::vector<std::size_t> counts(w_slices);
     for (std::size_t i = 1; i < buffer_size; i++)
     {
         const vis_t<P> &element = buffer[i];
-        if (element.w_slice != last.w_slice)
-        {
-            // Moved to the next slice, so pass what we have
-            // back to Python
-            buffer[out_pos++] = last;
-            emit(channel, buffer, out_pos);
-            out_pos = 0;
-            last = element;
-        }
-        else if (element.uv[0] == last.uv[0]
-            && element.uv[1] == last.uv[1]
-            && element.sub_uv[0] == last.sub_uv[0]
-            && element.sub_uv[1] == last.sub_uv[1]
-            && element.w_plane == last.w_plane)
+        if (std::memcmp(&element, &last, offsetof(vis_t<P>, weights)) == 0)
         {
             // Continue accumulating the current visibility
             for (int p = 0; p < P; p++)
@@ -378,13 +354,38 @@ void visibility_collector<P>::compress(int channel)
         else
         {
             // Moved to the next output visibility
+            counts[last.w_slice]++;
             buffer[out_pos++] = last;
             last = element;
         }
     }
-    // Emit the final batch
+    // Write the last output visibility
+    counts[last.w_slice]++;
     buffer[out_pos++] = last;
-    emit(channel, buffer, out_pos);
+
+    // Prefix sum counts (in-place)
+    std::size_t sum = 0;
+    for (std::size_t &c : counts)
+    {
+        std::size_t next_sum = sum + c;
+        c = sum;
+        sum = next_sum;
+    }
+    // Bucket sort by w_slice, to create contiguous runs in the same slice
+    for (std::size_t i = 0; i < out_pos; i++)
+        sorted_buffer[counts[buffer[i].w_slice]++] = buffer[i];
+
+    // Emit runs. At this point, counts[i] points at the *end* of the run for slice i.
+    std::size_t pos = 0;
+    for (int w_slice = 0; w_slice < w_slices; w_slice++)
+    {
+        if (pos < counts[w_slice])
+        {
+            emit(channel, sorted_buffer + pos, counts[w_slice] - pos);
+            pos = counts[w_slice];
+        }
+    }
+
     buffer_size = 0;
 }
 
@@ -494,10 +495,6 @@ void visibility_collector<P>::add_impl2(
             subpixel_coord(v, conf.oversample, out.uv[1], out.sub_uv[1]);
             out.w_plane = w_slice_plane % conf.w_planes;
             out.w_slice = w_slice_plane / conf.w_planes;
-            out.baseline = baselines[i];
-            // This could wrap if the buffer has > 4 billion elements, but that
-            // can only affect efficiency, not correctness.
-            out.index = (std::uint32_t) buffer_size;
             buffer_size++;
         }
 
@@ -606,13 +603,21 @@ void visibility_collector<P>::close()
 }
 
 template<int P>
+py::dtype visibility_collector<P>::get_dtype() const
+{
+    return py::dtype::of<vis_t<P>>();
+}
+
+template<int P>
 visibility_collector<P>::visibility_collector(
     py::array_t<channel_config, array_flags> config,
     std::function<void(int, py::array)> emit_callback,
     std::size_t buffer_capacity)
     : visibility_collector_base(std::move(config), std::move(emit_callback)),
     buffer_storage(buffer_capacity),
+    sorted_buffer_storage(buffer_capacity),
     buffer(buffer_storage.mutable_data()),
+    sorted_buffer(sorted_buffer_storage.mutable_data()),
     buffer_capacity(buffer_capacity),
     buffer_size(0)
 {
@@ -651,7 +656,7 @@ template<int P>
 static typename std::enable_if<0 < P>::type register_vis_dtypes()
 {
     register_vis_dtypes<P - 1>();
-    PYBIND11_NUMPY_DTYPE(vis_t<P>, uv, sub_uv, weights, vis, w_plane, w_slice, baseline, index);
+    PYBIND11_NUMPY_DTYPE(vis_t<P>, uv, sub_uv, w_plane, w_slice, weights, vis);
 }
 
 } // anonymous namespace
@@ -670,6 +675,7 @@ PYBIND11_MODULE(_preprocess, m)
         .def("close", &visibility_collector_base::close)
         .def_readonly("num_input", &visibility_collector_base::num_input)
         .def_readonly("num_output", &visibility_collector_base::num_output)
+        .def_property_readonly("dtype", &visibility_collector_base::get_dtype)
     ;
     m.add_object("CHANNEL_CONFIG_DTYPE", py::dtype::of<channel_config>());
 }

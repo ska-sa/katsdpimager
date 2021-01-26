@@ -357,20 +357,29 @@ class LoaderKatdal(loader_core.LoaderBase):
             # rather than from x to V.
             antenna_pa -= math.pi / 2 * units.rad
             # Combine these into per-baseline UVW coordinates and feed angles
-            uvw = np.empty((end - start, len(self._baselines), 3), np.float32)
-            feed_angle1 = np.empty((end - start, len(self._baselines)), np.float32)
+            uvw = np.empty((len(self._baselines), end - start, 3), np.float32)
+            feed_angle1 = np.empty((len(self._baselines), end - start), np.float32)
             feed_angle2 = np.empty_like(feed_angle1)
             for i, (a, b) in enumerate(self._baselines):
-                uvw[:, i, :] = antenna_uvw[b] - antenna_uvw[a]
-                feed_angle1[:, i] = antenna_pa[a]
-                feed_angle2[:, i] = antenna_pa[b]
+                uvw[i, :, :] = antenna_uvw[b] - antenna_uvw[a]
+                feed_angle1[i, :] = antenna_pa[a]
+                feed_angle2[i, :] = antenna_pa[b]
+
+            def reorder(data):
+                # Split baseline axis into an antenna baseline and polarization. This
+                # shouldn't require any copying.
+                data = data.reshape(data.shape[0], data.shape[1], len(self._baselines), n_pols)
+                # Move time axis after the baseline axis, so that we follow tracks.
+                data = np.moveaxis(data, 0, 2)
+                # Flatten time and baseline axes together (which will require copying)
+                return data.reshape(data.shape[0], -1, n_pols)
 
             # reshape everything into the target formats
             yield dict(
                 uvw=uvw.reshape(-1, 3),
-                weights=weights.swapaxes(0, 1).reshape(n_chans, -1, n_pols),
-                baselines=np.tile(baseline_idx, end - start),
-                vis=vis.swapaxes(0, 1).reshape(n_chans, -1, n_pols),
+                weights=reorder(weights),
+                baselines=np.repeat(baseline_idx, end - start),
+                vis=reorder(vis),
                 feed_angle1=feed_angle1.reshape(-1),
                 feed_angle2=feed_angle2.reshape(-1),
                 progress=end,
