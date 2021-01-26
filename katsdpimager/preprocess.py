@@ -261,14 +261,8 @@ class VisibilityCollectorHDF5(VisibilityCollector):
         if logger.isEnabledFor(logging.INFO):
             filesize = self._file.id.get_filesize()
             n_compressed = np.sum(self._length)
-            expected = self.store_dtype.itemsize * n_compressed
-            if expected > 0:
-                logger.info("Wrote %d visibilities in %d bytes to %s (%.2f%% compression ratio)",
-                            n_compressed, filesize, self._file.filename,
-                            100.0 * filesize / expected)
-            else:
-                logger.info("Wrote %d bytes to %s (no visibilities)",
-                            filesize, self._file.filename)
+            logger.info("Wrote %d visibilities in %d bytes to %s",
+                        n_compressed, filesize, self._file.filename)
         self._file.close()
         self._file = None
 
