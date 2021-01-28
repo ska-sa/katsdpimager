@@ -50,7 +50,7 @@ LABEL maintainer="sdpdev+katsdpimager@ska.ac.za"
 
 # ffmpeg is linked against libx264
 USER root
-RUN apt-get update && apt-get -y --no-install-recommends install libx264-152 && \
+RUN apt-get update && apt-get -y --no-install-recommends install libx264-155 && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 USER kat
 

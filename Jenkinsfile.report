@@ -15,14 +15,15 @@ catchError {
             katsdp.unpackGit()
             katsdp.unpackVenv()
             katsdp.unpackKatsdpdockerbase()
-            /* Meqtrees won't run against our virtualenv, since it uses system
-             * Python, so run it outside the virtualenv closure.
+            /* The simulation script depends on a pre-release version of
+             * katpoint that is incompatible with katsdpimager. So put it
+             * in a separate venv.
              */
-            dir(testdir) {
-                sh 'makems && mv simple.ms_p0 simple.ms'
-                // makems hard-codes LOFAR antenna information; replace with MeerKAT
-                sh 'rm -r simple.ms/ANTENNA && cp -a MeerKAT64_ANTENNAS simple.ms/ANTENNA'
-                sh 'meqtree-pipeliner.py -c batch.tdlconf "[turbo-sim]" ms_sel.msname=simple.ms /usr/lib/python2.7/dist-packages/Cattery/Siamese/turbo-sim.py =_tdl_job_1_simulate_MS'
+            katsdp.virtualenv('venv-simulate', true) {
+                sh('pip install -r git/simulation-requirements.txt')
+                dir(testdir) {
+                    sh './simulate.py'
+                }
             }
             katsdp.virtualenv('venv') {
                 katsdp.installRequirements('git/report-requirements.txt')
@@ -30,14 +31,14 @@ catchError {
                 sh 'pip check'
                 dir(testdir) {
                     sh './images_report.py --start-channel=2 --stop-channel=4 simple.ms report'
-                    sh 'cp simple.lsm.txt makems.cfg batch.tdlconf report/'
+                    sh 'cp meerkat_antennas.txt lsm.txt simulate.py report/'
                 }
             }
             publishHTML(target: [reportName: 'Test images',
                                  reportDir: "$testdir/report",
                                  reportFiles: 'index.html',
                                  keepAll: true])
-            /* The working directly tends to get rather big - clean it out to
+            /* The working directory tends to get rather big - clean it out to
              * prevent bloating the container.
              */
             deleteDir()

@@ -1,23 +1,24 @@
 aplpy==2.0.3
-astropy==4.0.1            # via aplpy
-astropy-healpix==0.4      # via reproject
+astropy                   # via aplpy
+astropy-healpix==0.5      # via reproject
 cycler                    # via matplotlib
-cython==0.29.15           # via pyregion
+cython==0.29.21           # via pyregion
 imageio==2.5.0            # via scikit-image
 kiwisolver                # via matplotlib
 mako
 markupsafe                # via mako
 matplotlib
-networkx==2.3             # via scikit-image
+networkx==2.5             # via scikit-image
 numpy                     # via astropy, matplotlib
 pillow                    # via aplpy
-pyavm==0.9.4              # via aplpy
+pyavm==0.9.5              # via aplpy
 pyparsing                 # via matplotlib
 pyregion==2.0             # via aplpy
 python-dateutil           # via matplotlib
 pytz                      # via matplotlib
-pywavelets==1.0.3         # via scikit-image
-reproject==0.7            # via aplpy
-scikit-image==0.15.0      # via aplpy
-shapely==1.6.4.post2      # via aplpy
+pywavelets==1.1.1         # via scikit-image
+reproject==0.7.1          # via aplpy
+scikit-image==0.18.0      # via aplpy
+shapely==1.7.1            # via aplpy
 six                       # via cycler, python-dateutil
+tifffile==2020.7.24       # via scikit-image
