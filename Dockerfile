@@ -1,6 +1,6 @@
 ARG KATSDPDOCKERBASE_REGISTRY=sdp-docker-registry.kat.ac.za:5000
 
-FROM $KATSDPDOCKERBASE_REGISTRY/docker-base-gpu-build:ubuntu20.04 as build
+FROM $KATSDPDOCKERBASE_REGISTRY/docker-base-gpu-build as build
 
 # Build ffmpeg from source. The Ubuntu package has all sorts of dependencies
 # (including X11) that we'd rather avoid. We can also build a minimal ffmpeg
@@ -45,7 +45,7 @@ RUN pip check
 
 #######################################################################
 
-FROM $KATSDPDOCKERBASE_REGISTRY/docker-base-gpu-runtime:ubuntu20.04
+FROM $KATSDPDOCKERBASE_REGISTRY/docker-base-gpu-runtime
 LABEL maintainer="sdpdev+katsdpimager@ska.ac.za"
 
 # ffmpeg is linked against libx264
