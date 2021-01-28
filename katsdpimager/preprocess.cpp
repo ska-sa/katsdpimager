@@ -39,15 +39,16 @@ namespace py = pybind11;
 template<int P>
 struct vis_t
 {
+    /* NB: be careful about modifying the type or order of fields: for efficiency, memcmp is
+     * used to compare the prefix of two vis_t's to determine if they can be merged.
+     */
     std::int16_t uv[2];
     std::int16_t sub_uv[2];
-    float weights[P];
-    std::complex<float> vis[P];
     std::int16_t w_plane;    ///< Plane within W slice
     std::int16_t w_slice;    ///< W-stacking slice
-    std::int32_t channel;
-    std::int32_t baseline;   ///< Baseline ID
-    std::uint32_t index;     ///< Original position, for sort stability
+
+    float weights[P];
+    std::complex<float> vis[P];
 };
 
 struct channel_config
@@ -104,8 +105,8 @@ class visibility_collector_base
 protected:
     // Gridding parameters
     py::array_t<channel_config, array_flags> config;
-    /// Callback function called with compressed data as a numpy array
-    std::function<void(py::array)> emit_callback;
+    /// Callback function called with channel and compressed data as a numpy array
+    std::function<void(int, py::array)> emit_callback;
 
 public:
     std::int64_t num_input = 0, num_output = 0;
@@ -114,7 +115,7 @@ public:
 
     visibility_collector_base(
         py::array_t<channel_config, array_flags> config,
-        std::function<void(py::array)> emit_callback);
+        std::function<void(int, py::array)> emit_callback);
     virtual ~visibility_collector_base() {}
 
     /**
@@ -134,9 +135,11 @@ public:
      * feed_angle2 and @a mueller_circular. In this case, @a mueller_stokes
      * converts directly from @a vis to the output Stokes parameters.
      *
+     * Autocorrelations must be either excised, or flagged by setting the
+     * weights to zero.
+     *
      * @param uvw          UVW coordinates, Nx3, float32
      * @param weights      Imaging weights, CxNxQ, float32
-     * @param baselines    Baseline indices, N, int32 (negative for autocorrelations)
      * @param vis          Visibilities (in arbitrary frame), CxNxQ, complex64
      * @param feed_angle1, feed_angle2  Feed angles in radians for the two
      *                     antennas in the baseline, for rotating from
@@ -150,18 +153,19 @@ public:
     virtual void add(
         py::array_t<float, array_flags> uvw,
         py::array_t<float, array_flags> weights,
-        py::array_t<std::int32_t, array_flags> baselines,
         py::array_t<std::complex<float>, array_flags> vis,
         optional<py::array_t<float, array_flags>> feed_angle1,
         optional<py::array_t<float, array_flags>> feed_angle2,
         py::array_t<std::complex<float>, array_flags> mueller_stokes,
         optional<py::array_t<std::complex<float>, array_flags>> mueller_circular) = 0;
     virtual void close() = 0;
+
+    virtual py::dtype get_dtype() const = 0;
 };
 
 visibility_collector_base::visibility_collector_base(
     py::array_t<channel_config, array_flags> config,
-    std::function<void(py::array)> emit_callback)
+    std::function<void(int, py::array)> emit_callback)
     : config(std::move(config)), emit_callback(std::move(emit_callback))
 {
     check_dimensions(this->config, -1);
@@ -238,9 +242,11 @@ class visibility_collector : public visibility_collector_base
 {
 private:
     /// Storage for buffered visibilities
-    py::array_t<vis_t<P>> buffer_storage;
+    py::array_t<vis_t<P>> buffer_storage, sorted_buffer_storage;
     /// Pointer to start of @ref buffer_storage
     vis_t<P> *buffer;
+    /// Pointer to start of @ref sorted_buffer_storage
+    vis_t<P> *sorted_buffer;
     /// Allocated memory for @ref buffer
     std::size_t buffer_capacity;
     /// Number of valid entries in @ref buffer
@@ -249,21 +255,21 @@ private:
     /**
      * Wrapper around @ref visibility_collector_base::emit. It constructs the
      * numpy object to wrap the memory. @a data must be pointer into
-     * @ref buffer_storage.
+     * @ref sorted_buffer_storage.
      */
-    void emit(vis_t<P> data[], std::size_t N);
+    void emit(int channel, vis_t<P> data[], std::size_t N);
 
     /**
      * Sort and compress the buffer, and call emit for each contiguous
      * portion that belongs to the same w plane and channel.
      */
-    void compress();
+    void compress(int channel);
 
     template<int Q, typename Generator>
     void add_impl2(
         std::size_t N,
         const float uvw[][3], const float weights[],
-        const std::int32_t baselines[], const std::complex<float> vis[],
+        const std::complex<float> vis[],
         const Generator &gen);
 
     // Handles *up to* Q input polarizations
@@ -271,7 +277,6 @@ private:
     void add_impl(
         py::array_t<float, array_flags> uvw,
         py::array_t<float, array_flags> weights,
-        py::array_t<std::int32_t, array_flags> baselines,
         py::array_t<std::complex<float>, array_flags> vis,
         optional<py::array_t<float, array_flags>> feed_angle1,
         optional<py::array_t<float, array_flags>> feed_angle2,
@@ -281,13 +286,12 @@ private:
 public:
     visibility_collector(
         py::array_t<channel_config, array_flags> config,
-        std::function<void(py::array)> emit_callback,
+        std::function<void(int, py::array)> emit_callback,
         std::size_t buffer_capacity);
 
     virtual void add(
         py::array_t<float, array_flags> uvw,
         py::array_t<float, array_flags> weights,
-        py::array_t<std::int32_t, array_flags> baselines,
         py::array_t<std::complex<float>, array_flags> vis,
         optional<py::array_t<float, array_flags>> feed_angle1,
         optional<py::array_t<float, array_flags>> feed_angle2,
@@ -295,6 +299,8 @@ public:
         optional<py::array_t<std::complex<float>, array_flags>> mueller_circular) override;
 
     virtual void close() override;
+
+    virtual py::dtype get_dtype() const override;
 };
 
 /**
@@ -314,64 +320,29 @@ void subpixel_coord(float x, std::int32_t oversample, std::int16_t &pixel, std::
     }
 }
 
-/**
- * Sort comparison operator for visibilities. It sorts first by channel and w
- * slice, then by baseline, then by original position (i.e., making it
- * stable). This is done rather than using std::stable_sort, because the
- * std::stable_sort in libstdc++ uses a temporary memory allocation while
- * std::sort is in-place.
- */
-template<typename T>
-struct compare
-{
-    bool operator()(const T &a, const T &b) const
-    {
-        if (a.channel != b.channel)
-            return a.channel < b.channel;
-        else if (a.w_slice != b.w_slice)
-            return a.w_slice < b.w_slice;
-        else if (a.baseline != b.baseline)
-            return a.baseline < b.baseline;
-        else
-            return a.index < b.index;
-    }
-};
-
 template<int P>
-void visibility_collector<P>::emit(vis_t<P> data[], std::size_t N)
+void visibility_collector<P>::emit(int channel, vis_t<P> data[], std::size_t N)
 {
-    py::array_t<vis_t<P>> array(N, data, buffer_storage);
+    py::array_t<vis_t<P>> array(N, data, sorted_buffer_storage);
     num_output += N;
-    emit_callback(array);
+    emit_callback(channel, array);
 }
 
 template<int P>
-void visibility_collector<P>::compress()
+void visibility_collector<P>::compress(int channel)
 {
     if (buffer_size == 0)
         return;  // some code will break on an empty buffer
-    std::sort(buffer, buffer + buffer_size, compare<vis_t<P> >());
     std::size_t out_pos = 0;
     // Currently accumulating visibility
     vis_t<P> last = buffer[0];
+    // Number of output visibilities per w_slice
+    int w_slices = config.at(channel).w_slices;
+    std::vector<std::size_t> counts(w_slices);
     for (std::size_t i = 1; i < buffer_size; i++)
     {
         const vis_t<P> &element = buffer[i];
-        if (element.channel != last.channel
-            || element.w_slice != last.w_slice)
-        {
-            // Moved to the next channel/slice, so pass what we have
-            // back to Python
-            buffer[out_pos++] = last;
-            emit(buffer, out_pos);
-            out_pos = 0;
-            last = element;
-        }
-        else if (element.uv[0] == last.uv[0]
-            && element.uv[1] == last.uv[1]
-            && element.sub_uv[0] == last.sub_uv[0]
-            && element.sub_uv[1] == last.sub_uv[1]
-            && element.w_plane == last.w_plane)
+        if (std::memcmp(&element, &last, offsetof(vis_t<P>, weights)) == 0)
         {
             // Continue accumulating the current visibility
             for (int p = 0; p < P; p++)
@@ -382,13 +353,38 @@ void visibility_collector<P>::compress()
         else
         {
             // Moved to the next output visibility
+            counts[last.w_slice]++;
             buffer[out_pos++] = last;
             last = element;
         }
     }
-    // Emit the final batch
+    // Write the last output visibility
+    counts[last.w_slice]++;
     buffer[out_pos++] = last;
-    emit(buffer, out_pos);
+
+    // Prefix sum counts (in-place)
+    std::size_t sum = 0;
+    for (std::size_t &c : counts)
+    {
+        std::size_t next_sum = sum + c;
+        c = sum;
+        sum = next_sum;
+    }
+    // Bucket sort by w_slice, to create contiguous runs in the same slice
+    for (std::size_t i = 0; i < out_pos; i++)
+        sorted_buffer[counts[buffer[i].w_slice]++] = buffer[i];
+
+    // Emit runs. At this point, counts[i] points at the *end* of the run for slice i.
+    std::size_t pos = 0;
+    for (int w_slice = 0; w_slice < w_slices; w_slice++)
+    {
+        if (pos < counts[w_slice])
+        {
+            emit(channel, sorted_buffer + pos, counts[w_slice] - pos);
+            pos = counts[w_slice];
+        }
+    }
+
     buffer_size = 0;
 }
 
@@ -397,7 +393,7 @@ template<int Q, typename Generator>
 void visibility_collector<P>::add_impl2(
     std::size_t N,
     const float uvw[][3], const float weights_raw[],
-    const std::int32_t baselines[], const std::complex<float> vis_raw[],
+    const std::complex<float> vis_raw[],
     const Generator &gen)
 {
     typedef Eigen::Matrix<std::complex<float>, P, Q> MatrixPQcf;
@@ -431,8 +427,6 @@ void visibility_collector<P>::add_impl2(
         int max_slice_plane = conf.w_slices * conf.w_planes - 1; // TODO: check for overflow? precompute?
         for (std::size_t i = 0; i < N; i++)
         {
-            if (baselines[i] < 0)
-                continue;   // autocorrelation
             if (weights.col(i).cwiseEqual(0.0f).any())
             {
                 /* Discard visibilities with zero weight on any polarisation.
@@ -443,7 +437,7 @@ void visibility_collector<P>::add_impl2(
                 continue;
             }
             if (buffer_size == buffer_capacity)
-                compress();
+                compress(channel);
 
             VectorPcf xvis = (convert[i].template cast<MulZ<std::complex<float>>>() * vis.col(i))
                              .template cast<std::complex<float>>();
@@ -496,21 +490,13 @@ void visibility_collector<P>::add_impl2(
             // TODO convert from here
             subpixel_coord(u, conf.oversample, out.uv[0], out.sub_uv[0]);
             subpixel_coord(v, conf.oversample, out.uv[1], out.sub_uv[1]);
-            out.channel = channel;
             out.w_plane = w_slice_plane % conf.w_planes;
             out.w_slice = w_slice_plane / conf.w_planes;
-            out.baseline = baselines[i];
-            // This could wrap if the buffer has > 4 billion elements, but that
-            // can only affect efficiency, not correctness.
-            out.index = (std::uint32_t) buffer_size;
             buffer_size++;
         }
-        if (channel + 1 < num_channels())
-        {
-            // Not needed for correctness, but avoids putting the next channel
-            // in the same buffer where it is unlikely to combine well.
-            compress();
-        }
+
+        // Flush anything left in the buffer
+        compress(channel);
     }
     num_input += num_channels() * N;
 }
@@ -520,7 +506,6 @@ template<int Q>
 void visibility_collector<P>::add_impl(
     py::array_t<float, array_flags> uvw_array,
     py::array_t<float, array_flags> weights_array,
-    py::array_t<std::int32_t, array_flags> baselines_array,
     py::array_t<std::complex<float>, array_flags> vis_array,
     optional<py::array_t<float, array_flags>> feed_angle1_array,
     optional<py::array_t<float, array_flags>> feed_angle2_array,
@@ -532,7 +517,6 @@ void visibility_collector<P>::add_impl(
         return add_impl<Q == 1 ? 1 : Q - 1>(
             std::move(uvw_array),
             std::move(weights_array),
-            std::move(baselines_array),
             std::move(vis_array),
             std::move(feed_angle1_array),
             std::move(feed_angle2_array),
@@ -543,11 +527,9 @@ void visibility_collector<P>::add_impl(
     const std::size_t N = uvw_array.shape(0);
     const std::size_t C = num_channels();
     check_dimensions(weights_array, C, N, Q);
-    check_dimensions(baselines_array, N);
     check_dimensions(vis_array, C, N, Q);
 
     const float (*uvw)[3] = reinterpret_cast<const float(*)[3]>(uvw_array.data());
-    auto baselines = baselines_array.data();
     auto vis = vis_array.data();
     auto weights = weights_array.data();
 
@@ -561,7 +543,7 @@ void visibility_collector<P>::add_impl(
         auto mueller_stokes = mueller_stokes_array.cast<mueller_stokes_t>();
         mueller_generator_simple<P, Q> gen(mueller_stokes);
         add_impl2<Q, mueller_generator_simple<P, Q>>(
-            N, uvw, weights, baselines, vis, gen);
+            N, uvw, weights, vis, gen);
     }
     else
     {
@@ -578,7 +560,7 @@ void visibility_collector<P>::add_impl(
         mueller_generator_parallactic<P, Q> gen(feed_angle1, feed_angle2,
                                                 mueller_stokes, mueller_circular);
         add_impl2<Q, mueller_generator_parallactic<P, Q>>(
-            N, uvw, weights, baselines, vis, gen);
+            N, uvw, weights, vis, gen);
     }
 }
 
@@ -586,7 +568,6 @@ template<int P>
 void visibility_collector<P>::add(
     py::array_t<float, array_flags> uvw,
     py::array_t<float, array_flags> weights,
-    py::array_t<std::int32_t, array_flags> baselines,
     py::array_t<std::complex<float>, array_flags> vis,
     optional<py::array_t<float, array_flags>> feed_angle1,
     optional<py::array_t<float, array_flags>> feed_angle2,
@@ -600,7 +581,6 @@ void visibility_collector<P>::add(
     add_impl<4>(
         std::move(uvw),
         std::move(weights),
-        std::move(baselines),
         std::move(vis),
         std::move(feed_angle1),
         std::move(feed_angle2),
@@ -611,17 +591,24 @@ void visibility_collector<P>::add(
 template<int P>
 void visibility_collector<P>::close()
 {
-    compress();
+}
+
+template<int P>
+py::dtype visibility_collector<P>::get_dtype() const
+{
+    return py::dtype::of<vis_t<P>>();
 }
 
 template<int P>
 visibility_collector<P>::visibility_collector(
     py::array_t<channel_config, array_flags> config,
-    std::function<void(py::array)> emit_callback,
+    std::function<void(int, py::array)> emit_callback,
     std::size_t buffer_capacity)
     : visibility_collector_base(std::move(config), std::move(emit_callback)),
     buffer_storage(buffer_capacity),
+    sorted_buffer_storage(buffer_capacity),
     buffer(buffer_storage.mutable_data()),
+    sorted_buffer(sorted_buffer_storage.mutable_data()),
     buffer_capacity(buffer_capacity),
     buffer_size(0)
 {
@@ -633,7 +620,7 @@ static std::unique_ptr<visibility_collector_base>
 make_visibility_collector(
     int polarizations,
     py::array_t<channel_config, array_flags> config,
-    std::function<void(py::array)> emit_callback,
+    std::function<void(int, py::array)> emit_callback,
     std::size_t buffer_capacity)
 {
     if (polarizations > P || polarizations <= 0)
@@ -660,7 +647,7 @@ template<int P>
 static typename std::enable_if<0 < P>::type register_vis_dtypes()
 {
     register_vis_dtypes<P - 1>();
-    PYBIND11_NUMPY_DTYPE(vis_t<P>, uv, sub_uv, weights, vis, w_plane, w_slice, channel, baseline, index);
+    PYBIND11_NUMPY_DTYPE(vis_t<P>, uv, sub_uv, w_plane, w_slice, weights, vis);
 }
 
 } // anonymous namespace
@@ -679,6 +666,7 @@ PYBIND11_MODULE(_preprocess, m)
         .def("close", &visibility_collector_base::close)
         .def_readonly("num_input", &visibility_collector_base::num_input)
         .def_readonly("num_output", &visibility_collector_base::num_output)
+        .def_property_readonly("dtype", &visibility_collector_base::get_dtype)
     ;
     m.add_object("CHANNEL_CONFIG_DTYPE", py::dtype::of<channel_config>());
 }

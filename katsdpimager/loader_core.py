@@ -150,7 +150,6 @@ class LoaderBase(ABC):
          - ``uvw``: UVW coordinates (position2 - position1), as a Quantity (N×3)
          - ``vis``: visibilities (C×N×P for C channels and P polarizations)
          - ``weights``: imaging weights (C×N×P for C channels and P polarizations)
-         - ``baselines``: arbitrary integer baseline IDs; negative IDs indicate autocorrelations
          - ``feed_angle1``: angle between feed and sky (parallactic angle plus a fixed
            offset for the feed), for the first antenna in the baseline (N).
          - ``feed_angle2``: angle between feed and sky for the second antenna in
@@ -177,7 +176,8 @@ class LoaderBase(ABC):
            .. _CASA: http://casa.nrao.edu/Memos/CoordConvention.pdf
 
         The arrays are indexed first by channel (where applicable) then by a 1D
-        time/baseline coordinate. The second index is x/y/z for 'uvw' and
+        time/baseline coordinate (which for best performance should be
+        baseline-major). The second index is x/y/z for 'uvw' and
         polarization product for 'vis' and 'weights'.  Flags are not explicitly
         returned: they are either omitted entirely (if all pols are flagged) or
         indicated with a zero weight.

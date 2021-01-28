@@ -33,29 +33,27 @@ import numpy as np
 from astropy import units
 
 from . import _preprocess
-from .profiling import profile_generator
+from .profiling import profile_function, profile_generator
 
 
 logger = logging.getLogger(__name__)
 
 
-def _make_dtype(num_polarizations):
-    """Creates a numpy structured dtype to hold a preprocessed visibility with
-    associated metadata.
+def _make_dtype(base_dtype):
+    """Creates a numpy structured dtype to hold a preprocessed visibility with associated metadata.
+
+    The returned dtype has the same type and layout as the `base_dtype`,
+    but with unwanted fields eliminated, and possibly a smaller size.
 
     Parameters
     ----------
-    num_polarizations : int
-        Number of polarizations in the visibility.
+    base_dtype : dtype
+        Data type returned by the C++ preprocessor.
     """
-    fields = [
-        ('uv', np.int16, (2,)),
-        ('sub_uv', np.int16, (2,)),
-        ('weights', np.float32, (num_polarizations,)),
-        ('vis', np.complex64, (num_polarizations,)),
-        ('w_plane', np.int16)
-    ]
-    return np.dtype(fields)
+    names = ['uv', 'sub_uv', 'w_plane', 'weights', 'vis']
+    formats = [base_dtype.fields[name][0] for name in names]
+    offsets = [base_dtype.fields[name][1] for name in names]
+    return np.dtype(dict(names=names, formats=formats, offsets=offsets))
 
 
 def _make_fapl(cache_entries, cache_size, w0):
@@ -102,13 +100,13 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
             num_polarizations, config, self._emit, buffer_size)
         self.image_parameters = image_parameters
         self.grid_parameters = grid_parameters
-        self.store_dtype = _make_dtype(num_polarizations)
+        self.store_dtype = _make_dtype(self.dtype)
 
     @property
     def num_channels(self):
         return len(self.image_parameters)
 
-    def _emit(self, elements):
+    def _emit(self, channel, elements):
         """Write an array of compressed elements with the same channel and w
         slice to the backing store. The caller must provide a non-empty
         array.
@@ -119,10 +117,13 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
         """
         raise NotImplementedError()
 
-    def add(self, uvw, weights, baselines, vis,
+    def add(self, uvw, weights, vis,
             feed_angle1, feed_angle2, mueller_stokes, mueller_circular):
-        """Add a set of visibilities to the collector. Each of the provided
-        arrays must have the same size on the N axis.
+        """Add a set of visibilities to the collector.
+
+        Each of the provided arrays must have the same size on the N axis.
+        For best performance, order the visibilities by baseline then time,
+        so that consecutive visibilities have similar UVW coordinates.
 
         Parameters
         ----------
@@ -132,12 +133,6 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
             C×N×Q array of weights, where C is the number of channels and
             Q is the number of input polarizations. Flags must be folded into
             the weights.
-        baselines : array, int
-            1D array of integer, indicating baseline IDs. The IDs are
-            arbitrary and need not be contiguous, and are used only to
-            associate visibilities from the same baseline together.
-            Negative baseline IDs indicate autocorrelations, which will
-            be discarded.
         vis : array, complex64
             C×N×Q array of visibilities.
         feed_angle1, feed_angle2 : array, float32
@@ -154,7 +149,7 @@ class VisibilityCollector(_preprocess.VisibilityCollector):
         uvw = units.Quantity(uvw, unit=units.m, copy=False)
         uvw = np.require(uvw.value, np.float32, 'C')
         super().add(
-            uvw, weights, baselines, vis, feed_angle1, feed_angle2,
+            uvw, weights, vis, feed_angle1, feed_angle2,
             mueller_stokes, mueller_circular)
 
     def reader(self):
@@ -237,9 +232,9 @@ class VisibilityCollectorHDF5(VisibilityCollector):
             dtype=self.store_dtype,
             chunks=(1, 1, chunk_elements))
 
-    def _emit(self, elements):
+    @profile_function(labels=['channel'])
+    def _emit(self, channel, elements):
         N = elements.shape[0]
-        channel = elements[0]['channel']
         w_slice = elements[0]['w_slice']
         old_length = self._length[channel, w_slice]
         self._length[channel, w_slice] += N
@@ -281,8 +276,9 @@ class VisibilityCollectorMem(VisibilityCollector):
             [[] for w_slice in range(self.grid_parameters[channel].w_slices)]
             for channel in range(self.num_channels)]
 
-    def _emit(self, elements):
-        dataset = self.datasets[elements[0]['channel']][elements[0]['w_slice']]
+    @profile_function(labels=['channel'])
+    def _emit(self, channel, elements):
+        dataset = self.datasets[channel][elements[0]['w_slice']]
         # Work around FutureWarning in numpy 1.12 by first creating a view of
         # elements that contains only the fields we want.
         elements = np.ndarray(elements.shape, self.store_dtype, elements, 0, elements.strides)

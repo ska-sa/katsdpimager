@@ -40,7 +40,7 @@ def preprocess_visibilities(dataset, args, start_channel, stop_channel,
             if bar is None:
                 bar = progress.make_progressbar("Preprocessing vis", max=chunk['total'])
             collector.add(
-                chunk['uvw'], chunk['weights'], chunk['baselines'], chunk['vis'],
+                chunk['uvw'], chunk['weights'], chunk['vis'],
                 chunk.get('feed_angle1'), chunk.get('feed_angle2'),
                 *polarization_matrices)
             bar.goto(chunk['progress'])
