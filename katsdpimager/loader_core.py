@@ -12,8 +12,11 @@ from . import parameters, sky_model
 
 
 class LoaderBase(ABC):
-    def __init__(self, filename, options):
-        """Open the file"""
+    def __init__(self, filename, options, start_channel, stop_channel):
+        """Open the data set.
+
+        See :func:`katsdpimager.loader.load` for details of the parameters.
+        """
         self.filename = filename
 
     @abstractmethod

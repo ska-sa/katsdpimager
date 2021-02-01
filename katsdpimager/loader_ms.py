@@ -225,8 +225,8 @@ def _fix_cache_size(table, column):
 
 
 class LoaderMS(loader_core.LoaderBase):
-    def __init__(self, filename, options):
-        super().__init__(filename, options)
+    def __init__(self, filename, options, start_channel, stop_channel):
+        super().__init__(filename, options, start_channel, stop_channel)
         parser = argparse.ArgumentParser(
             prog='Measurement set options',
             usage='Measurement set options: [-i data=COLUMN] [-i field=FIELD] ...')
