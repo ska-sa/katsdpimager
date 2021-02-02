@@ -13,6 +13,7 @@ import bisect
 import math
 import urllib
 
+import dask.array as da
 import katdal
 from katdal.lazy_indexer import DaskLazyIndexer
 import katsdpmodels.fetch.requests
@@ -167,18 +168,18 @@ class LoaderKatdal(loader_core.LoaderBase):
         # Find baselines represented by corr_products.
         baselines = _unique((a[:-1], b[:-1]) for a, b in self._file.corr_products)
         corr_product_permutation = []
-        missing_corr_products = []
         for a, b in baselines:
             for pol in pols:
                 corr_product = (a + pol[0], b + pol[1])
                 corr_product_permutation.append(corr_product_inverse.get(corr_product, None))
+        missing_corr_products_mask = np.zeros(len(corr_product_permutation), np.bool_)
         for i in range(len(corr_product_permutation)):
             if corr_product_permutation[i] is None:
                 # Has to have some valid index for advanced indexing
                 corr_product_permutation[i] = 0
-                missing_corr_products.append(i)
+                missing_corr_products_mask[i] = 1
         self._corr_product_permutation = corr_product_permutation
-        self._missing_corr_products = missing_corr_products
+        self._missing_corr_products_mask = missing_corr_products_mask[np.newaxis, np.newaxis, :]
 
         # Turn baselines from pairs of names into pairs of antenna indices
         ant_inverse = {antenna.name: i for i, antenna in enumerate(self._file.ants)}
@@ -290,6 +291,30 @@ class LoaderKatdal(loader_core.LoaderBase):
     def channel_enabled(self, channel):
         return self._channel_mask is None or not self._channel_mask[channel - self._start_channel]
 
+    def _map_vis_weights(self, block):
+        return block[:, :, self._corr_product_permutation]
+
+    def _map_flags(self, block, channel_mask=None):
+        block = block[:, :, self._corr_product_permutation]
+        # The above is fancy indexing which creates a new array, so we're free
+        # to do further modifications in-place.
+        if self._missing_corr_products_mask is not None:
+            block |= self._missing_corr_products_mask
+        if channel_mask is not None:
+            block |= channel_mask
+        return block
+
+    def _convert(self, array, map_func, **kwargs):
+        # Ensure only a single chunk on the baseline axis, so that we can do
+        # the permutation on a chunk-by-chunk basis.
+        if array.numblocks[2] != 1:
+            array = da.rechunk(array, chunks={2: -1})
+        return da.map_blocks(
+            map_func, array,
+            chunks=(array.chunks[0], array.chunks[1], (len(self._corr_product_permutation),)),
+            dtype=array.dtype,
+            **kwargs)
+
     @profile_generator(labels=('start_channel', 'stop_channel'))
     def data_iter(self, start_channel, stop_channel, max_chunk_vis=None):
         start_channel -= self._start_channel
@@ -307,48 +332,63 @@ class LoaderKatdal(loader_core.LoaderBase):
         # timestamps is a property, so ensure it's only evaluated once
         with profile('katdal.DataSet.timestamps'):
             timestamps = self._file.timestamps
-        start = 0
-        # Determine chunking scheme
         if isinstance(self._file.vis, DaskLazyIndexer):
-            chunk_sizes = self._file.vis.dataset.chunks[0]
-            chunk_boundaries = [0] + list(itertools.accumulate(chunk_sizes))
-            if chunk_sizes and chunk_sizes[0] > load_times:
-                _logger.warning('Chunk size is %d dumps but only %d loaded at a time. '
-                                'Consider increasing --vis-load',
-                                chunk_sizes[0], load_times)
+            dask_vis = self._file.vis.dataset
+            dask_weights = self._file.weights.dataset
+            dask_flags = self._file.flags.dataset
         else:
-            chunk_boundaries = list(range(n_file_times + 1))  # No chunk info available
+            # Pre-MVFv4
+            dask_vis = da.from_array(self._file.vis, chunks=(load_times, None, None))
+            dask_weights = da.from_array(self._file.weights, chunks=(load_times, None, None))
+            dask_flags = da.from_array(self._file.flags, chunks=(load_times, None, None))
+
+        # Determine chunking scheme
+        chunk_sizes = dask_vis.chunks[0]
+        chunk_boundaries = [0] + list(itertools.accumulate(chunk_sizes))
+        if chunk_sizes and chunk_sizes[0] > load_times:
+            _logger.warning('Chunk size is %d dumps but only %d loaded at a time. '
+                            'Consider increasing --vis-load',
+                            chunk_sizes[0], load_times)
+
+        # Do some modifications:
+        # - reorder baselines to the desired order
+        # - flag baselines that are missing in the original data
+        # - apply the channel mask
+        # - apply flags to weights
+        if self._channel_mask is not None:
+            channel_mask = self._channel_mask[np.newaxis, start_channel:stop_channel, np.newaxis]
+        else:
+            channel_mask = None
+        dask_vis = self._convert(dask_vis, self._map_vis_weights)
+        dask_weights = self._convert(dask_weights, self._map_vis_weights)
+        dask_flags = self._convert(dask_flags, self._map_flags, channel_mask=channel_mask)
+        dask_weights *= np.logical_not(dask_flags)
+
+        max_shape = (load_times, dask_vis.shape[1], dask_vis.shape[2])
+        vis_storage = np.empty(max_shape, dask_vis.dtype)
+        weights_storage = np.empty(max_shape, dask_weights.dtype)
+        flags_storage = np.empty(max_shape, dask_flags.dtype)
+        start = 0
         while start < n_file_times:
             end = min(n_file_times, start + load_times)
             # Align to chunking if possible
             aligned_end = chunk_boundaries[bisect.bisect(chunk_boundaries, end) - 1]
             if aligned_end > start:
                 end = aligned_end
-            # Load a chunk from the lazy indexer, then reindex to order
-            # the baselines as desired.
+            # Load a chunk from dask
             _logger.debug('Loading dumps %d:%d', start, end)
             select = np.s_[start:end, :, :]
-            fix = np.s_[:, :, self._corr_product_permutation]
-            with profile('katdal.lazy_indexer.DaskLazyIndexer.get',
+            # Make views of the backing storage that are the right size
+            vis = vis_storage[: end - start]
+            weights = weights_storage[: end - start]
+            flags = flags_storage[: end - start]
+            with profile('dask.array.store',
                          {'start_dump': start, 'end_dump': end}):
-                if isinstance(self._file.vis, DaskLazyIndexer):
-                    vis, weights, flags = DaskLazyIndexer.get(
-                        [self._file.vis, self._file.weights, self._file.flags], select)
-                else:
-                    vis = self._file.vis[select]
-                    weights = self._file.weights[select]
-                    flags = self._file.flags[select]
+                da.store(
+                    [dask_vis[select], dask_weights[select], dask_flags[select]],
+                    [vis, weights, flags],
+                    lock=False)
             _logger.debug('Dumps %d:%d loaded', start, end)
-            vis = vis[fix]
-            weights = weights[fix]
-            flags = flags[fix]
-            # Flag missing correlation products
-            if self._missing_corr_products:
-                flags[:, :, self._missing_corr_products] = True
-            if self._channel_mask is not None:
-                flags |= self._channel_mask[np.newaxis, start_channel:stop_channel, np.newaxis]
-            # Apply flags to weights
-            weights *= np.logical_not(flags)
 
             # Compute per-antenna UVW coordinates and parallactic angles.
             with profile('katpoint.Target.uvw'):
