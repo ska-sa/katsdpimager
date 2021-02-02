@@ -104,7 +104,7 @@ class visibility_collector_base
 {
 protected:
     // Gridding parameters
-    py::array_t<channel_config, array_flags> config;
+    std::vector<channel_config> config;
     /// Callback function called with channel and compressed data as a numpy array
     std::function<void(int, py::array)> emit_callback;
 
@@ -166,9 +166,13 @@ public:
 visibility_collector_base::visibility_collector_base(
     py::array_t<channel_config, array_flags> config,
     std::function<void(int, py::array)> emit_callback)
-    : config(std::move(config)), emit_callback(std::move(emit_callback))
+    : emit_callback(std::move(emit_callback))
 {
-    check_dimensions(this->config, -1);
+    check_dimensions(config, -1);
+    // Copy from py::array to vector. This makes it safe to use without the GIL.
+    this->config.reserve(config.size());
+    for (std::size_t i = 0; i < config.size(); i++)
+        this->config.push_back(config.at(i));
 }
 
 /**
@@ -323,6 +327,7 @@ void subpixel_coord(float x, std::int32_t oversample, std::int16_t &pixel, std::
 template<int P>
 void visibility_collector<P>::emit(int channel, vis_t<P> data[], std::size_t N)
 {
+    py::gil_scoped_acquire acquire_gil;
     py::array_t<vis_t<P>> array(N, data, sorted_buffer_storage);
     num_output += N;
     emit_callback(channel, array);
@@ -396,6 +401,8 @@ void visibility_collector<P>::add_impl2(
     const std::complex<float> vis_raw[],
     const Generator &gen)
 {
+    py::gil_scoped_release release_gil;
+
     typedef Eigen::Matrix<std::complex<float>, P, Q> MatrixPQcf;
     typedef Eigen::Matrix<float, P, 1> VectorPf;
     typedef Eigen::Matrix<std::complex<float>, P, 1> VectorPcf;
