@@ -171,7 +171,7 @@ visibility_collector_base::visibility_collector_base(
     check_dimensions(config, -1);
     // Copy from py::array to vector. This makes it safe to use without the GIL.
     this->config.reserve(config.size());
-    for (std::size_t i = 0; i < config.size(); i++)
+    for (decltype(config.size()) i = 0; i < config.size(); i++)
         this->config.push_back(config.at(i));
 }
 
