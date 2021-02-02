@@ -253,8 +253,6 @@ private:
     vis_t<P> *sorted_buffer;
     /// Allocated memory for @ref buffer
     std::size_t buffer_capacity;
-    /// Number of valid entries in @ref buffer
-    std::size_t buffer_size;
 
     /**
      * Wrapper around @ref visibility_collector_base::emit. It constructs the
@@ -267,7 +265,7 @@ private:
      * Sort and compress the buffer, and call emit for each contiguous
      * portion that belongs to the same w plane and channel.
      */
-    void compress(int channel);
+    void compress(int channel, std::size_t buffer_size);
 
     template<int Q, typename Generator>
     void add_impl2(
@@ -334,19 +332,26 @@ void visibility_collector<P>::emit(int channel, vis_t<P> data[], std::size_t N)
 }
 
 template<int P>
-void visibility_collector<P>::compress(int channel)
+void visibility_collector<P>::compress(int channel, std::size_t buffer_size)
 {
-    if (buffer_size == 0)
-        return;  // some code will break on an empty buffer
     std::size_t out_pos = 0;
+    std::size_t i = 0;
+    // Skip initial flagged values
+    while (i < buffer_size && buffer[i].weights[0] == 0.0f)
+        i++;
+    if (i == buffer_size)
+        return;  // some code will break on an empty buffer
+
     // Currently accumulating visibility
-    vis_t<P> last = buffer[0];
+    vis_t<P> last = buffer[i];
     // Number of output visibilities per w_slice
     int w_slices = config.at(channel).w_slices;
     std::vector<std::size_t> counts(w_slices);
-    for (std::size_t i = 1; i < buffer_size; i++)
+    for (i++; i < buffer_size; i++)
     {
         const vis_t<P> &element = buffer[i];
+        if (element.weights[0] == 0.0f)
+            continue;     // It's flagged
         if (std::memcmp(&element, &last, offsetof(vis_t<P>, weights)) == 0)
         {
             // Continue accumulating the current visibility
@@ -389,8 +394,6 @@ void visibility_collector<P>::compress(int channel)
             pos = counts[w_slice];
         }
     }
-
-    buffer_size = 0;
 }
 
 template<int P>
@@ -432,78 +435,79 @@ void visibility_collector<P>::add_impl2(
         float uv_scale = 1.0f / conf.cell_size;
         float w_scale = (conf.w_slices - 0.5f) * conf.w_planes / conf.max_w;
         int max_slice_plane = conf.w_slices * conf.w_planes - 1; // TODO: check for overflow? precompute?
-        for (std::size_t i = 0; i < N; i++)
+        for (std::size_t i0 = 0; i0 < N; i0 += buffer_capacity)
         {
-            if (weights.col(i).cwiseEqual(0.0f).any())
+            std::size_t i1 = std::min(N, i0 + buffer_capacity);
+#pragma omp parallel for schedule(static)
+            for (std::size_t i = i0; i < i1; i++)
             {
-                /* Discard visibilities with zero weight on any polarisation.
-                 * Zero weights generally indicates flagging, and if any
-                 * polarisation if flagged then at least one of the inputs is
-                 * contaminated and so no Stokes parameters will be clean.
-                 */
-                continue;
-            }
-            if (buffer_size == buffer_capacity)
-                compress(channel);
-
-            VectorPcf xvis = (convert[i].template cast<MulZ<std::complex<float>>>() * vis.col(i))
-                             .template cast<std::complex<float>>();
-
-            /* Transform weights. Weights are proportional to inverse variance, so we
-             * first convert to variance, then invert again once output variances are
-             * known. Covariance is not modelled.
-             *
-             * The absolute values are taken first. Weights can't be negative, but
-             * they can be -0.0, whose inverse is -Inf. If a mix of -Inf and +Inf
-             * variances is allowed, then the combined variance could be NaN
-             * rather than +Inf.
-             */
-            VectorPf xweights =
-                (convert[i].cwiseAbs2().template cast<MulZ<float>>()
-                 * weights.col(i).cwiseAbs().cwiseInverse())
-                .template cast<float>().cwiseInverse();
-
-            vis_t<P> &out = buffer[buffer_size];
-            float u = uvw[i][0];
-            float v = uvw[i][1];
-            float w = uvw[i][2];
-            if (w < 0.0f)
-            {
-                u = -u;
-                v = -v;
-                w = -w;
-                xvis = xvis.conjugate();
-            }
-            for (int p = 0; p < P; p++)
-            {
-                float weight = xweights(p);
-                std::complex<float> vis = xvis(p) * weight;
-                if (!std::isfinite(vis.real()) || !std::isfinite(vis.imag()))
+                vis_t<P> &out = buffer[i - i0];
+                if (weights.col(i).cwiseEqual(0.0f).any())
                 {
-                    // Squash visibilities with NaNs, which could come from
-                    // calibration failures in katsdpcal
-                    vis = 0.0f;
-                    weight = 0.0f;
+                    /* Discard visibilities with zero weight on any polarisation.
+                     * Zero weights generally indicates flagging, and if any
+                     * polarisation if flagged then at least one of the inputs is
+                     * contaminated and so no Stokes parameters will be clean.
+                     */
+                    std::memset(&out, 0, sizeof(out));
+                    continue;
                 }
-                out.vis[p] = vis;
-                out.weights[p] = weight;
-            }
-            u = u * uv_scale;
-            v = v * uv_scale;
-            // The plane number is biased by half a slice, because the first slice
-            // is half-width and centered at w=0.
-            w = trunc(w * w_scale + conf.w_planes * 0.5f);
-            int w_slice_plane = std::min(int(w), max_slice_plane);
-            // TODO convert from here
-            subpixel_coord(u, conf.oversample, out.uv[0], out.sub_uv[0]);
-            subpixel_coord(v, conf.oversample, out.uv[1], out.sub_uv[1]);
-            out.w_plane = w_slice_plane % conf.w_planes;
-            out.w_slice = w_slice_plane / conf.w_planes;
-            buffer_size++;
-        }
 
-        // Flush anything left in the buffer
-        compress(channel);
+                VectorPcf xvis = (convert[i].template cast<MulZ<std::complex<float>>>() * vis.col(i))
+                                 .template cast<std::complex<float>>();
+
+                /* Transform weights. Weights are proportional to inverse variance, so we
+                 * first convert to variance, then invert again once output variances are
+                 * known. Covariance is not modelled.
+                 *
+                 * The absolute values are taken first. Weights can't be negative, but
+                 * they can be -0.0, whose inverse is -Inf. If a mix of -Inf and +Inf
+                 * variances is allowed, then the combined variance could be NaN
+                 * rather than +Inf.
+                 */
+                VectorPf xweights =
+                    (convert[i].cwiseAbs2().template cast<MulZ<float>>()
+                     * weights.col(i).cwiseAbs().cwiseInverse())
+                    .template cast<float>().cwiseInverse();
+
+                float u = uvw[i][0];
+                float v = uvw[i][1];
+                float w = uvw[i][2];
+                if (w < 0.0f)
+                {
+                    u = -u;
+                    v = -v;
+                    w = -w;
+                    xvis = xvis.conjugate();
+                }
+                for (int p = 0; p < P; p++)
+                {
+                    float weight = xweights(p);
+                    std::complex<float> vis = xvis(p) * weight;
+                    if (!std::isfinite(vis.real()) || !std::isfinite(vis.imag()))
+                    {
+                        // Squash visibilities with NaNs, which could come from
+                        // calibration failures in katsdpcal
+                        vis = 0.0f;
+                        weight = 0.0f;
+                    }
+                    out.vis[p] = vis;
+                    out.weights[p] = weight;
+                }
+                u = u * uv_scale;
+                v = v * uv_scale;
+                // The plane number is biased by half a slice, because the first slice
+                // is half-width and centered at w=0.
+                w = trunc(w * w_scale + conf.w_planes * 0.5f);
+                int w_slice_plane = std::min(int(w), max_slice_plane);
+                // TODO convert from here
+                subpixel_coord(u, conf.oversample, out.uv[0], out.sub_uv[0]);
+                subpixel_coord(v, conf.oversample, out.uv[1], out.sub_uv[1]);
+                out.w_plane = w_slice_plane % conf.w_planes;
+                out.w_slice = w_slice_plane / conf.w_planes;
+            }
+            compress(channel, i1 - i0);
+        }
     }
     num_input += num_channels() * N;
 }
@@ -616,8 +620,7 @@ visibility_collector<P>::visibility_collector(
     sorted_buffer_storage(buffer_capacity),
     buffer(buffer_storage.mutable_data()),
     sorted_buffer(sorted_buffer_storage.mutable_data()),
-    buffer_capacity(buffer_capacity),
-    buffer_size(0)
+    buffer_capacity(buffer_capacity)
 {
 }
 
