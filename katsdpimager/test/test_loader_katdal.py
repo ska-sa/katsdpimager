@@ -47,14 +47,16 @@ class TestLoaderKatdal:
         telstate['sub_product'] = 'c856M1k'
         telstate['sub_band'] = 'l'
         telstate['obs_params'] = {}
-        for ant in ANTENNAS:
+        for i, ant in enumerate(ANTENNAS):
             telstate[f'{ant.name}_observer'] = ant.description
-            telstate.add(f'{ant.name}_target', TARGET.description, 123456789.0)
+            telstate.add(f'{ant.name}_target', TARGET.description, 0.0)
             telstate.add(f'{ant.name}_activity', 'track', 1.0)
-            telstate.add(f'{ant.name}_pos_actual_scan_azim', 0.0)
+            # Point antennas in substantially different directions to test
+            # parallactic angles.
+            telstate.add(f'{ant.name}_pos_actual_scan_azim', np.deg2rad(i * 30.0))
             telstate.add(f'{ant.name}_pos_actual_scan_elev', np.deg2rad(30.0))
-        telstate.add('obs_activity', 'track', 123456789.0)
-        telstate.add('cbf_target', TARGET.description, 123456789.0)
+        telstate.add('obs_activity', 'track', 0.0)
+        telstate.add('cbf_target', TARGET.description, 0.0)
 
         self._open_patcher = mock.patch('katdal.open', autospec=True, side_effect=self._katdal_open)
         self._open_patcher.start()
@@ -138,6 +140,17 @@ class TestLoaderKatdal:
             'vh': polarization.STOKES_YX,
             'vv': polarization.STOKES_YY
         }
+        # See comment in loader_katdal.py for explanation of pi/2 shift
+        pa = np.deg2rad(dataset.parangle) - np.pi / 2
+        pa = {ant.name: pa[:, i] for i, ant in enumerate(dataset.ants)}
+        expected_feed_angle1 = np.stack(
+            [pa[prod[0][:-1]] for prod in dataset.corr_products],
+            axis=1
+        )
+        expected_feed_angle2 = np.stack(
+            [pa[prod[1][:-1]] for prod in dataset.corr_products],
+            axis=1
+        )
         # Expected polarisation product per baseline
         expected_polarizations = [
             pol_map[prod[0][-1:] + prod[1][-1:]]
@@ -171,9 +184,13 @@ class TestLoaderKatdal:
                         uvw[i].to_value(u.m),
                         expected_uvw[idx[0], idx[2]].to_value(u.m), rtol=1e-7
                     )
+                    # Won't match exactly because the loader converts to float32
+                    np.testing.assert_allclose(
+                        feed_angle1[i], expected_feed_angle1[idx[0], idx[2]], rtol=1e-6)
+                    np.testing.assert_allclose(
+                        feed_angle2[i], expected_feed_angle2[idx[0], idx[2]], rtol=1e-6)
 
         # TODO: check dtypes
-        # TODO: check feed angles
 
     # TODO: channel mask
     # TODO: missing correlation product
