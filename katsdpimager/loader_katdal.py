@@ -388,7 +388,7 @@ class LoaderKatdal(loader_core.LoaderBase):
 
             # Compute per-antenna UVW coordinates and parallactic angles.
             with profile('katpoint.Target.uvw'):
-                antenna_uvw = units.Quantity(self._target.uvw(
+                antenna_uvw = np.asarray(self._target.uvw(
                     self._file.ants, timestamp=timestamps[start:end], antenna=self._ref_ant))
             antenna_uvw = antenna_uvw.T   # Switch from (uvw, time, ant) to (ant, time, uvw)
             # parangle converts to degrees before returning, so we have to
@@ -420,7 +420,7 @@ class LoaderKatdal(loader_core.LoaderBase):
 
             # reshape everything into the target formats
             yield dict(
-                uvw=uvw.reshape(-1, 3),
+                uvw=uvw.reshape(-1, 3) << units.m,
                 weights=reorder(weights),
                 vis=reorder(vis),
                 feed_angle1=feed_angle1.reshape(-1),
