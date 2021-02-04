@@ -118,11 +118,13 @@ class TestLoaderKatdal:
             assert_true(loader.channel_enabled(i))
         np.testing.assert_allclose(loader.longest_baseline(), 74.2 * u.m, rtol=0.001)
         assert_is_instance(loader.raw_data, VisibilityDataV4)
+        # Just a basic smoke test - doesn't test all the extra headers
+        headers = loader.extra_fits_headers()
+        assert_equal(headers['OBJECT'], 'PKS 1934-63')
+        assert_equal(headers['INSTRUME'], 'c856M1k')
+        assert_equal(headers['ONTIME'], 24.0)
 
     def test_sky_model(self):
-        pass  # TODO
-
-    def test_extra_fits_headers(self):
         pass  # TODO
 
     def _collect(self, iterator):
