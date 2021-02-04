@@ -106,18 +106,33 @@ class TestLoaderKatdal:
     def test_extra_fits_headers(self):
         pass  # TODO
 
-    def test_data(self):
-        loader = LoaderKatdal('file:///fake_filename', {}, 24, None)
+    def _collect(self, iterator):
+        """Collect all the data from the ``data_iter`` iterator.
+
+        Returns
+        -------
+        vis, weights, uvw, feed_angle1, feed_angle2 : np.ndarray
+            Arrays of data
+        chunks : sequence of int
+            Number of rows in each loaded chunk
+        """
         progress = 0
+        chunks = []
         bls = len(ANTENNAS) * (len(ANTENNAS) - 1) // 2    # Excludes auto-correlations
-        # Collect all the data together
         data = defaultdict(list)
-        for chunk in loader.data_iter(36, 72):
+        for chunk in iterator:
             assert_equal(chunk['total'], self.shape[0])
             assert_equal(chunk['progress'], progress + chunk['uvw'].shape[0] // bls)
             progress = chunk['progress']
             for field in ['uvw', 'weights', 'vis', 'feed_angle1', 'feed_angle2']:
                 data[field].append(chunk[field])
+            N = chunk['vis'].shape[1]
+            # Check that each array has the same number of rows
+            assert_equal(chunk['uvw'].shape, (N, 3))
+            assert_equal(chunk['weights'].shape, chunk['vis'].shape)
+            assert_equal(chunk['feed_angle1'].shape, (N,))
+            assert_equal(chunk['feed_angle2'].shape, (N,))
+            chunks.append(N)
         assert_equal(progress, self.shape[0])
 
         # Concatenate the chunks back together
@@ -126,14 +141,18 @@ class TestLoaderKatdal:
         uvw = np.concatenate(data['uvw'], axis=0)
         feed_angle1 = np.concatenate(data['feed_angle1'], axis=0)
         feed_angle2 = np.concatenate(data['feed_angle2'], axis=0)
+        return vis, weights, uvw, feed_angle1, feed_angle2, chunks
 
-        dataset = katdal.open('file:///fake_filename')
-        dataset.select(corrprods='cross', channels=range(36, 72), scans='track')
-        expected_vis = dataset.vis[:]
-        expected_weights = dataset.weights[:] * np.logical_not(dataset.flags[:])
+    def _get_expected(self, dataset):
+        """Get values from a dataset.
+
+        It must already have had the appropriate selection applied.
+        """
+        vis = dataset.vis[:]
+        weights = dataset.weights[:] * np.logical_not(dataset.flags[:])
         # negate because katdal convention is ant2 - ant1, while katsdpimager
         # convention is the opposite.
-        expected_uvw = -np.stack([dataset.u, dataset.v, dataset.w], axis=2) * u.m
+        uvw = -np.stack([dataset.u, dataset.v, dataset.w], axis=2) * u.m
         pol_map = {
             'hh': polarization.STOKES_XX,
             'hv': polarization.STOKES_XY,
@@ -143,23 +162,35 @@ class TestLoaderKatdal:
         # See comment in loader_katdal.py for explanation of pi/2 shift
         pa = np.deg2rad(dataset.parangle) - np.pi / 2
         pa = {ant.name: pa[:, i] for i, ant in enumerate(dataset.ants)}
-        expected_feed_angle1 = np.stack(
+        feed_angle1 = np.stack(
             [pa[prod[0][:-1]] for prod in dataset.corr_products],
             axis=1
         )
-        expected_feed_angle2 = np.stack(
+        feed_angle2 = np.stack(
             [pa[prod[1][:-1]] for prod in dataset.corr_products],
             axis=1
         )
         # Expected polarisation product per baseline
-        expected_polarizations = [
+        polarizations = [
             pol_map[prod[0][-1:] + prod[1][-1:]]
             for prod in dataset.corr_products
         ]
+        return vis, weights, uvw, feed_angle1, feed_angle2, polarizations
+
+    def test_data(self):
+        loader = LoaderKatdal('file:///fake_filename', {}, 24, None)
+        bls = len(ANTENNAS) * (len(ANTENNAS) - 1) // 2    # Excludes auto-correlations
+        vis, weights, uvw, feed_angle1, feed_angle2, chunks = \
+            self._collect(loader.data_iter(36, 72))
+
+        dataset = katdal.open('file:///fake_filename')
+        dataset.select(corrprods='cross', channels=range(36, 72), scans='track')
+        e_vis, e_weights, e_uvw, e_feed_angle1, e_feed_angle2, e_polarizations = \
+            self._get_expected(dataset)
 
         # Check the shapes before trying to shuffle data.
         N = self.shape[0] * bls
-        C = expected_vis.shape[1]
+        C = e_vis.shape[1]
         P = 4
         assert_equal(vis.shape, (C, N, P))
         assert_equal(weights.shape, (C, N, P))
@@ -170,25 +201,25 @@ class TestLoaderKatdal:
         # The expected visibilities are all unique, so we can use them to
         # determine the permutation applied. We map each complex visibility to
         # its time-frequency-baseline coordinates.
-        vis_map = {value: index for index, value in np.ndenumerate(expected_vis)}
+        vis_map = {value: index for index, value in np.ndenumerate(e_vis)}
         for channel in range(C):
             for i in range(N):
                 for j in range(P):
                     # pop ensures that we don't see the same visibility twice
                     idx = vis_map.pop(vis[channel, i, j])
                     assert_equal(idx[1], channel)
-                    assert_equal(loader.polarizations()[j], expected_polarizations[idx[2]])
-                    assert_equal(vis[channel, i, j], expected_vis[idx])
-                    assert_equal(weights[channel, i, j], expected_weights[idx])
+                    assert_equal(loader.polarizations()[j], e_polarizations[idx[2]])
+                    assert_equal(vis[channel, i, j], e_vis[idx])
+                    assert_equal(weights[channel, i, j], e_weights[idx])
                     np.testing.assert_allclose(
                         uvw[i].to_value(u.m),
-                        expected_uvw[idx[0], idx[2]].to_value(u.m), rtol=1e-7
+                        e_uvw[idx[0], idx[2]].to_value(u.m), rtol=1e-7
                     )
                     # Won't match exactly because the loader converts to float32
                     np.testing.assert_allclose(
-                        feed_angle1[i], expected_feed_angle1[idx[0], idx[2]], rtol=1e-6)
+                        feed_angle1[i], e_feed_angle1[idx[0], idx[2]], rtol=1e-6)
                     np.testing.assert_allclose(
-                        feed_angle2[i], expected_feed_angle2[idx[0], idx[2]], rtol=1e-6)
+                        feed_angle2[i], e_feed_angle2[idx[0], idx[2]], rtol=1e-6)
 
         # TODO: check dtypes
 
