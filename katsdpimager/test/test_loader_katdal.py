@@ -1,6 +1,7 @@
 """Tests for :py:mod:`katsdpimager.loader_katdal`."""
 
 from collections import defaultdict
+import logging
 import tempfile
 from unittest import mock
 
@@ -16,7 +17,7 @@ from katdal.datasources import TelstateDataSource
 from katdal.chunkstore_npy import NpyFileChunkStore
 from katdal.test.test_datasources import make_fake_data_source
 
-from nose.tools import assert_equal, assert_true, assert_is_instance
+from nose.tools import assert_equal, assert_true, assert_is_instance, assert_in, assert_logs
 
 from ..loader_katdal import LoaderKatdal
 from .. import polarization
@@ -37,9 +38,18 @@ class TestLoaderKatdal:
         self.store = NpyFileChunkStore(self.tempdir.name)
         telstate = katsdptelstate.TelescopeState()
         self.shape = (12, 96, len(ANTENNAS) * (len(ANTENNAS) + 1) * 2)
+        chunks = (4, 8, self.shape[2])
+        chunk_overrides = {
+            'correlator_data': chunks,
+            'flags': chunks,
+            'weights': chunks,
+            'weights_channel': chunks[:2]
+        }
         self.view, self.cbid, self.stream_name, _, _ = make_fake_data_source(
             telstate, self.store,
-            l0_shape=self.shape
+            l0_shape=self.shape,
+            l0_chunk_overrides=chunk_overrides,
+            l1_flags_chunk_overrides=chunk_overrides
         )
         # Put in the minimum necessary for katdal to open the data set. This
         # may need to be updated in future as katdal evolves.
@@ -113,7 +123,7 @@ class TestLoaderKatdal:
         -------
         vis, weights, uvw, feed_angle1, feed_angle2 : np.ndarray
             Arrays of data
-        chunks : sequence of int
+        chunks : Tuple[int]
             Number of rows in each loaded chunk
         """
         progress = 0
@@ -141,7 +151,7 @@ class TestLoaderKatdal:
         uvw = np.concatenate(data['uvw'], axis=0)
         feed_angle1 = np.concatenate(data['feed_angle1'], axis=0)
         feed_angle2 = np.concatenate(data['feed_angle2'], axis=0)
-        return vis, weights, uvw, feed_angle1, feed_angle2, chunks
+        return vis, weights, uvw, feed_angle1, feed_angle2, tuple(chunks)
 
     def _get_expected(self, dataset):
         """Get values from a dataset.
@@ -177,11 +187,11 @@ class TestLoaderKatdal:
         ]
         return vis, weights, uvw, feed_angle1, feed_angle2, polarizations
 
-    def test_data(self):
+    def _test_simple(self, channel0=36, channel1=72, max_chunk_vis=None):
         loader = LoaderKatdal('file:///fake_filename', {}, 24, None)
         bls = len(ANTENNAS) * (len(ANTENNAS) - 1) // 2    # Excludes auto-correlations
         vis, weights, uvw, feed_angle1, feed_angle2, chunks = \
-            self._collect(loader.data_iter(36, 72))
+            self._collect(loader.data_iter(channel0, channel1, max_chunk_vis=max_chunk_vis))
 
         dataset = katdal.open('file:///fake_filename')
         dataset.select(corrprods='cross', channels=range(36, 72), scans='track')
@@ -222,10 +232,24 @@ class TestLoaderKatdal:
                         feed_angle2[i], e_feed_angle2[idx[0], idx[2]], rtol=1e-6)
 
         # TODO: check dtypes
+        return chunks
+
+    def test_basic(self):
+        """Basic smoke test - can load everything in one chunk."""
+        self._test_simple()
+
+    def test_chunked(self):
+        """Load via multiple chunks."""
+        bls = len(ANTENNAS) * (len(ANTENNAS) - 1) // 2    # Excludes auto-correlations
+        chunks = self._test_simple(max_chunk_vis=7 * 36 * 4 * bls)
+        # It should round down to 4 times per chunk to align with data chunking
+        assert_equal(chunks, (4 * bls, 4 * bls, 4 * bls))
+
+    def test_max_chunk_vis_small(self):
+        with assert_logs(logger='katsdpimager.loader_katdal', level=logging.WARNING) as cm:
+            self._test_simple(max_chunk_vis=1)
+        assert_in('Chunk size is 4 dumps but only 1 loaded at a time', cm.records[0].message)
 
     # TODO: channel mask
     # TODO: missing correlation product
     # TODO: ensure that this is a non-trivial baseline permutation
-    # TODO: multiple chunks
-    # TODO: chunk alignment
-    # TODO: n_times less than chunk alignment (round up and warn)
