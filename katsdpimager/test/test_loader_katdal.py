@@ -200,7 +200,7 @@ class TestLoaderKatdal:
             self._collect(loader.data_iter(channel0, channel1, max_chunk_vis=max_chunk_vis))
 
         dataset = katdal.open('file:///fake_filename')
-        dataset.select(corrprods='cross', channels=range(36, 72), scans='track')
+        dataset.select(corrprods='cross', channels=np.s_[36:72], scans='track')
         e_vis, e_weights, e_uvw, e_feed_angle1, e_feed_angle2, e_polarizations = \
             self._get_expected(dataset)
 
