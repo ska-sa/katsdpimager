@@ -56,6 +56,13 @@ def _timestamp_to_fits(timestamp):
     return Time(float(timestamp), format='unix').utc.isot
 
 
+def _compute(*arrays):
+    """Like da.compute, but work around https://github.com/dask/dask/issues/3595."""
+    outputs = [np.empty(array.shape, array.dtype) for array in arrays]
+    da.store(arrays, outputs, lock=False)
+    return outputs
+
+
 class LoaderKatdal(loader_core.LoaderBase):
     def _find_target(self, target):
         """Find and return the target index based on the argument.
@@ -364,10 +371,6 @@ class LoaderKatdal(loader_core.LoaderBase):
         dask_flags = self._convert(dask_flags, self._map_flags, channel_mask=channel_mask)
         dask_weights *= np.logical_not(dask_flags)
 
-        max_shape = (load_times, dask_vis.shape[1], dask_vis.shape[2])
-        vis_storage = np.empty(max_shape, dask_vis.dtype)
-        weights_storage = np.empty(max_shape, dask_weights.dtype)
-        flags_storage = np.empty(max_shape, dask_flags.dtype)
         start = 0
         while start < n_file_times:
             end = min(n_file_times, start + load_times)
@@ -378,16 +381,10 @@ class LoaderKatdal(loader_core.LoaderBase):
             # Load a chunk from dask
             _logger.debug('Loading dumps %d:%d', start, end)
             select = np.s_[start:end, :, :]
-            # Make views of the backing storage that are the right size
-            vis = vis_storage[: end - start]
-            weights = weights_storage[: end - start]
-            flags = flags_storage[: end - start]
             with profile('dask.array.store',
                          {'start_dump': start, 'end_dump': end}):
-                da.store(
-                    [dask_vis[select], dask_weights[select], dask_flags[select]],
-                    [vis, weights, flags],
-                    lock=False)
+                vis, weights, flags = _compute(
+                    dask_vis[select], dask_weights[select], dask_flags[select])
             _logger.debug('Dumps %d:%d loaded', start, end)
 
             # Compute per-antenna UVW coordinates and parallactic angles.
