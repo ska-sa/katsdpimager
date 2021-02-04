@@ -186,7 +186,10 @@ class LoaderKatdal(loader_core.LoaderBase):
                 corr_product_permutation[i] = 0
                 missing_corr_products_mask[i] = 1
         self._corr_product_permutation = corr_product_permutation
-        self._missing_corr_products_mask = missing_corr_products_mask[np.newaxis, np.newaxis, :]
+        if np.any(missing_corr_products_mask):
+            self._missing_corr_products_mask = missing_corr_products_mask[np.newaxis, np.newaxis, :]
+        else:
+            self._missing_corr_products_mask = None
 
         # Turn baselines from pairs of names into pairs of antenna indices
         ant_inverse = {antenna.name: i for i, antenna in enumerate(self._file.ants)}
