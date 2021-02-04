@@ -137,6 +137,12 @@ class TestLoaderKatdal:
             for field in ['uvw', 'weights', 'vis', 'feed_angle1', 'feed_angle2']:
                 data[field].append(chunk[field])
             N = chunk['vis'].shape[1]
+            # Check that nothing got accidentally upgraded to double precision
+            assert_equal(chunk['vis'].dtype, np.complex64)
+            assert_equal(chunk['weights'].dtype, np.float32)
+            assert_equal(chunk['uvw'].dtype, np.float32)
+            assert_equal(chunk['feed_angle1'].dtype, np.float32)
+            assert_equal(chunk['feed_angle2'].dtype, np.float32)
             # Check that each array has the same number of rows
             assert_equal(chunk['uvw'].shape, (N, 3))
             assert_equal(chunk['weights'].shape, chunk['vis'].shape)
@@ -230,8 +236,6 @@ class TestLoaderKatdal:
                         feed_angle1[i], e_feed_angle1[idx[0], idx[2]], rtol=1e-6)
                     np.testing.assert_allclose(
                         feed_angle2[i], e_feed_angle2[idx[0], idx[2]], rtol=1e-6)
-
-        # TODO: check dtypes
         return chunks
 
     def test_basic(self):
