@@ -36,21 +36,21 @@ class TestLoaderKatdal:
     def setup(self):
         self.tempdir = tempfile.TemporaryDirectory()
         self.store = NpyFileChunkStore(self.tempdir.name)
-        telstate = katsdptelstate.TelescopeState()
         self.shape = (12, 96, len(ANTENNAS) * (len(ANTENNAS) + 1) * 2)
-        chunks = (4, 8, self.shape[2])
-        chunk_overrides = {
-            'correlator_data': chunks,
-            'flags': chunks,
-            'weights': chunks,
-            'weights_channel': chunks[:2]
-        }
-        self.view, self.cbid, self.stream_name, _, _ = make_fake_data_source(
-            telstate, self.store,
-            l0_shape=self.shape,
-            l0_chunk_overrides=chunk_overrides,
-            l1_flags_chunk_overrides=chunk_overrides
-        )
+        self.telstate = katsdptelstate.TelescopeState()
+        self._populate_telstate(self.telstate)
+
+        self._open_patcher = mock.patch('katdal.open', autospec=True, side_effect=self._katdal_open)
+        self._open_patcher.start()
+
+    def _katdal_open(self, filename, **kwargs):
+        """Mock implementation of katdal.open."""
+        data_source = TelstateDataSource(
+            self.view, self.cbid, self.stream_name, chunk_store=self.store, **kwargs)
+        return VisibilityDataV4(data_source, **kwargs)
+
+    @staticmethod
+    def _populate_telstate(telstate):
         # Put in the minimum necessary for katdal to open the data set. This
         # may need to be updated in future as katdal evolves.
         telstate['sub_pool_resources'] = 'cbf_1,sdp_1,m000,m001,m002,m003'
@@ -68,14 +68,22 @@ class TestLoaderKatdal:
         telstate.add('obs_activity', 'track', 0.0)
         telstate.add('cbf_target', TARGET.description, 0.0)
 
-        self._open_patcher = mock.patch('katdal.open', autospec=True, side_effect=self._katdal_open)
-        self._open_patcher.start()
-
-    def _katdal_open(self, filename, **kwargs):
-        """Mock implementation of katdal.open."""
-        data_source = TelstateDataSource(
-            self.view, self.cbid, self.stream_name, chunk_store=self.store, **kwargs)
-        return VisibilityDataV4(data_source, **kwargs)
+    def _make_fake_dataset(self, **kwargs):
+        chunks = (4, 8, self.shape[2])
+        chunk_overrides = {
+            'correlator_data': chunks,
+            'flags': chunks,
+            'weights': chunks,
+            'weights_channel': chunks[:2]
+        }
+        default_kwargs = {
+            'l0_shape': self.shape,
+            'l0_chunk_overrides': chunk_overrides,
+            'l1_flags_chunk_overrides': chunk_overrides
+        }
+        default_kwargs.update(kwargs)
+        self.view, self.cbid, self.stream_name, _, _ = make_fake_data_source(
+            self.telstate, self.store, **default_kwargs)
 
     def teardown(self):
         self._open_patcher.stop()
@@ -85,6 +93,7 @@ class TestLoaderKatdal:
         # Pass a non-zero start channel to check that frequency-related
         # properties are not affected (it is only supposed to be a hint
         # rather than affecting indexing).
+        self._make_fake_dataset()
         loader = LoaderKatdal('file:///fake_filename', {}, 24, None)
         np.testing.assert_array_equal(
             loader.antenna_diameters().to_value(u.m), [13.5] * len(ANTENNAS))
@@ -193,7 +202,8 @@ class TestLoaderKatdal:
         ]
         return vis, weights, uvw, feed_angle1, feed_angle2, polarizations
 
-    def _test_simple(self, channel0=36, channel1=72, max_chunk_vis=None):
+    def _test_data(self, channel0=36, channel1=72, max_chunk_vis=None,
+                   missing=set()):
         loader = LoaderKatdal('file:///fake_filename', {}, 24, None)
         bls = len(ANTENNAS) * (len(ANTENNAS) - 1) // 2    # Excludes auto-correlations
         vis, weights, uvw, feed_angle1, feed_angle2, chunks = \
@@ -220,7 +230,18 @@ class TestLoaderKatdal:
         vis_map = {value: index for index, value in np.ndenumerate(e_vis)}
         for channel in range(C):
             for i in range(N):
+                # Handling for missing correlation products assumes that the
+                # first polarization product of a baseline will always be
+                # present.
+                baseline = dataset.corr_products[vis_map[vis[channel, i, 0]][2]]
+                ant1 = baseline[0][:-1]
+                ant2 = baseline[1][:-1]
                 for j in range(P):
+                    key = (ant1, ant2, loader.polarizations()[j])
+                    if key in missing:
+                        # Doesn't matter what the values are; it just has to be flagged
+                        assert_equal(weights[channel, i, j], 0.0)
+                        continue
                     # pop ensures that we don't see the same visibility twice
                     idx = vis_map.pop(vis[channel, i, j])
                     assert_equal(idx[1], channel)
@@ -236,24 +257,41 @@ class TestLoaderKatdal:
                         feed_angle1[i], e_feed_angle1[idx[0], idx[2]], rtol=1e-6)
                     np.testing.assert_allclose(
                         feed_angle2[i], e_feed_angle2[idx[0], idx[2]], rtol=1e-6)
+        assert_equal(len(vis_map), 0)
         return chunks
 
     def test_basic(self):
         """Basic smoke test - can load everything in one chunk."""
-        self._test_simple()
+        self._make_fake_dataset()
+        self._test_data()
 
     def test_chunked(self):
         """Load via multiple chunks."""
+        self._make_fake_dataset()
         bls = len(ANTENNAS) * (len(ANTENNAS) - 1) // 2    # Excludes auto-correlations
-        chunks = self._test_simple(max_chunk_vis=7 * 36 * 4 * bls)
+        chunks = self._test_data(max_chunk_vis=7 * 36 * 4 * bls)
         # It should round down to 4 times per chunk to align with data chunking
         assert_equal(chunks, (4 * bls, 4 * bls, 4 * bls))
 
     def test_max_chunk_vis_small(self):
+        self._make_fake_dataset()
         with assert_logs(logger='katsdpimager.loader_katdal', level=logging.WARNING) as cm:
-            self._test_simple(max_chunk_vis=1)
+            self._test_data(max_chunk_vis=1)
         assert_in('Chunk size is 4 dumps but only 1 loaded at a time', cm.records[0].message)
 
+    def test_missing_corr_product(self):
+        corr_products = []
+        # Apart from deleting one, also use a weird ordering to test the permutation
+        for pol1 in 'hv':
+            for pol2 in 'vh':
+                for i in range(len(ANTENNAS)):
+                    for j in range(i + 1):
+                        if (i, j, pol1, pol2) != (2, 0, 'h', 'v'):
+                            corr_products.append((f'{ANTENNAS[i].name}{pol1}',
+                                                  f'{ANTENNAS[j].name}{pol2}'))
+        assert_equal(len(corr_products), self.shape[2] - 1)
+        self.shape = (self.shape[0], self.shape[1], len(corr_products))
+        self._make_fake_dataset(bls_ordering_override=corr_products)
+        self._test_data(missing={('m002', 'm000', polarization.STOKES_XY)})
+
     # TODO: channel mask
-    # TODO: missing correlation product
-    # TODO: ensure that this is a non-trivial baseline permutation
