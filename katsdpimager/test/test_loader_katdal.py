@@ -7,9 +7,14 @@ from unittest import mock
 
 import astropy.units as u
 from astropy.coordinates import Angle
+import astropy.table
+
 import numpy as np
 import katpoint
 import katsdptelstate
+
+import katsdpmodels.rfi_mask
+import katsdpmodels.band_mask
 
 import katdal
 from katdal import VisibilityDataV4
@@ -84,6 +89,17 @@ class TestLoaderKatdal:
         default_kwargs.update(kwargs)
         self.view, self.cbid, self.stream_name, _, _ = make_fake_data_source(
             self.telstate, self.store, **default_kwargs)
+
+        s_view = self.telstate.view(self.stream_name)
+        bcp_view = self.telstate.view('bcp')
+        acv_view = self.telstate.view('acv')
+        self.telstate['sdp_model_base_url'] = 'http://models.invalid/'
+        rfi_mask_key = self.telstate.join('model', 'rfi_mask', 'config')
+        self.telstate[rfi_mask_key] = 'rfi_mask/config/unit_test.alias'
+        s_view['src_streams'] = ['bcp']
+        bcp_view['src_streams'] = ['acv']
+        band_mask_key = self.telstate.join('model', 'band_mask', 'config')
+        acv_view[band_mask_key] = 'band_mask/config/unit_test.alias'
 
     def teardown(self):
         self._open_patcher.stop()
@@ -170,13 +186,16 @@ class TestLoaderKatdal:
         feed_angle2 = np.concatenate(data['feed_angle2'], axis=0)
         return vis, weights, uvw, feed_angle1, feed_angle2, tuple(chunks)
 
-    def _get_expected(self, dataset):
+    def _get_expected(self, dataset, channel_mask=None):
         """Get values from a dataset.
 
         It must already have had the appropriate selection applied.
         """
         vis = dataset.vis[:]
-        weights = dataset.weights[:] * np.logical_not(dataset.flags[:])
+        flags = dataset.flags[:]
+        if channel_mask is not None:
+            flags |= channel_mask[np.newaxis, :, np.newaxis]
+        weights = dataset.weights[:] * np.logical_not(flags)
         # negate because katdal convention is ant2 - ant1, while katsdpimager
         # convention is the opposite.
         uvw = -np.stack([dataset.u, dataset.v, dataset.w], axis=2) * u.m
@@ -204,17 +223,19 @@ class TestLoaderKatdal:
         ]
         return vis, weights, uvw, feed_angle1, feed_angle2, polarizations
 
-    def _test_data(self, channel0=36, channel1=72, max_chunk_vis=None,
-                   missing=set()):
-        loader = LoaderKatdal('file:///fake_filename', {}, 24, None)
+    def _test_data(self, *, options=(), channel0=36, channel1=72, max_chunk_vis=None,
+                   missing=set(), channel_mask=None):
+        loader = LoaderKatdal('file:///fake_filename', options, 24, None)
         bls = len(ANTENNAS) * (len(ANTENNAS) - 1) // 2    # Excludes auto-correlations
         vis, weights, uvw, feed_angle1, feed_angle2, chunks = \
             self._collect(loader.data_iter(channel0, channel1, max_chunk_vis=max_chunk_vis))
 
         dataset = katdal.open('file:///fake_filename')
         dataset.select(corrprods='cross', channels=np.s_[36:72], scans='track')
+        if channel_mask is not None:
+            channel_mask = channel_mask[channel0:channel1]
         e_vis, e_weights, e_uvw, e_feed_angle1, e_feed_angle2, e_polarizations = \
-            self._get_expected(dataset)
+            self._get_expected(dataset, channel_mask)
 
         # Check the shapes before trying to shuffle data.
         N = self.shape[0] * bls
@@ -295,5 +316,36 @@ class TestLoaderKatdal:
         self.shape = (self.shape[0], self.shape[1], len(corr_products))
         self._make_fake_dataset(bls_ordering_override=corr_products)
         self._test_data(missing={('m002', 'm000', polarization.STOKES_XY)})
+
+    def _get_model(self, url, model_class, *, lazy=False):
+        """Mock implementation of Fetcher.get."""
+        if url == 'http://models.invalid/rfi_mask/config/unit_test.alias':
+            ranges = astropy.table.Table(
+                [[1200e6], [1300e6], [1000.0]],
+                names=('min_frequency', 'max_frequency', 'max_baseline'),
+                dtype=(np.float64, np.float64, np.float64)
+            )
+            ranges['min_frequency'].unit = u.Hz
+            ranges['max_frequency'].unit = u.Hz
+            ranges['max_baseline'].unit = u.m
+            return katsdpmodels.rfi_mask.RFIMaskRanges(ranges, False)
+        elif url == 'http://models.invalid/band_mask/config/unit_test.alias':
+            ranges = astropy.table.Table(
+                [[0.624], [0.626]],
+                names=('min_fraction', 'max_fraction'),
+                dtype=(np.float64, np.float64)
+            )
+            return katsdpmodels.band_mask.BandMaskRanges(ranges)
+        else:
+            raise RuntimeError(f'Unexpected URL {url}')
+
+    @mock.patch('katsdpmodels.fetch.requests.Fetcher', autospec=True)
+    def test_rfi_band_mask(self, fetcher_mock):
+        fetcher_mock.return_value.get.side_effect = self._get_model
+        self._make_fake_dataset()
+        mask = np.zeros(self.shape[1], np.bool_)
+        mask[39:51] = True      # RFI mask
+        mask[60] = True         # Bank mask
+        self._test_data(options=['--rfi-mask=config'], channel_mask=mask)
 
     # TODO: channel mask
