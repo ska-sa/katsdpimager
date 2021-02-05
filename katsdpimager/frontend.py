@@ -1,9 +1,11 @@
-import tempfile
-import os
+from abc import abstractmethod
 import atexit
+import concurrent.futures
+import contextlib
 import logging
 import math
-from abc import abstractmethod
+import os
+import tempfile
 from typing import List, Iterable
 
 import numpy as np
@@ -14,7 +16,7 @@ from . import (
     loader, loader_core, parameters, polarization, preprocess, clean, weight, sky_model,
     imaging, progress, beam, primary_beam, numba, arguments
 )
-from .profiling import profile_function
+from .profiling import profile, profile_function
 
 
 logger = logging.getLogger(__name__)
@@ -34,20 +36,41 @@ def preprocess_visibilities(dataset, args, start_channel, stop_channel,
     else:
         collector = preprocess.VisibilityCollectorMem(
             image_parameters, grid_parameters, args.vis_block)
-    try:
+
+    def reap():
+        nonlocal add_future
+        if add_future is not None:
+            with profile('concurrent.futures.result'):
+                bar_progress = add_future.result()
+            bar.goto(bar_progress)
+            add_future = None
+
+    with contextlib.ExitStack() as exit_stack:
+        exit_stack.callback(collector.close)
+        # We overlap data loading with preprocessing by using a separate
+        # thread for preprocessing. To limit memory usage, we only allow
+        # one outstanding chunk at a time.
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        exit_stack.enter_context(executor)
+        add_future = None
         for chunk in loader.data_iter(dataset, args.vis_limit, args.vis_load,
                                       start_channel, stop_channel):
             if bar is None:
                 bar = progress.make_progressbar("Preprocessing vis", max=chunk['total'])
-            collector.add(
-                chunk['uvw'], chunk['weights'], chunk['vis'],
-                chunk.get('feed_angle1'), chunk.get('feed_angle2'),
-                *polarization_matrices)
-            bar.goto(chunk['progress'])
-    finally:
-        if bar is not None:
-            bar.finish()
-        collector.close()
+                exit_stack.callback(bar.finish)
+            reap()
+
+            @profile_function()
+            def add_chunk(chunk):
+                collector.add(
+                    chunk['uvw'], chunk['weights'], chunk['vis'],
+                    chunk.get('feed_angle1'), chunk.get('feed_angle2'),
+                    *polarization_matrices)
+                return chunk['progress']
+
+            add_future = executor.submit(add_chunk, chunk)
+        reap()
+
     logger.info("Compressed %d visibilities to %d (%.2f%%)",
                 collector.num_input, collector.num_output,
                 100.0 * collector.num_output / collector.num_input)
