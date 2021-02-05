@@ -196,7 +196,8 @@ def main():
     if args.log_level is not None:
         logger.setLevel(args.log_level.upper())
 
-    with closing(loader.load(args.input_file, args.input_option)) as dataset:
+    with closing(loader.load(args.input_file, args.input_option,
+                             args.start_channel, args.stop_channel)) as dataset:
         writer = Writer(args, dataset)
         context = accel.create_some_context(interactive=False, device_filter=lambda x: x.is_cuda)
         queue = context.create_command_queue()

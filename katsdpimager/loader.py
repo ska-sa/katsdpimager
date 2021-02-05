@@ -10,10 +10,26 @@ def _register_loader(loader_class):
     _loader_classes.append(loader_class)
 
 
-def load(filename, options):
+def load(filename, options, start_channel=0, stop_channel=None):
+    """Load a dataset.
+
+    The class is automatically determined from the registered loaders.
+
+    Parameters
+    ----------
+    filename : str
+        Name of the data set to load (does not necessarily have to be a filename
+        e.g., it could be an URL).
+    options : Dict[str, Any]
+        Loader-specific command-line options.
+    start_channel,stop_channel : int, optional
+        Channel range of interest. This serves as a hint only, to optimise
+        loading, and does not change the channel numbers used to interact with
+        the data set.
+    """
     for cls in _loader_classes:
         if cls.match(filename):
-            return cls(filename, options)
+            return cls(filename, options, start_channel, stop_channel)
     raise ValueError('No loader class is registered for "{}"'.format(filename))
 
 

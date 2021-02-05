@@ -97,8 +97,8 @@ class LoaderKatdal(loader_core.LoaderBase):
                 return idx
 
     @profile_function()
-    def __init__(self, filename, options):
-        super().__init__(filename, options)
+    def __init__(self, filename, options, start_channel, stop_channel):
+        super().__init__(filename, options, start_channel, stop_channel)
         parser = argparse.ArgumentParser(
             prog='katdal options',
             usage='katdal options: [-i subarray=N] [-i spw=M] ...')
@@ -119,7 +119,11 @@ class LoaderKatdal(loader_core.LoaderBase):
         parser.add_argument('--secret-key', type=str, help='S3 secret key')
         args = parser.parse_args(options, namespace=arguments.SmartNamespace())
 
-        open_args = dict(ref_ant=args.ref_ant, applycal=args.apply_cal)
+        open_args = dict(
+            ref_ant=args.ref_ant,
+            applycal=args.apply_cal,
+            preselect=dict(channels=np.s_[start_channel:stop_channel])
+        )
         if (args.access_key is not None) != (args.secret_key is not None):
             raise ValueError('access-key and secret-key must be used together')
         if args.access_key is not None:
@@ -131,6 +135,10 @@ class LoaderKatdal(loader_core.LoaderBase):
             raise ValueError('Subarray {} is out of range'.format(args.subarray))
         if args.spw < 0 or args.spw >= len(self._file.spectral_windows):
             raise ValueError('Spectral window {} is out of range'.format(args.spw))
+        # Frequency-dependent private attributes contain data only for
+        # start_channel:stop_channel. The public interface adjusts by
+        # _start_channel to present channels 0:stop_channel.
+        self._start_channel = start_channel
         self._spectral_window = self._file.spectral_windows[args.spw]
         target_idx = self._find_target(args.target)
         with profile('katdal.DataSet.select'):
@@ -205,15 +213,14 @@ class LoaderKatdal(loader_core.LoaderBase):
                 telstate_acv = telstate.view(acv_stream)
                 band_mask = fetcher.get(band_mask_key, katsdpmodels.band_mask.BandMask,
                                         telstate=telstate_acv)
-                channel_freqs = self._file.channel_freqs * units.Hz
                 spw = katsdpmodels.band_mask.SpectralWindow(
                     telstate_acv['bandwidth'] * units.Hz,
                     telstate_acv['center_freq'] * units.Hz
                 )
                 channel_width = spw.bandwidth / telstate_acv['n_chans']
-                max_length = rfi_mask.max_baseline_length(channel_freqs, channel_width)
+                max_length = rfi_mask.max_baseline_length(self._frequencies, channel_width)
                 self._channel_mask = (
-                    (max_length > 0) | band_mask.is_masked(spw, channel_freqs, channel_width)
+                    (max_length > 0) | band_mask.is_masked(spw, self._frequencies, channel_width)
                 )
         else:
             self._channel_mask = None
@@ -250,10 +257,10 @@ class LoaderKatdal(loader_core.LoaderBase):
         return units.Quantity(positions, unit=units.m)
 
     def num_channels(self):
-        return self._file.shape[1]
+        return self._file.shape[1] + self._start_channel
 
     def frequency(self, channel):
-        return self._frequencies[channel]
+        return self._frequencies[channel - self._start_channel]
 
     def band(self):
         return self._spectral_window.band
@@ -281,10 +288,12 @@ class LoaderKatdal(loader_core.LoaderBase):
         return math.sqrt(0.5)
 
     def channel_enabled(self, channel):
-        return self._channel_mask is None or not self._channel_mask[channel]
+        return self._channel_mask is None or not self._channel_mask[channel - self._start_channel]
 
     @profile_generator(labels=('start_channel', 'stop_channel'))
     def data_iter(self, start_channel, stop_channel, max_chunk_vis=None):
+        start_channel -= self._start_channel
+        stop_channel -= self._start_channel
         self._file.select(reset='F')
         n_file_times, n_file_chans, n_file_cp = self._file.shape
         self._file.select(channels=np.s_[start_channel : stop_channel])

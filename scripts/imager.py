@@ -154,7 +154,8 @@ def main():
         if not numba.have_numba:
             logger.warning('could not import numba: --host mode will be VERY slow')
 
-    with closing(loader.load(args.input_file, args.input_option)) as dataset:
+    with closing(loader.load(args.input_file, args.input_option,
+                             args.start_channel, args.stop_channel)) as dataset:
         frontend.run(args, context, queue, dataset, Writer(args, dataset))
 
     if args.write_profile:
