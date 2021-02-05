@@ -47,7 +47,7 @@ def preprocess_visibilities(dataset, args, start_channel, stop_channel,
 
     with contextlib.ExitStack() as exit_stack:
         exit_stack.callback(collector.close)
-        # We overload data loading with preprocessing by using a separate
+        # We overlap data loading with preprocessing by using a separate
         # thread for preprocessing. To limit memory usage, we only allow
         # one outstanding chunk at a time.
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
