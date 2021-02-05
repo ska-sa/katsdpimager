@@ -187,7 +187,10 @@ class LoaderKatdal(loader_core.LoaderBase):
                 missing_corr_products_mask[i] = 1
         self._corr_product_permutation = corr_product_permutation
         if np.any(missing_corr_products_mask):
-            self._missing_corr_products_mask = missing_corr_products_mask[np.newaxis, np.newaxis, :]
+            self._missing_corr_products_mask = da.from_array(
+                missing_corr_products_mask[np.newaxis, np.newaxis, :],
+                chunks=-1
+            )
         else:
             self._missing_corr_products_mask = None
 
@@ -301,29 +304,18 @@ class LoaderKatdal(loader_core.LoaderBase):
     def channel_enabled(self, channel):
         return self._channel_mask is None or not self._channel_mask[channel - self._start_channel]
 
-    def _map_vis_weights(self, block):
-        return block[:, :, self._corr_product_permutation]
-
-    def _map_flags(self, block, channel_mask=None):
-        block = block[:, :, self._corr_product_permutation]
-        # The above is fancy indexing which creates a new array, so we're free
-        # to do further modifications in-place.
-        if self._missing_corr_products_mask is not None:
-            block |= self._missing_corr_products_mask
-        if channel_mask is not None:
-            block |= channel_mask
-        return block
-
-    def _convert(self, array, map_func, **kwargs):
+    def _permute(self, array):
         # Ensure only a single chunk on the baseline axis, so that we can do
-        # the permutation on a chunk-by-chunk basis.
+        # the permutation on a chunk-by-chunk basis. This is more efficient
+        # than using dask to do the permutation.
         if array.numblocks[2] != 1:
             array = da.rechunk(array, chunks={2: -1})
+        index = np.s_[:, :, self._corr_product_permutation]
         return da.map_blocks(
-            map_func, array,
+            lambda block: block[index],
+            array,
             chunks=(array.chunks[0], array.chunks[1], (len(self._corr_product_permutation),)),
-            dtype=array.dtype,
-            **kwargs)
+            dtype=array.dtype)
 
     @profile_generator(labels=('start_channel', 'stop_channel'))
     def data_iter(self, start_channel, stop_channel, max_chunk_vis=None):
@@ -365,13 +357,17 @@ class LoaderKatdal(loader_core.LoaderBase):
         # - flag baselines that are missing in the original data
         # - apply the channel mask
         # - apply flags to weights
+        dask_vis = self._permute(dask_vis)
+        dask_weights = self._permute(dask_weights)
+        dask_flags = self._permute(dask_flags)
         if self._channel_mask is not None:
-            channel_mask = self._channel_mask[np.newaxis, start_channel:stop_channel, np.newaxis]
-        else:
-            channel_mask = None
-        dask_vis = self._convert(dask_vis, self._map_vis_weights)
-        dask_weights = self._convert(dask_weights, self._map_vis_weights)
-        dask_flags = self._convert(dask_flags, self._map_flags, channel_mask=channel_mask)
+            channel_mask = da.from_array(
+                self._channel_mask[np.newaxis, start_channel:stop_channel, np.newaxis],
+                chunks=((1,), dask_flags.chunks[1], (1,))
+            )
+            dask_flags |= channel_mask
+        if self._missing_corr_products_mask is not None:
+            dask_flags |= self._missing_corr_products_mask
         dask_weights *= np.logical_not(dask_flags)
 
         start = 0
