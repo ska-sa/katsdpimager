@@ -349,5 +349,3 @@ class TestLoaderKatdal:
         mask[39:51] = True      # RFI mask
         mask[60] = True         # Bank mask
         self._test_data(options=['--rfi-mask=config'], channel_mask=mask)
-
-    # TODO: channel mask
