@@ -22,7 +22,9 @@ from katdal.datasources import TelstateDataSource
 from katdal.chunkstore_npy import NpyFileChunkStore
 from katdal.test.test_datasources import make_fake_data_source
 
-from nose.tools import assert_equal, assert_true, assert_is_instance, assert_in, assert_logs
+from nose.tools import (
+    assert_equal, assert_true, assert_false, assert_is_instance, assert_in, assert_logs
+)
 
 from ..loader_katdal import LoaderKatdal
 from .. import polarization
@@ -349,3 +351,11 @@ class TestLoaderKatdal:
         mask[39:51] = True      # RFI mask
         mask[60] = True         # Bank mask
         self._test_data(options=['--rfi-mask=config'], channel_mask=mask)
+
+    def test_match(self):
+        assert_true(LoaderKatdal.match('foo.h5'))
+        assert_true(LoaderKatdal.match('foo.rdb'))
+        assert_false(LoaderKatdal.match('foo.ms'))
+        assert_true(LoaderKatdal.match('http://example.invalid/foo/bar.rdb?query=params#fragment'))
+        assert_false(LoaderKatdal.match('http://example.invalid/foo/bar.ms?query=params#fragment'))
+        assert_false(LoaderKatdal.match('http://[1.2.3/unmatch-bracket.rdb?query=params'))
