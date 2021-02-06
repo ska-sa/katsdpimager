@@ -461,22 +461,26 @@ class LoaderKatdal(loader_core.LoaderBase):
         if self._spectral_window.product:
             headers['INSTRUME'] = self._spectral_window.product
 
+        # Exception checks below are to handle pre-MVF v4 files
+        # (if they become supported in future), post-MVF v4 which maybe
+        # don't define the necessary attributes, or broken files. They
+        # are not currently expected to be reachable.
         try:
             array_ant = self._file.sensor['Antennas/array/antenna'][0]
             array_pos = array_ant.position_ecef
             headers['OBSGEO-X'] = array_pos[0]
             headers['OBSGEO-Y'] = array_pos[1]
             headers['OBSGEO-Z'] = array_pos[2]
-        except (KeyError, IndexError):
+        except (KeyError, IndexError):    # pragma: nocover
             pass
 
         try:
             headers['HISTORY'] = f'Capture block id: {self._file.source.capture_block_id}'
-        except AttributeError:
+        except AttributeError:            # pragma: nocover
             pass
         try:
             headers['HISTORY'] = f'Stream name: {self._file.source.stream_name}'
-        except AttributeError:
+        except AttributeError:            # pragma: nocover
             pass
 
         return headers

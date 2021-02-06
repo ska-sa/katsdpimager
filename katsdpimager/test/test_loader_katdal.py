@@ -61,7 +61,7 @@ class TestLoaderKatdal:
         telstate['sub_pool_resources'] = 'cbf_1,sdp_1,m000,m001,m002,m003'
         telstate['sub_product'] = 'c856M1k'
         telstate['sub_band'] = 'l'
-        telstate['obs_params'] = {}
+        telstate['obs_params'] = {'observer': 'John Smith'}
         for i, ant in enumerate(ANTENNAS):
             telstate[f'{ant.name}_observer'] = ant.description
             telstate.add(f'{ant.name}_target', TARGET.description, 0.0)
@@ -134,6 +134,7 @@ class TestLoaderKatdal:
             assert_true(loader.channel_enabled(i))
         np.testing.assert_allclose(loader.longest_baseline(), 74.2 * u.m, rtol=0.001)
         assert_is_instance(loader.raw_data, VisibilityDataV4)
+        assert_equal(loader.raw_target, TARGET)
         # Just a basic smoke test - doesn't test all the extra headers
         headers = loader.extra_fits_headers()
         assert_equal(headers['OBJECT'], 'PKS 1934-63')
@@ -281,6 +282,7 @@ class TestLoaderKatdal:
                     np.testing.assert_allclose(
                         feed_angle2[i], e_feed_angle2[idx[0], idx[2]], rtol=1e-6)
         assert_equal(len(vis_map), 0)
+        loader.close()
         return chunks
 
     def test_basic(self):
