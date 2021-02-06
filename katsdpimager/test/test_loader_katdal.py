@@ -23,7 +23,8 @@ from katdal.chunkstore_npy import NpyFileChunkStore
 from katdal.test.test_datasources import make_fake_data_source
 
 from nose.tools import (
-    assert_equal, assert_true, assert_false, assert_is_instance, assert_in, assert_logs
+    assert_equal, assert_true, assert_false, assert_is_instance, assert_in,
+    assert_logs, assert_raises
 )
 
 from ..loader_katdal import LoaderKatdal
@@ -112,7 +113,7 @@ class TestLoaderKatdal:
         # properties are not affected (it is only supposed to be a hint
         # rather than affecting indexing).
         self._make_fake_dataset()
-        loader = LoaderKatdal('file:///fake_filename', {}, 24, None)
+        loader = LoaderKatdal('file:///fake_filename.rdb', {}, 24, None)
         np.testing.assert_array_equal(
             loader.antenna_diameters().to_value(u.m), [13.5] * len(ANTENNAS))
         assert_equal(loader.num_channels(), self.shape[1])
@@ -228,12 +229,12 @@ class TestLoaderKatdal:
 
     def _test_data(self, *, options=(), channel0=36, channel1=72, max_chunk_vis=None,
                    missing=set(), channel_mask=None):
-        loader = LoaderKatdal('file:///fake_filename', options, 24, None)
+        loader = LoaderKatdal('file:///fake_filename.rdb', options, 24, None)
         bls = len(ANTENNAS) * (len(ANTENNAS) - 1) // 2    # Excludes auto-correlations
         vis, weights, uvw, feed_angle1, feed_angle2, chunks = \
             self._collect(loader.data_iter(channel0, channel1, max_chunk_vis=max_chunk_vis))
 
-        dataset = katdal.open('file:///fake_filename')
+        dataset = katdal.open('file:///fake_filename.rdb')
         dataset.select(corrprods='cross', channels=np.s_[36:72], scans='track')
         if channel_mask is not None:
             channel_mask = channel_mask[channel0:channel1]
@@ -359,3 +360,17 @@ class TestLoaderKatdal:
         assert_true(LoaderKatdal.match('http://example.invalid/foo/bar.rdb?query=params#fragment'))
         assert_false(LoaderKatdal.match('http://example.invalid/foo/bar.ms?query=params#fragment'))
         assert_false(LoaderKatdal.match('http://[1.2.3/unmatch-bracket.rdb?query=params'))
+
+    def test_missing_credentials(self):
+        self._make_fake_dataset()
+        with assert_raises(ValueError):
+            self._test_data(options=['--access-key=foo'])
+        with assert_raises(ValueError):
+            self._test_data(options=['--secret-key=foo'])
+
+    def test_credentials(self):
+        self._make_fake_dataset()
+        options = ['--access-key=foo', '--secret-key=bar']
+        loader = LoaderKatdal('file:///fake_filename.rdb', options, 24, None)
+        assert_equal(katdal.open.mock_calls[0][2].get('credentials'), ('foo', 'bar'))
+        assert_equal(loader.command_line_options(), [], 'Credentials not redacted')
