@@ -435,7 +435,7 @@ class LoaderKatdal(loader_core.LoaderBase):
     def sky_model(self):
         try:
             source = self._file.source
-        except AttributeError:
+        except AttributeError:      # pragma: nocover
             raise sky_model.NoSkyModelError('This data set does not support sky models')
 
         return sky_model.KatpointSkyModel(sky_model.catalogue_from_telstate(

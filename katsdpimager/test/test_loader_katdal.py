@@ -38,6 +38,10 @@ ANTENNAS = [
     katpoint.Antenna('m003, -30:42:39.8, 21:26:38.0, 1086.6, 13.5, -66.518 -202.276 8.285 213.4215 213.4215 1.0, 1:35:27.0 0 -0:00:53.3 -0:06:05.9 -0:00:00.5 -0:00:07.1 0:33:51.5 0:00:51.3, 1.22')   # noqa: E501
 ]
 TARGET = katpoint.Target('PKS 1934-63, radec, 19:39:25.03, -63:42:45.7, (200.0 12000.0 -11.11 7.777 -1.231)')   # noqa: E501
+CONTINUUM_COMPONENTS = katpoint.Catalogue([
+    '3C286, radec, 13:31:08.3, 30:30:33, (400 50e3 0.1823 1.4757 -0.4739 0.0336 0 0 1 0.039 0.087 0)',          # noqa: E501
+    '3C123, radec, 04:37:04.3753, 29:40:13.819, (400 50e3 3.1718 -0.1076 -0.1157)'
+])
 
 
 class TestLoaderKatdal:
@@ -93,6 +97,7 @@ class TestLoaderKatdal:
         self.view, self.cbid, self.stream_name, _, _ = make_fake_data_source(
             self.telstate, self.store, **default_kwargs)
 
+        # Link to RFI mask and band mask
         s_view = self.telstate.view(self.stream_name)
         bcp_view = self.telstate.view('bcp')
         acv_view = self.telstate.view('acv')
@@ -103,6 +108,21 @@ class TestLoaderKatdal:
         bcp_view['src_streams'] = ['acv']
         band_mask_key = self.telstate.join('model', 'band_mask', 'config')
         acv_view[band_mask_key] = 'band_mask/config/unit_test.alias'
+
+        # Create a sky model
+        sdp_archived_streams = self.telstate['sdp_archived_streams']
+        sdp_archived_streams.append('continuum_image')
+        self.telstate.delete('sdp_archived_streams')
+        self.telstate['sdp_archived_streams'] = sdp_archived_streams
+        continuum_view = self.telstate.view('continuum_image')
+        continuum_view['stream_type'] = 'sdp.continuum_image'
+        cs_view = self.telstate.view(self.telstate.join(self.cbid, 'continuum_image'))
+        cs_view['targets'] = {TARGET.description: 'PKS_1934_63'}
+        key = self.telstate.join('PKS_1934_63', 'target0', 'clean_components')
+        cs_view[key] = {
+            'description': TARGET.description,
+            'components': [target.description for target in CONTINUUM_COMPONENTS]
+        }
 
     def teardown(self):
         self._open_patcher.stop()
@@ -145,7 +165,10 @@ class TestLoaderKatdal:
         assert_equal(headers['ONTIME'], 24.0)
 
     def test_sky_model(self):
-        pass  # TODO
+        self._make_fake_dataset()
+        loader = LoaderKatdal('file:///fake_filename.rdb', {}, 24, None)
+        sky_model = loader.sky_model()
+        assert_equal(sky_model._catalogue, CONTINUUM_COMPONENTS)
 
     def _collect(self, iterator):
         """Collect all the data from the ``data_iter`` iterator.
