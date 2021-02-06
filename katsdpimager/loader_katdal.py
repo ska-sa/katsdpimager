@@ -308,8 +308,11 @@ class LoaderKatdal(loader_core.LoaderBase):
         # Ensure only a single chunk on the baseline axis, so that we can do
         # the permutation on a chunk-by-chunk basis. This is more efficient
         # than using dask to do the permutation.
+        #
+        # Currently katdal already does this step, but the code is left here
+        # in case that changes in future.
         if array.numblocks[2] != 1:
-            array = da.rechunk(array, chunks={2: -1})
+            array = da.rechunk(array, chunks={2: -1})     # pragma: nocover
         index = np.s_[:, :, self._corr_product_permutation]
         return da.map_blocks(
             lambda block: block[index],
