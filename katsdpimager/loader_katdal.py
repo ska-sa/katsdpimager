@@ -308,8 +308,11 @@ class LoaderKatdal(loader_core.LoaderBase):
         # Ensure only a single chunk on the baseline axis, so that we can do
         # the permutation on a chunk-by-chunk basis. This is more efficient
         # than using dask to do the permutation.
+        #
+        # Currently katdal already does this step, but the code is left here
+        # in case that changes in future.
         if array.numblocks[2] != 1:
-            array = da.rechunk(array, chunks={2: -1})
+            array = da.rechunk(array, chunks={2: -1})     # pragma: nocover
         index = np.s_[:, :, self._corr_product_permutation]
         return da.map_blocks(
             lambda block: block[index],
@@ -388,7 +391,7 @@ class LoaderKatdal(loader_core.LoaderBase):
 
             # Compute per-antenna UVW coordinates and parallactic angles.
             with profile('katpoint.Target.uvw'):
-                antenna_uvw = units.Quantity(self._target.uvw(
+                antenna_uvw = np.asarray(self._target.uvw(
                     self._file.ants, timestamp=timestamps[start:end], antenna=self._ref_ant))
             antenna_uvw = antenna_uvw.T   # Switch from (uvw, time, ant) to (ant, time, uvw)
             # parangle converts to degrees before returning, so we have to
@@ -420,7 +423,7 @@ class LoaderKatdal(loader_core.LoaderBase):
 
             # reshape everything into the target formats
             yield dict(
-                uvw=uvw.reshape(-1, 3),
+                uvw=uvw.reshape(-1, 3) << units.m,
                 weights=reorder(weights),
                 vis=reorder(vis),
                 feed_angle1=feed_angle1.reshape(-1),
@@ -432,7 +435,7 @@ class LoaderKatdal(loader_core.LoaderBase):
     def sky_model(self):
         try:
             source = self._file.source
-        except AttributeError:
+        except AttributeError:      # pragma: nocover
             raise sky_model.NoSkyModelError('This data set does not support sky models')
 
         return sky_model.KatpointSkyModel(sky_model.catalogue_from_telstate(
@@ -458,22 +461,26 @@ class LoaderKatdal(loader_core.LoaderBase):
         if self._spectral_window.product:
             headers['INSTRUME'] = self._spectral_window.product
 
+        # Exception checks below are to handle pre-MVF v4 files
+        # (if they become supported in future), post-MVF v4 which maybe
+        # don't define the necessary attributes, or broken files. They
+        # are not currently expected to be reachable.
         try:
             array_ant = self._file.sensor['Antennas/array/antenna'][0]
             array_pos = array_ant.position_ecef
             headers['OBSGEO-X'] = array_pos[0]
             headers['OBSGEO-Y'] = array_pos[1]
             headers['OBSGEO-Z'] = array_pos[2]
-        except (KeyError, IndexError):
+        except (KeyError, IndexError):    # pragma: nocover
             pass
 
         try:
             headers['HISTORY'] = f'Capture block id: {self._file.source.capture_block_id}'
-        except AttributeError:
+        except AttributeError:            # pragma: nocover
             pass
         try:
             headers['HISTORY'] = f'Stream name: {self._file.source.stream_name}'
-        except AttributeError:
+        except AttributeError:            # pragma: nocover
             pass
 
         return headers

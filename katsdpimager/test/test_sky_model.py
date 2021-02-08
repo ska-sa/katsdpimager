@@ -20,7 +20,7 @@ _TRG_C = 'C, radec, 21:00:00.00, -60:00:00.0, (800.0 43200.0 1.0 0.0 0.0 0.0 0.0
 
 
 class TestKatpointSkyModel:
-    def setUp(self):
+    def setup(self):
         self.catalogue = katpoint.Catalogue([_TRG_A, _TRG_B, _TRG_C])
         self.sky_model = KatpointSkyModel(self.catalogue)
 

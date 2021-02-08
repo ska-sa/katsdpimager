@@ -9,7 +9,7 @@ from .. import arguments
 
 
 class TestUnparse:
-    def setUp(self):
+    def setup(self):
         parser = argparse.ArgumentParser()
         parser.add_argument('--int', type=int)
         parser.add_argument('--int-default', type=int, default=3)

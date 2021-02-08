@@ -99,7 +99,7 @@ def empty():
 
 @mock.patch('time.monotonic', return_value=0.0)
 class TestProfiler:
-    def setUp(self) -> None:
+    def setup(self) -> None:
         self.profiler = Profiler()
 
     def test_simple(self, monotonic) -> None:
