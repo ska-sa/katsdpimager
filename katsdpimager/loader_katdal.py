@@ -56,7 +56,7 @@ def _timestamp_to_fits(timestamp):
 
 
 def _compute(*arrays):
-    """Like da.compute, but work around https://github.com/dask/dask/issues/3595."""
+    """Like da.compute, but work around https://github.com/dask/dask/issues/7187."""
     outputs = [np.empty(array.shape, array.dtype) for array in arrays]
     da.store(arrays, outputs, lock=False)
     return outputs
