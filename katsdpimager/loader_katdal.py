@@ -15,7 +15,6 @@ import urllib
 
 import dask.array as da
 import katdal
-from katdal.lazy_indexer import DaskLazyIndexer
 import katsdpmodels.fetch.requests
 import katsdpmodels.rfi_mask
 import katsdpmodels.band_mask
@@ -110,10 +109,6 @@ class LoaderKatdal(loader_core.LoaderBase):
         parser = argparse.ArgumentParser(
             prog='katdal options',
             usage='katdal options: [-i subarray=N] [-i spw=M] ...')
-        parser.add_argument('--subarray', type=int, default=0,
-                            help='Subarray index within file [%(default)s]')
-        parser.add_argument('--spw', type=int, default=0,
-                            help='Spectral window index within file [%(default)s]')
         parser.add_argument('--target', type=str,
                             help='Target to image (index or name) [auto]')
         parser.add_argument('--ref-ant', type=str, default='',
@@ -139,19 +134,14 @@ class LoaderKatdal(loader_core.LoaderBase):
 
         with profile('katdal.open'):
             self._file = katdal.open(filename, **open_args)
-        if args.subarray < 0 or args.subarray >= len(self._file.subarrays):
-            raise ValueError('Subarray {} is out of range'.format(args.subarray))
-        if args.spw < 0 or args.spw >= len(self._file.spectral_windows):
-            raise ValueError('Spectral window {} is out of range'.format(args.spw))
         # Frequency-dependent private attributes contain data only for
         # start_channel:stop_channel. The public interface adjusts by
         # _start_channel to present channels 0:stop_channel.
         self._start_channel = start_channel
-        self._spectral_window = self._file.spectral_windows[args.spw]
+        self._spectral_window = self._file.spectral_windows[0]
         target_idx = self._find_target(args.target)
         with profile('katdal.DataSet.select'):
-            self._file.select(subarray=args.subarray, spw=args.spw,
-                              targets=[target_idx], scans=['track'],
+            self._file.select(targets=[target_idx], scans=['track'],
                               corrprods='cross')
         self._target = self._file.catalogue.targets[target_idx]
         _logger.info('Selected target %r', self._target.description)
@@ -251,7 +241,7 @@ class LoaderKatdal(loader_core.LoaderBase):
 
     @classmethod
     def match(cls, filename):
-        if filename.lower().endswith('.h5') or filename.lower().endswith('.rdb'):
+        if filename.lower().endswith('.rdb'):
             return True
         # katdal also supports URLs with query parameters, in which case the
         # URL string won't end with .rdb.
@@ -337,15 +327,9 @@ class LoaderKatdal(loader_core.LoaderBase):
         # timestamps is a property, so ensure it's only evaluated once
         with profile('katdal.DataSet.timestamps'):
             timestamps = self._file.timestamps
-        if isinstance(self._file.vis, DaskLazyIndexer):
-            dask_vis = self._file.vis.dataset
-            dask_weights = self._file.weights.dataset
-            dask_flags = self._file.flags.dataset
-        else:
-            # Pre-MVFv4
-            dask_vis = da.from_array(self._file.vis, chunks=(load_times, None, None))
-            dask_weights = da.from_array(self._file.weights, chunks=(load_times, None, None))
-            dask_flags = da.from_array(self._file.flags, chunks=(load_times, None, None))
+        dask_vis = self._file.vis.dataset
+        dask_weights = self._file.weights.dataset
+        dask_flags = self._file.flags.dataset
 
         # Determine chunking scheme
         chunk_sizes = dask_vis.chunks[0]
@@ -433,11 +417,7 @@ class LoaderKatdal(loader_core.LoaderBase):
             start = end
 
     def sky_model(self):
-        try:
-            source = self._file.source
-        except AttributeError:      # pragma: nocover
-            raise sky_model.NoSkyModelError('This data set does not support sky models')
-
+        source = self._file.source
         return sky_model.KatpointSkyModel(sky_model.catalogue_from_telstate(
             source.telstate, source.capture_block_id, None, self._target))
 
