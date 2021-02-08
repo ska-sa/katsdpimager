@@ -42,7 +42,7 @@ install_requires = [
     'h5py',
     'katsdpsigproc',
     'katpoint',
-    'numpy>=1.16.0',
+    'numpy>=1.17.0',
     'progress>=1.5',
     'pycuda',
     'scikit-cuda',
