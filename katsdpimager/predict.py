@@ -50,7 +50,9 @@ def _extract_sky_model(image_parameters, grid_parameters, model, phase_centre):
     """
     ip = image_parameters
     lmn = model.lmn(phase_centre)
-    lmn[:, 2] -= 1    # n -> n-1
+    # n -> n-1. Note that it can't be in-place because lmn returns a read-only
+    # array from a cache.
+    lmn = lmn - np.array([[0, 0, 1]], dtype=lmn.dtype)
     flux = model.flux_density(ip.wavelength)
     # When we convert the subtracted visibilities back to a dirty image,
     # we compensate for the UV coordinate quantisation. However, in this case
