@@ -50,17 +50,18 @@ additional requirements as some C code will need to be compiled:
 
 File formats
 ============
-Two input formats are supported: `Measurement Sets`_ and KAT/MeerKAT
-data sets read by `katdal`_. Output is to `FITS`_ files. The input can contain
-multiple channels, but a separate FITS file is written for each channel.
+Two input formats are supported: `Measurement Sets`_ and MeerKAT data sets read
+by `katdal`_. Output is to `FITS`_ files. The input can contain multiple
+channels, but a separate FITS file is written for each channel.
 
 .. _Measurement sets: http://casa.nrao.edu/Memos/229.html
 .. _katdal: https://katdal.readthedocs.io/
 .. _FITS: http://fits.gsfc.nasa.gov/fits_documentation.html
 
 The input file format is detected by extension, so a Measurement Set *must*
-have the suffix ``.ms`` and a katdal data set must have the suffix ``.h5`` or
-``.rdb``.
+have the suffix ``.ms`` and a katdal data set must have the suffix ``.rdb``.
+The older ``.h5`` katdal formats are not supported; they need to be converted
+to Measurement Sets and calibrated.
 
 Command-line options
 ====================
@@ -147,12 +148,6 @@ Input selection options
 
    The katdal backend supports the following:
 
-   subarray=<INDEX>
-     Subarray index within the file, starting from 0 (defaults to first in
-     file).
-   spw=<INDEX>
-     Spectral window index within the file, starting from 0 (defaults to first
-     in file).
    target=<TARGET>
      Target to image. This can be either an index into the catalogue stored in
      the file (starting from 0) or a name. If not specified, it defaults to the

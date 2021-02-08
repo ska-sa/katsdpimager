@@ -377,7 +377,7 @@ class TestLoaderKatdal:
         self._test_data(options=['--rfi-mask=config'], channel_mask=mask)
 
     def test_match(self):
-        assert_true(LoaderKatdal.match('foo.h5'))
+        assert_false(LoaderKatdal.match('foo.h5'))
         assert_true(LoaderKatdal.match('foo.rdb'))
         assert_false(LoaderKatdal.match('foo.ms'))
         assert_true(LoaderKatdal.match('http://example.invalid/foo/bar.rdb?query=params#fragment'))
