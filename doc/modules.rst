@@ -1,5 +1,5 @@
-API reference
-=============
+katsdpimager
+============
 
 .. toctree::
    :maxdepth: 4

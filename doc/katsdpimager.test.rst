@@ -10,10 +10,13 @@ Submodules
    katsdpimager.test.test_arguments
    katsdpimager.test.test_beam
    katsdpimager.test.test_clean
+   katsdpimager.test.test_fast_math
    katsdpimager.test.test_fft
    katsdpimager.test.test_frontend
    katsdpimager.test.test_grid
    katsdpimager.test.test_image
+   katsdpimager.test.test_loader_katdal
+   katsdpimager.test.test_nvtx
    katsdpimager.test.test_polarization
    katsdpimager.test.test_predict
    katsdpimager.test.test_preprocess

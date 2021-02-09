@@ -18,6 +18,7 @@ Submodules
    katsdpimager.arguments
    katsdpimager.beam
    katsdpimager.clean
+   katsdpimager.fast_math
    katsdpimager.fft
    katsdpimager.frontend
    katsdpimager.grid
@@ -29,6 +30,8 @@ Submodules
    katsdpimager.loader_katdal
    katsdpimager.loader_ms
    katsdpimager.metadata
+   katsdpimager.nvtx
+   katsdpimager.nvtx_build
    katsdpimager.parameters
    katsdpimager.polarization
    katsdpimager.predict
