@@ -290,6 +290,11 @@ def antialias_w_kernel(
         # than wavelengths. We thus want the Fourier transform of
         # kaiser_bessel(u / cell_wavelengths).
         scale_l = l * cell_wavelengths
+        # Note: scale_l is frequency-independent, so in theory the cost of the
+        # call to kaiser_bessel_fourier could be amortised across multiple
+        # channels. However, it's already shared across w, and for MeerKAT
+        # that's sufficient to make the cost negligible compared to the other
+        # steps.
         aa_factor = cell_wavelengths * kaiser_bessel_fourier(scale_l, antialias_width, beta)
         shift_arg = shift_by * l
         l2 = l * l
