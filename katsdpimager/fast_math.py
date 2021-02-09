@@ -6,13 +6,6 @@ import numba
 
 @numba.vectorize([numba.complex64(numba.float32),
                   numba.complex128(numba.float64)])
-def expj(x):
-    """Equivalent to ``np.exp(1j * x)`` where `x` is real."""
-    return complex(np.cos(x), np.sin(x))
-
-
-@numba.vectorize([numba.complex64(numba.float32),
-                  numba.complex128(numba.float64)])
 def expj2pi(x):
     """Equivalent to ``expj(2 * np.pi * x)`` where `x` is real.
 

@@ -6,28 +6,21 @@ import numpy as np
 from .. import fast_math
 
 
-class TestExpj:
+class TestExpj2pi:
     def setup(self):
         gen = np.random.Generator(np.random.PCG64(42))
         self.a = gen.random(100) * 1000.0 - 500.0
+        self.expected = np.exp(2j * np.pi * self.a)
 
-    def test_expj(self):
-        expected = np.exp(1j * self.a)
-        actual = fast_math.expj(self.a)
-        np.testing.assert_allclose(expected, actual, rtol=1e-13)
-        # Check that precision is respected
-        actual = fast_math.expj(self.a.astype(np.float32))
-        assert_equal(actual.dtype, np.complex64)
-        np.testing.assert_allclose(expected, actual, atol=1e-4)
-
-    def test_expj2pi(self):
-        expected = np.exp(2j * np.pi * self.a)
+    def test_basic(self):
         actual = fast_math.expj2pi(self.a)
-        np.testing.assert_allclose(expected, actual, rtol=1e-12)
+        np.testing.assert_allclose(self.expected, actual, rtol=1e-12)
+
+    def test_precision(self):
         # Check that precision is respected
         actual = fast_math.expj2pi(self.a.astype(np.float32))
         assert_equal(actual.dtype, np.complex64)
-        np.testing.assert_allclose(expected, actual, atol=1e-4)
+        np.testing.assert_allclose(self.expected, actual, atol=1e-4)
 
 
 class TestNansum:
