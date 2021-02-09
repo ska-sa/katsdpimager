@@ -5,6 +5,7 @@ At present the only file format supported is a katpoint catalogue file, but
 other formats (e.g. Tigger) may be added later.
 """
 
+import functools
 import logging
 import urllib
 
@@ -77,12 +78,21 @@ class KatpointSkyModel(SkyModel):
     def __len__(self):
         return len(self._catalogue)
 
+    @functools.lru_cache(maxsize=1)
+    def _lmn(self, phase_centre_ra, phase_centre_dec):
+        # Implementation of `lmn`. The arguments are scalars (in radians) so
+        # that they can be hashed by lru_cache.
+        phase_centre = katpoint.construct_radec_target(phase_centre_ra, phase_centre_dec)
+        array = np.array([phase_centre.lmn(*source.astrometric_radec())
+                         for source in self._catalogue])
+        # Prevent callers from corrupting the lru_cache
+        array.flags.writeable = False
+        return array
+
     @units.quantity_input(phase_centre=units.rad)
     def lmn(self, phase_centre):
-        phase_centre = phase_centre.to(units.rad).value
-        phase_centre = katpoint.construct_radec_target(phase_centre[0], phase_centre[1])
-        return np.array([phase_centre.lmn(*source.astrometric_radec())
-                         for source in self._catalogue])
+        phase_centre = phase_centre.to_value(units.rad)
+        return self._lmn(phase_centre[0], phase_centre[1])
 
     @units.quantity_input(wavelength=units.m, equivalencies=units.spectral())
     def flux_density(self, wavelength):
