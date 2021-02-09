@@ -5,8 +5,6 @@ It also handles conversion between visibility and image planes.
 .. include:: macros.rst
 """
 
-import math
-
 import numpy as np
 import pkg_resources
 from katsdpsigproc import accel
@@ -14,6 +12,7 @@ from katsdpsigproc import accel
 import katsdpimager.types
 from . import fft
 from .profiling import profile_device
+from .fast_math import expj2pi
 
 
 class _LayerImageTemplate:
@@ -611,7 +610,7 @@ class GridToImageHost:
         lm = np.fft.ifftshift(lm)
         lm2 = lm * lm
         n = np.sqrt(1 - (lm2[:, np.newaxis] + lm2[np.newaxis, :]))
-        w_correct = np.exp(2j * math.pi * self.w * (n - 1))
+        w_correct = expj2pi(self.w * (n - 1))
         self.layer *= w_correct
         # TODO: most of the calculations here would be more efficient with numba
         image = self.layer.real.copy()
@@ -661,7 +660,7 @@ class ImageToGridHost:
         lm = np.arange(self.image.shape[1]).astype(self.image.dtype) * self.lm_scale + self.lm_bias
         lm2 = lm * lm
         n = np.sqrt(1 - (lm2[:, np.newaxis] + lm2[np.newaxis, :]))[np.newaxis, ...]
-        w_correct = np.exp(-2j * math.pi * self.w * (n - 1))
+        w_correct = expj2pi(-self.w * (n - 1))
         kernel = np.outer(self.kernel1d, self.kernel1d)[np.newaxis, ...]
         self.layer[:] = self.image / (kernel * n) * w_correct
         self.grid[:] = np.fft.fftshift(

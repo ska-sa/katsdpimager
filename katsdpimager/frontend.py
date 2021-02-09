@@ -18,6 +18,7 @@ from . import (
     imaging, progress, beam, primary_beam, arguments
 )
 from .profiling import profile, profile_function
+from .fast_math import nansum
 
 
 logger = logging.getLogger(__name__)
@@ -193,10 +194,7 @@ def find_peak(image, pbeam, noise):
 @profile_function()
 def get_totals(image_parameters, image, restoring_beam):
     """Compute total flux density in each polarization."""
-    # Using `where` is a faster version of np.nansum
-    # (see https://github.com/numpy/numpy/issues/12662).
-    sums = np.sum(image, axis=(1, 2), dtype=np.float64,
-                  where=~np.isnan(image))   # Sum separately per polarization
+    sums = nansum(image, axis=(1, 2), dtype=np.float64)   # Sum separately per polarization
     # Area under the restoring beam. It is a Gaussian with peak of 1, and
     # hence the area under it is 2πσ_xσ_y. The Beam class holds FWHM (in
     # pixels) not standard deviations, hence the extra factor of 8*log 2.
