@@ -9,12 +9,13 @@ import tempfile
 from typing import List, Iterable
 
 import numpy as np
+import numba
 from astropy import units
 import katsdpsigproc.accel as accel
 
 from . import (
     loader, loader_core, parameters, polarization, preprocess, clean, weight, sky_model,
-    imaging, progress, beam, primary_beam, numba, arguments
+    imaging, progress, beam, primary_beam, arguments
 )
 from .profiling import profile, profile_function
 

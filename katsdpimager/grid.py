@@ -121,13 +121,13 @@ import math
 import logging
 
 import numpy as np
+import numba
 import pkg_resources
 
 import katsdpsigproc.accel as accel
 import katsdpsigproc.tune as tune
 
 import katsdpimager.types
-from . import numba
 from .profiling import profile_function, profile_device
 
 

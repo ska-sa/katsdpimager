@@ -42,6 +42,7 @@ install_requires = [
     'h5py',
     'katsdpsigproc',
     'katpoint',
+    'numba',
     'numpy>=1.17.0',
     'progress>=1.5',
     'pycuda',
@@ -96,7 +97,7 @@ setup(
     extras_require={
         'test': tests_require,
         'doc': ['sphinx>=1.3.0', 'sphinxcontrib-tikz', 'sphinx-rtd-theme'] + tests_require,
-        'cpu': ['numba'],
+        'cpu': [],
         'report': ['aplpy', 'matplotlib', 'mako'],
         'ms': ['python-casacore'],
         'katdal': ['katdal', 'katsdpmodels[requests]'],

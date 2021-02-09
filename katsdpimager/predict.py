@@ -17,11 +17,12 @@ The visibilities are assumed to have already been passed through the
 import logging
 
 import numpy as np
+import numba
 import pkg_resources
 from astropy import units
 from katsdpsigproc import accel, tune
 
-from . import polarization, types, grid, parameters, numba
+from . import polarization, types, grid, parameters
 from .profiling import profile_device
 
 

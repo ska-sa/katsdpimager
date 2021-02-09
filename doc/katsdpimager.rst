@@ -29,7 +29,6 @@ Submodules
    katsdpimager.loader_katdal
    katsdpimager.loader_ms
    katsdpimager.metadata
-   katsdpimager.numba
    katsdpimager.parameters
    katsdpimager.polarization
    katsdpimager.predict
