@@ -123,6 +123,7 @@ class Imaging(accel.OperationSequence):
             self._predict = template.predict.instantiate(
                 command_queue, image_parameters, grid_parameters,
                 max_vis, max_components, allocator)
+        self._model_coords = set()
         operations = [
             ('weights', self._weights),
             ('gridder', self._gridder),
@@ -213,6 +214,7 @@ class Imaging(accel.OperationSequence):
         self.ensure_all_bound()
         with profile_device(self.command_queue, 'clear_model'):
             self.buffer('model').zero(self.command_queue)
+        self._model_coords.clear()
 
     @profile_function()
     def set_coordinates(self, *args, **kwargs):
@@ -277,7 +279,7 @@ class Imaging(accel.OperationSequence):
             raise RuntimeError('Can only use model_to_predict with direct prediction')
         # It's computed on the CPU, so we need to be sure that device work is complete
         self._predict.command_queue.finish()
-        self._predict.set_sky_image(self.buffer('model'))
+        self._predict.set_sky_image(self.buffer('model'), self._model_coords)
 
     @profile_function()
     def scale_dirty(self, scale_factor):
@@ -310,7 +312,10 @@ class Imaging(accel.OperationSequence):
     @profile_function()
     def clean_cycle(self, psf_patch, threshold=0.0):
         self.ensure_all_bound()
-        return self._clean(psf_patch, threshold)
+        peak_value, peak_pos = self._clean(psf_patch, threshold)
+        if peak_pos is not None:
+            self._model_coords.add(peak_pos)
+        return peak_value
 
 
 class ImagingHost:
@@ -336,6 +341,7 @@ class ImagingHost:
             self._gridder.kernel.taper(image_parameters.pixels), lm_scale, lm_bias)
         self._clean = clean.CleanHost(image_parameters, clean_parameters,
                                       self._dirty, self._psf, self._model)
+        self._model_coords = set()
         if grid_parameters.fixed.degrid:
             self._predict = grid.DegridderHost(image_parameters, grid_parameters)
             self._degrid = self._predict.values
@@ -386,6 +392,7 @@ class ImagingHost:
 
     def clear_model(self):
         self._model.fill(0)
+        self._model_coords.clear()
 
     def set_sky_model(self, sky_model, phase_centre):
         self._continuum_predict.set_sky_model(sky_model, phase_centre)
@@ -429,7 +436,7 @@ class ImagingHost:
     def model_to_predict(self):
         if self._degrid is not None:
             raise RuntimeError('Can only use model_to_predict with direct prediction')
-        self._predict.set_sky_image(self._model)
+        self._predict.set_sky_image(self._model, self._model_coords)
 
     def scale_dirty(self, scale_factor):
         self._dirty *= scale_factor[:, np.newaxis, np.newaxis]
@@ -449,4 +456,7 @@ class ImagingHost:
         self._clean.reset()
 
     def clean_cycle(self, psf_patch, threshold=0.0):
-        return self._clean(psf_patch, threshold)
+        peak_value, peak_pos = self._clean(psf_patch, threshold)
+        if peak_pos is not None:
+            self._model_coords.add(peak_pos)
+        return peak_value
