@@ -302,6 +302,22 @@ class Predict(grid.VisOperation):
         self.image_parameters = image_parameters
         self.grid_parameters = grid_parameters
         self._w = 0.0
+        self._host_lmn = accel.HostArray(
+            (max_sources, 3), np.float32, context=command_queue.context)
+        self._host_flux = accel.HostArray(
+            (max_sources, template.num_polarizations), np.float32, context=command_queue.context)
+        self._host_weights = accel.HostArray(
+            (max_vis, template.num_polarizations), np.float32, context=command_queue.context)
+
+    def _copy_lmn_flux(self):
+        self.buffer('lmn').set_region(
+            self.command_queue, self._host_lmn,
+            np.s_[:self._num_sources], np.s_[:self._num_sources],
+            blocking=False)
+        self.buffer('flux').set_region(
+            self.command_queue, self._host_flux,
+            np.s_[:self._num_sources], np.s_[:self._num_sources],
+            blocking=False)
 
     @profile_function()
     def set_sky_model(self, model, phase_centre):
@@ -317,9 +333,10 @@ class Predict(grid.VisOperation):
             raise ValueError('too many sources ({} > {})'.format(N, self.max_sources))
         lmn, flux = _extract_sky_model(self.image_parameters, self.grid_parameters,
                                        model, phase_centre)
-        self.buffer('lmn')[:N] = lmn
-        self.buffer('flux')[:N] = flux
+        self._host_lmn[:N] = lmn
+        self._host_flux[:N] = flux
         self._num_sources = N
+        self._copy_lmn_flux()
 
     @profile_function()
     def set_sky_image(self, components):
@@ -339,9 +356,10 @@ class Predict(grid.VisOperation):
         if N > self.max_sources:
             raise ValueError('too many components ({} > {})'.format(N, self.max_sources))
         # TODO: have _extract_sky_image write directly to the buffer
-        self.buffer('lmn')[:N] = lmn
-        self.buffer('flux')[:N] = flux
+        self._host_lmn[:N] = lmn
+        self._host_flux[:N] = flux
         self._num_sources = N
+        self._copy_lmn_flux()
 
     @property
     def num_sources(self):
@@ -355,7 +373,11 @@ class Predict(grid.VisOperation):
         N = self.num_vis
         if len(weights) != N:
             raise ValueError('Lengths do not match')
-        self.buffer('weights')[:N] = weights
+        self._host_weights[:N] = weights
+        self.buffer('weights').set_region(
+            self.command_queue, self._host_weights,
+            np.s_[:N], np.s_[:N],
+            blocking=False)
 
     def set_w(self, w):
         """Set the W slice.

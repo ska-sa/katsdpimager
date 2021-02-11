@@ -693,6 +693,12 @@ class VisOperation(accel.Operation):
         self.slots['vis'] = accel.IOSlot(
             (max_vis, accel.Dimension(num_polarizations, exact=True)), np.complex64)
         self._num_vis = 0
+        self._host_uv = accel.HostArray(
+            (max_vis, 4), np.int16, context=command_queue.context)
+        self._host_w_plane = accel.HostArray(
+            (max_vis,), np.int16, context=command_queue.context)
+        self._host_vis = accel.HostArray(
+            (max_vis, num_polarizations), np.complex64, context=command_queue.context)
 
     @property
     def num_vis(self):
@@ -714,9 +720,15 @@ class VisOperation(accel.Operation):
         N = self.num_vis
         if len(uv) != N or len(sub_uv) != N or len(w_plane) != N:
             raise ValueError('Lengths do not match')
-        self.buffer('uv')[:N, 0:2] = uv
-        self.buffer('uv')[:N, 2:4] = sub_uv
-        self.buffer('w_plane')[:N] = w_plane
+        self._host_uv[:N, 0:2] = uv
+        self._host_uv[:N, 2:4] = sub_uv
+        self._host_w_plane[:N] = w_plane
+        self.buffer('uv').set_region(
+            self.command_queue, self._host_uv,
+            np.s_[:N], np.s_[:N], blocking=False)
+        self.buffer('w_plane').set_region(
+            self.command_queue, self._host_w_plane,
+            np.s_[:N], np.s_[:N], blocking=False)
 
     def set_vis(self, vis):
         """Set input visibilities.
@@ -726,7 +738,10 @@ class VisOperation(accel.Operation):
         N = self.num_vis
         if len(vis) != N:
             raise ValueError('Lengths do not match')
-        self.buffer('vis')[:N] = vis
+        self._host_vis[:N] = vis
+        self.buffer('vis').set_region(
+            self.command_queue, self._host_vis,
+            np.s_[:N], np.s_[:N], blocking=False)
 
 
 class GridDegrid(VisOperation):

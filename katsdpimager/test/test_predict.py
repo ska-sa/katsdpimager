@@ -2,7 +2,6 @@
 
 import numpy as np
 import katpoint
-import katsdpsigproc.accel as accel
 from katsdpsigproc.test.test_accel import device_test, force_autotune
 from astropy import units
 from nose.tools import assert_equal
@@ -62,10 +61,8 @@ class TestPredict:
         weights = rs.uniform(size=(n_vis, len(ip.fixed.polarizations))).astype(np.float32)
         vis = rs.complex_normal(size=(n_vis, len(ip.fixed.polarizations)))
 
-        allocator = accel.SVMAllocator(context)
         template = predict.PredictTemplate(context, np.float32, len(ip.fixed.polarizations))
-        fn = template.instantiate(queue, ip, gp,
-                                  n_vis, len(self.model), allocator=allocator)
+        fn = template.instantiate(queue, ip, gp, n_vis, len(self.model))
         fn.ensure_all_bound()
         fn.num_vis = n_vis
         fn.set_coordinates(uv, sub_uv, w_plane)
@@ -85,7 +82,7 @@ class TestPredict:
         host()
 
         queue.finish()
-        device_vis = fn.buffer('vis')[:n_vis]
+        device_vis = fn.buffer('vis').get(queue)[:n_vis]
         # Accuracy of individual visibilities is low, because the delay can have
         # a large whole number of wavelengths which degrades the precision of the
         # phase. Differences in where FMAs are inserted by compilers causes
