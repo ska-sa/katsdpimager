@@ -369,6 +369,106 @@ class Scale(accel.Operation):
             )
 
 
+class ApplyPrimaryBeamTemplate:
+    """Scale an image by a (polarization-independent) primary beam.
+
+    Parameters
+    ----------
+    context : |Context|
+        Context for which kernels will be compiled
+    dtype : {`np.float32`, `np.float64`}
+        Image precision
+    num_polarizations : int
+        Number of polarizations stored in the image
+    tuning : dict, optional
+        Tuning parameters (currently unused)
+    """
+
+    def __init__(self, context, dtype, num_polarizations, tuning=None):
+        # TODO: autotuning
+        self.context = context
+        self.dtype = np.dtype(dtype)
+        self.num_polarizations = num_polarizations
+        self.wgsx = 16
+        self.wgsy = 16
+        self.program = accel.build(
+            context, "imager_kernels/apply_primary_beam.mako",
+            {
+                'real_type': katsdpimager.types.dtype_to_ctype(dtype),
+                'wgsx': self.wgsx,
+                'wgsy': self.wgsy,
+                'num_polarizations': num_polarizations
+            },
+            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+
+    def instantiate(self, *args, **kwargs):
+        return ApplyPrimaryBeam(self, *args, **kwargs)
+
+
+class ApplyPrimaryBeam(accel.Operation):
+    """Instantiation of :class:`ApplyPrimaryBeamTemplate`.
+
+    .. rubric:: Slots
+
+    **data** : array
+        Image, indexed by polarization, y, x
+    **beam_power** : array
+        Primary beam power, indexed by y, x
+
+    Parameters
+    ----------
+    template : :class:`ApplyPrimaryBeamTemplate`
+        Operation template
+    command_queue : |CommandQueue|
+        Command queue for the operation
+    shape : tuple of int
+        Shape of the data.
+    threshold : float
+        Cut-off beam power, below which the image is replaced by
+        `replacement` instead of divided by the primary beam power
+    replacement : float
+        Substitute value for regions where beam power is below `threshold`
+    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+        Allocator used to allocate unbound slots
+    """
+
+    def __init__(self, template, command_queue, shape, threshold, replacement, allocator=None):
+        super().__init__(command_queue, allocator)
+        self.template = template
+        if len(shape) != 3:
+            raise ValueError('Wrong number of dimensions in shape')
+        if shape[0] != template.num_polarizations:
+            raise ValueError('Mismatch in number of polarizations')
+        y_dim = accel.Dimension(shape[1])
+        x_dim = accel.Dimension(shape[2])
+        self.slots['data'] = accel.IOSlot((shape[0], y_dim, x_dim), template.dtype)
+        self.slots['beam_power'] = accel.IOSlot((y_dim, x_dim), template.dtype)
+        self.kernel = template.program.get_kernel('apply_primary_beam')
+        self.threshold = threshold
+        self.replacement = replacement
+
+    def _run(self):
+        data = self.buffer('data')
+        beam_power = self.buffer('beam_power')
+        with profile_device(self.command_queue, 'apply_primary_beam'):
+            self.command_queue.enqueue_kernel(
+                self.kernel,
+                [
+                    data.buffer,
+                    beam_power.buffer,
+                    np.int32(data.padded_shape[2]),
+                    np.int32(data.padded_shape[1] * data.padded_shape[2]),
+                    np.int32(data.shape[2]),
+                    np.int32(data.shape[1]),
+                    data.dtype.type(self.threshold),
+                    data.dtype.type(self.replacement)
+                ],
+                global_size=(accel.roundup(data.shape[2], self.template.wgsx),
+                             accel.roundup(data.shape[1], self.template.wgsy)),
+                local_size=(self.template.wgsx, self.template.wgsy)
+            )
+
+
 class GridImageTemplate:
     """Template for a combined operation that converts from a complex grid to a
     real image or vice versa, including layer-to-image/image-to-layer

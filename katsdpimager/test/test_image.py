@@ -105,3 +105,25 @@ class TestScale:
         actual = data.get(command_queue)
         expected = src * scale_factor[:, np.newaxis, np.newaxis]
         np.testing.assert_allclose(expected, actual)
+
+
+class TestApplyPrimaryBeam:
+    @device_test
+    def test(self, context, command_queue):
+        shape = (4, 123, 234)
+        dtype = np.float32
+        threshold = 0.2
+        replacement = 12345.0
+        rs = np.random.RandomState(1)
+        template = image.ApplyPrimaryBeamTemplate(context, dtype, shape[0])
+        fn = template.instantiate(command_queue, shape, threshold, replacement)
+        fn.ensure_all_bound()
+        src = rs.uniform(size=shape).astype(np.float32)
+        data = fn.buffer('data')
+        data.set(command_queue, src)
+        src_beam = rs.uniform(size=shape[1:]).astype(np.float32)
+        fn.buffer('beam_power').set(command_queue, src_beam)
+        fn()
+        actual = data.get(command_queue)
+        expected = np.where(src_beam < threshold, replacement, src / src_beam)
+        np.testing.assert_allclose(expected, actual)
