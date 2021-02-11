@@ -232,7 +232,7 @@ def antialias_kernel(width, oversample, beta=None):
     return kernel
 
 
-@profile_function(labels='w')
+@profile_function()
 def antialias_w_kernel(
         cell_wavelengths, w, width,
         oversample, antialias_width, image_oversample, beta,
@@ -240,8 +240,8 @@ def antialias_w_kernel(
     r"""Computes a combined anti-aliasing and W-projection kernel.
 
     The format of the returned kernel is similar to :func:`antialias_kernel`.
-    In particular, only a 1D kernel is returned.  Note that while the W kernel
-    is not truly separable, the small-angle approximation
+    In particular, only a 1D kernel is returned per w. Note that while the W
+    kernel is not truly separable, the small-angle approximation
     :math:`\sqrt{1-l^2-m^2}-1 \approx -\frac{1}{2}(l^2+m^2)-\frac{5}{24}(l^4+m^4)`
     makes it very close to separable [#]_.
 
@@ -261,11 +261,14 @@ def antialias_w_kernel(
     half-subpixel offsets. To create this shift in UV space, we multiply by the
     appropriate complex exponential in image space.
 
+    The return value is 3D, with axes corresponding to w, subpixel and pixel
+    respectively.
+
     Parameters
     ----------
     cell_wavelengths : float
         Size of a UV cell in wavelengths
-    w : float
+    w : array of float
         w component of baseline, in wavelengths
     width : int
         Support of combined kernel, in cells
@@ -287,11 +290,16 @@ def antialias_w_kernel(
         # than wavelengths. We thus want the Fourier transform of
         # kaiser_bessel(u / cell_wavelengths).
         scale_l = l * cell_wavelengths
+        # Note: scale_l is frequency-independent, so in theory the cost of the
+        # call to kaiser_bessel_fourier could be amortised across multiple
+        # channels. However, it's already shared across w, and for MeerKAT
+        # that's sufficient to make the cost negligible compared to the other
+        # steps.
         aa_factor = cell_wavelengths * kaiser_bessel_fourier(scale_l, antialias_width, beta)
         shift_arg = shift_by * l
         l2 = l * l
         l4 = l2 * l2
-        w_arg = -w * (-0.5 * l2 - 5.0/24.0 * l4)
+        w_arg = np.outer(-w, -0.5 * l2 - 5.0/24.0 * l4)
         return aa_factor * np.exp(2j * math.pi * (w_arg + shift_arg))
 
     out_pixels = oversample * width
@@ -305,16 +313,21 @@ def antialias_w_kernel(
     l = (np.arange(pixels) - (pixels // 2)) * image_step
     # Evaluate function in image space
     shift_by = -0.5 * cell_wavelengths / oversample
-    image_values = image_func(l)
+    image_values = image_func(l)      # axes w, l
     # Convert to UV space. The multiplication is because we're using a DFT to
     # approximate a continuous FFT.
-    uv_values = np.fft.fft(np.fft.ifftshift(image_values)) * image_step
+    uv_values = np.fft.fft(np.fft.ifftshift(image_values, axes=-1), axis=-1) * image_step
     # Crop to area of interest, and swap halves to put DC in the middle
-    uv_values = np.concatenate((uv_values[-(out_pixels // 2):], uv_values[:(out_pixels // 2)]))
+    uv_values = np.concatenate(
+        (uv_values[..., -(out_pixels // 2):], uv_values[..., :(out_pixels // 2)]),
+        axis=-1
+    )
     # Split up into subkernels. Since the subpixel index indicates the subpixel
     # position of the visibility, rather than the kernel tap, it runs backwards
     # in the kernel indexing.
-    kernel = np.reshape(uv_values, (oversample, width), order='F')[::-1, :]
+    kernel = np.reshape(uv_values, np.shape(w) + (width, oversample))[..., ::-1]
+    # Put subpixel axis before pixel axis
+    kernel = np.swapaxes(kernel, 1, 2)
     # Convert to C memory layout
     if out is None:
         out = np.empty_like(kernel)
@@ -369,13 +382,12 @@ class ConvolutionKernel:
         # Find w for the midpoint of the final plane
         max_w_wavelengths = (w_slice_wavelengths - w_plane_wavelengths) * 0.5
         ws = np.linspace(-max_w_wavelengths, max_w_wavelengths, grid_parameters.w_planes)
-        for i, w in enumerate(ws):
-            antialias_w_kernel(
-                cell_wavelengths, w, grid_parameters.fixed.kernel_width,
-                grid_parameters.fixed.oversample,
-                grid_parameters.fixed.antialias_width,
-                grid_parameters.fixed.image_oversample,
-                self.beta, out=self.data[i, ...])
+        antialias_w_kernel(
+            cell_wavelengths, ws, grid_parameters.fixed.kernel_width,
+            grid_parameters.fixed.oversample,
+            grid_parameters.fixed.antialias_width,
+            grid_parameters.fixed.image_oversample,
+            self.beta, out=self.data)
 
     @classmethod
     def get_bin_size(cls, fixed_grid_parameters, tile_x, tile_y, pad):
