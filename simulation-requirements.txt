@@ -22,7 +22,7 @@ cffi==1.14.4              # via argon2-cffi, bcrypt, cryptography, pynacl
 click==7.1.2              # via distributed
 cloudpickle==1.6.0        # via distributed
 configparser==5.0.1       # via rascil
-cryptography==3.3.1       # via paramiko
+cryptography==3.3.2       # via paramiko
 cycler==0.10.0            # via matplotlib
 dask==2020.12.0           # via distributed, rascil
 decorator==4.4.2          # via ipython, networkx
