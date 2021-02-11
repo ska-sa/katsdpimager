@@ -14,20 +14,20 @@ class TestExpj2pi:
 
     def test_basic(self):
         actual = fast_math.expj2pi(self.a)
-        np.testing.assert_allclose(self.expected, actual, rtol=1e-12)
+        np.testing.assert_allclose(actual, self.expected, rtol=1e-12)
 
     def test_precision(self):
         # Check that precision is respected
         actual = fast_math.expj2pi(self.a.astype(np.float32))
         assert_equal(actual.dtype, np.complex64)
-        np.testing.assert_allclose(self.expected, actual, atol=1e-4)
+        np.testing.assert_allclose(actual, self.expected, atol=1e-4)
 
 
 class TestNansum:
     def _test(self, a, *args, **kwargs):
         expected = np.nansum(a, *args, **kwargs)
         actual = fast_math.nansum(a, *args, **kwargs)
-        np.testing.assert_array_equal(expected, actual)
+        np.testing.assert_array_equal(actual, expected, actual)
 
     def test_no_nans(self):
         a = np.arange(10.0)
