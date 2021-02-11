@@ -10,7 +10,7 @@ import colors
 import katsdpsigproc.accel as accel
 import astropy.io.fits as fits
 
-from katsdpimager import frontend, loader, io, progress, numba, arguments, profiling
+from katsdpimager import frontend, loader, io, progress, arguments, profiling
 
 
 logger = logging.getLogger()
@@ -151,8 +151,6 @@ def main():
     else:
         context = dummy_context()
         queue = DummyCommandQueue()
-        if not numba.have_numba:
-            logger.warning('could not import numba: --host mode will be VERY slow')
 
     with closing(loader.load(args.input_file, args.input_option,
                              args.start_channel, args.stop_channel)) as dataset:

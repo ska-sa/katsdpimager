@@ -314,16 +314,9 @@ with the channel index.
 Running on the CPU
 ==================
 It is also possible to run katsdpimager without a GPU, although it is not well
-optimised and thus not recommended. When installing katsdpimager, use the
-command
-
-.. code-block:: sh
-
-   pip install '.[cpu]'
-
-to install the necessary support packages. Note that this will still install GPU packages like
-pycuda; if you're unable to install them, you'll need to modify katsdpimager
-yourself to remove the dependencies.
+optimised and thus not recommended. Note that the installation will still
+install GPU packages like pycuda; if you're unable to install them, you'll need
+to modify katsdpimager yourself to remove the dependencies.
 
 .. option:: --host
 

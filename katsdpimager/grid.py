@@ -121,14 +121,15 @@ import math
 import logging
 
 import numpy as np
+import numba
 import pkg_resources
 
 import katsdpsigproc.accel as accel
 import katsdpsigproc.tune as tune
 
 import katsdpimager.types
-from . import numba
 from .profiling import profile_function, profile_device
+from .fast_math import expj2pi
 
 
 logger = logging.getLogger(__name__)
@@ -300,7 +301,7 @@ def antialias_w_kernel(
         l2 = l * l
         l4 = l2 * l2
         w_arg = np.outer(-w, -0.5 * l2 - 5.0/24.0 * l4)
-        return aa_factor * np.exp(2j * math.pi * (w_arg + shift_arg))
+        return aa_factor * expj2pi(w_arg + shift_arg)
 
     out_pixels = oversample * width
     assert out_pixels % 2 == 0, "Odd number of pixels is not tested"

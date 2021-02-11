@@ -18,12 +18,12 @@ minor cycles if the launch overheads become an issue.
 import math
 
 import numpy as np
+import numba
 import scipy.stats
 from katsdpsigproc import accel
 import pkg_resources
 
 import katsdpimager.types
-from . import numba
 from .profiling import profile_device
 
 
