@@ -23,7 +23,7 @@ from astropy import units
 from katsdpsigproc import accel, tune
 
 from . import polarization, types, grid, parameters
-from .profiling import profile_device
+from .profiling import profile_function, profile_device
 
 
 logger = logging.getLogger(__name__)
@@ -306,6 +306,7 @@ class Predict(grid.VisOperation):
         self.grid_parameters = grid_parameters
         self._w = 0.0
 
+    @profile_function()
     def set_sky_model(self, model, phase_centre):
         """Set the sky model.
 
@@ -323,6 +324,7 @@ class Predict(grid.VisOperation):
         self.buffer('flux')[:N] = flux
         self._num_sources = N
 
+    @profile_function()
     def set_sky_image(self, image, coords):
         """Set the sky model from a model image.
 

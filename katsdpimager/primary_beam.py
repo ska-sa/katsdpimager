@@ -8,6 +8,8 @@ import h5py
 import pkg_resources
 import astropy.units as units
 
+from .profiling import profile_function
+
 
 class Parameter:
     """A parameter on which a `BeamModelSet` is parametrised.
@@ -180,6 +182,7 @@ class TrivialBeamModel(BeamModel):
     def parameter_values(self) -> Mapping[str, Any]:
         return {}
 
+    @profile_function()
     def sample(self,
                az_start: float, az_step: float, az_samples: int,
                el_start: float, el_step: float, el_samples: int,
