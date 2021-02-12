@@ -494,7 +494,8 @@ def process_channel(dataset, args, start_channel,
         imager = imager_template.instantiate(
             queue, image_p, grid_p, args.vis_block, n_sources, args.major, allocator)
         device_allocator = accel.DeviceAllocator(context)
-        for name in ['vis', 'weights', 'uv', 'w_plane']:
+        for name in ['vis', 'weights', 'uv', 'w_plane',
+                     'layer', 'tile_max', 'tile_pos', 'peak_pixel']:
             if name in imager.slots:
                 imager.slots[name].allocate(device_allocator)
         imager.ensure_all_bound()
