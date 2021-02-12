@@ -1021,6 +1021,9 @@ class Degridder(GridDegrid):
         num_polarizations = len(self.image_parameters.fixed.polarizations)
         self.slots['weights'] = accel.IOSlot(
             (self.max_vis, accel.Dimension(num_polarizations, exact=True)), np.float32)
+        # TODO: move up to imaging.py
+        self._host_weights = accel.HostArray(
+            (self.max_vis, num_polarizations), np.float32, context=self.command_queue.context)
         self._kernel = self.template.program.get_kernel('degrid')
 
     def set_weights(self, weights):
@@ -1031,7 +1034,10 @@ class Degridder(GridDegrid):
         N = self.num_vis
         if len(weights) != N:
             raise ValueError('Lengths do not match')
-        self.buffer('weights')[:N] = weights
+        self._host_weights[:N] = weights
+        self.buffer('weights').set_region(
+            self.command_queue, self._host_weights,
+            np.s_[:N], np.s_[:N], blocking=False)
 
     @classmethod
     def static_run(cls, command_queue, kernel,
