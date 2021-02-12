@@ -155,16 +155,29 @@ def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block
 
 
 @profile_function()
-def extract_psf(psf, psf_patch):
+def extract_psf(queue, psf, psf_patch):
     """Extract the central region of a PSF.
 
-    This function is 2D: the polarization axis must have already been removed.
+    Parameters
+    ----------
+    queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
+        Command queue for the copy (ignored if `psf` is already on the host)
+    psf : :class:`katsdpsigproc.accel.DeviceArray` or :class:`np.ndarray`
+        Point spread function (shape pols × height × width). Only the first
+        polarization is returned.
+    psf_patch : tuple[int, int]
+        Size to extract, in the y and x directions respectively
     """
-    y0 = (psf.shape[0] - psf_patch[0]) // 2
+    y0 = (psf.shape[1] - psf_patch[0]) // 2
     y1 = y0 + psf_patch[0]
-    x0 = (psf.shape[1] - psf_patch[1]) // 2
+    x0 = (psf.shape[2] - psf_patch[1]) // 2
     x1 = x0 + psf_patch[1]
-    return psf[..., y0:y1, x0:x1]
+    if isinstance(psf, accel.DeviceArray):
+        out = accel.HostArray((y1 - y0, x1 - x0), psf.dtype, context=queue.context)
+        psf.get_region(queue, out, np.s_[0, y0:y1, x0:x1], np.s_[:, :])
+        return out
+    else:
+        return psf[0, y0:y1, x0:x1]
 
 
 @profile_function()
@@ -489,20 +502,10 @@ def process_channel(dataset, args, start_channel,
     if args.host:
         imager = imaging.ImagingHost(image_p, weight_p, grid_p, clean_p)
     else:
-        allocator = accel.SVMAllocator(context)
         n_sources = len(subtract_model) if subtract_model else 0
         imager = imager_template.instantiate(
-            queue, image_p, grid_p, args.vis_block, n_sources, args.major, allocator)
-        device_allocator = accel.DeviceAllocator(context)
-        for name in ['vis', 'predict_weights', 'uv', 'w_plane', 'weights', 'weights_grid',
-                     'grid', 'layer', 'tile_max', 'tile_pos',
-                     'peak_value', 'peak_pos', 'peak_pixel']:
-            if name in imager.slots:
-                imager.slots[name].allocate(device_allocator)
+            queue, image_p, grid_p, args.vis_block, n_sources, args.major)
         imager.ensure_all_bound()
-    psf = imager.buffer('psf')
-    dirty = imager.buffer('dirty')
-    model = imager.buffer('model')
     imager.clear_model()
 
     # Compute imaging weights
@@ -520,7 +523,15 @@ def process_channel(dataset, args, start_channel,
     make_dirty(queue, reader, rel_channel,
                'PSF', 'weights', imager, mid_w, args.vis_block, args.degrid)
     # Normalization
-    psf_peak = dirty[..., dirty.shape[1] // 2, dirty.shape[2] // 2]
+    dirty = imager.buffer('dirty')
+    if args.host:
+        psf_peak = dirty[..., dirty.shape[1] // 2, dirty.shape[2] // 2]
+    else:
+        psf_peak = accel.HostArray((dirty.shape[0],), dirty.dtype, context=context)
+        dirty.get_region(
+            queue, psf_peak,
+            np.s_[:, dirty.shape[1] // 2, dirty.shape[2] // 2],
+            np.s_[:])
     if np.any(psf_peak == 0):
         logger.info('Skipping channel %d which has no usable data', channel)
         writer.skip_channel(dataset, image_p, channel)
@@ -530,14 +541,14 @@ def process_channel(dataset, args, start_channel,
     queue.finish()
     imager.dirty_to_psf()
     # dirty_to_psf works by swapping, so re-fetch the buffer pointers
-    psf = imager.buffer('psf')
-    dirty = imager.buffer('dirty')
     psf_patch = imager.psf_patch()
     logger.info('Using %dx%d patch for PSF', psf_patch[2], psf_patch[1])
     # Extract the patch for beam fitting
-    psf_core = extract_psf(psf[0], psf_patch[1:])
+    psf_core = extract_psf(queue, imager.buffer('psf'), psf_patch[1:])
     restoring_beam = beam.fit_beam(psf_core)
-    writer.write_fits_image('psf', 'PSF', dataset, psf, image_p, channel, restoring_beam)
+    if writer.needs_fits_image('psf'):
+        writer.write_fits_image(
+            'psf', 'PSF', dataset, imager.get_buffer('psf'), image_p, channel, restoring_beam)
 
     # Imaging
     if subtract_model:
@@ -589,6 +600,7 @@ def process_channel(dataset, args, start_channel,
         queue.finish()
 
     # Scale by primary beam
+    model = imager.buffer('model')
     if grid_p.fixed.beams:
         pbeam_model = grid_p.fixed.beams.sample()
         # Sample beam model at the pixel grid. It's circularly symmetric, so
@@ -613,12 +625,17 @@ def process_channel(dataset, args, start_channel,
     else:
         pbeam = np.broadcast_to(np.ones(1, model.dtype), model.shape[-2:])
 
-    writer.write_fits_image('model', 'model', dataset, model, image_p, channel)
-    writer.write_fits_image('residuals', 'residuals', dataset, dirty, image_p,
-                            channel, restoring_beam)
+    if writer.needs_fits_image('model'):
+        writer.write_fits_image(
+            'model', 'model', dataset, imager.get_buffer('model'), image_p, channel)
+    if writer.needs_fits_image('residuals'):
+        writer.write_fits_image(
+            'residuals', 'residuals', dataset, imager.get_buffer('dirty'), image_p,
+            channel, restoring_beam)
 
+    model = imager.buffer('model')
+    dirty = imager.buffer('dirty')
     # Try to free up memory for the beam convolution
-    del psf
     del imager
 
     # Convolve with restoring beam, and add residuals back in
@@ -637,6 +654,10 @@ def process_channel(dataset, args, start_channel,
             restore_image.copy_region(queue, model, (), np.s_[pol])
         queue.finish()
 
+    # TODO: do the addition on the GPU
+    if not args.host:
+        model = model.get(queue)
+        dirty = dirty.get(queue)
     model += dirty
     del dirty
     writer.write_fits_image('clean', 'clean image', dataset, model, image_p,
