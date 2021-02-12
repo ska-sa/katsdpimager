@@ -472,8 +472,13 @@ class Weights(accel.OperationSequence):
             compounds['grid'].append('grid_weights:grid')
             compounds['uv'] = ['grid_weights:uv']
             compounds['weights'] = ['grid_weights:weights']
+            self._host_uv = accel.HostArray((max_vis, 2), np.int16, context=command_queue.context)
+            self._host_weights = accel.HostArray(
+                (max_vis, grid_shape[0]), np.float32, context=command_queue.context)
         else:
             self._grid_weights = None
+            self._host_uv = None
+            self._host_weights = None
 
         if template.fill is not None:
             self._fill = template.fill.instantiate(
@@ -519,8 +524,15 @@ class Weights(accel.OperationSequence):
         if self._grid_weights is not None:
             N = len(uv)
             self._grid_weights.num_vis = N
-            self.buffer('uv')[:N, 0:2] = uv
-            self.buffer('weights')[:N] = weights
+            # TODO: share these buffers with grid/predict
+            self._host_uv[:N] = uv
+            self._host_weights[:N] = weights
+            self.buffer('uv').set_region(
+                self.command_queue, self._host_uv,
+                np.s_[:N, 0:2], np.s_[:N, 0:2], blocking=False)
+            self.buffer('weights').set_region(
+                self.command_queue, self._host_weights,
+                np.s_[:N], np.s_[:N], blocking=False)
             return self._grid_weights()
 
     def finalize(self):

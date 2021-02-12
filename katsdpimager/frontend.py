@@ -493,6 +493,10 @@ def process_channel(dataset, args, start_channel,
         n_sources = len(subtract_model) if subtract_model else 0
         imager = imager_template.instantiate(
             queue, image_p, grid_p, args.vis_block, n_sources, args.major, allocator)
+        device_allocator = accel.DeviceAllocator(context)
+        for name in ['vis', 'weights', 'uv', 'w_plane']:
+            if name in imager.slots:
+                imager.slots[name].allocate(device_allocator)
         imager.ensure_all_bound()
     psf = imager.buffer('psf')
     dirty = imager.buffer('dirty')
