@@ -106,16 +106,14 @@ class TestPredict:
         self._test_random(context, queue, 2)
 
     def test_extract_sky_image(self):
-        ip = self.image_parameters
-        image = np.zeros((len(ip.fixed.polarizations), ip.pixels, ip.pixels), np.float32)
-        # Note: first index is m, not l
-        image[:, 2048, 2048] = [1, 2, 3]
-        image[:, 1024, 512] = [2.5, 1.5, 0.0]
-        image[:, 0, 4095] = [4, 0, 0]
-        image[:, 4095, 0] = [5, 1, 2]
-        coords = [(2048, 2048), (1024, 512), (0, 4095), (4095, 0)]
+        components = {
+            (0, 4095): np.array([4.0, 0.0, 0.0]),
+            (1024, 512): np.array([2.5, 1.5, 0.0]),
+            (2048, 2048): np.array([1.0, 2.0, 3.0]),
+            (4095, 0): np.array([5.0, 1.0, 2.0])
+        }
         lmn, flux = predict._extract_sky_image(
-            self.image_parameters, self.grid_parameters, image, coords)
+            self.image_parameters, self.grid_parameters, components)
         assert_equal(lmn.shape, (4, 3))
         assert_equal(flux.shape, (4, 3))
         np.testing.assert_allclose(lmn[:, 0:2], [

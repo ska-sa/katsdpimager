@@ -805,6 +805,7 @@ class Clean(accel.OperationSequence):
             raise ValueError('dtype mismatch')
         image_shape = (len(image_parameters.fixed.polarizations),
                        image_parameters.pixels, image_parameters.pixels)
+        self.template = template
         self._update_tiles = template._update_tiles.instantiate(
             command_queue, image_shape, template.clean_parameters.border, allocator)
         tile_shape = self._update_tiles.slots['tile_max'].shape
@@ -831,11 +832,15 @@ class Clean(accel.OperationSequence):
         super().__init__(command_queue, ops, compounds, allocator=allocator)
         peak_value = self.slots['peak_value']
         peak_pos = self.slots['peak_pos']
+        peak_pixel = self.slots['peak_pixel']
         self._peak_value_host = accel.HostArray(
             peak_value.shape, peak_value.dtype, peak_value.required_padded_shape(),
             context=command_queue.context)
         self._peak_pos_host = accel.HostArray(
             peak_pos.shape, peak_pos.dtype, peak_pos.required_padded_shape(),
+            context=command_queue.context)
+        self._peak_pixel_host = accel.HostArray(
+            peak_pixel.shape, peak_pixel.dtype, peak_pixel.required_padded_shape(),
             context=command_queue.context)
 
     def reset(self):
@@ -867,18 +872,21 @@ class Clean(accel.OperationSequence):
         """
         self.ensure_all_bound()
         self._find_peak()
-        # Copy the peak position and value back to the host
+        # Copy the peak position, value and pixel back to the host
         peak_value_device = self.buffer('peak_value')
         peak_pos_device = self.buffer('peak_pos')
+        peak_pixel_device = self.buffer('peak_pixel')
         if (isinstance(peak_value_device, accel.SVMArray)
                 or isinstance(peak_pos_device, accel.SVMArray)):
             self.command_queue.finish()
         peak_value = peak_value_device.get_async(self.command_queue, self._peak_value_host)
         peak_pos = peak_pos_device.get_async(self.command_queue, self._peak_pos_host)
+        peak_pixel = peak_pixel_device.get_async(self.command_queue, self._peak_pixel_host)
         self.command_queue.finish()
-        peak_pos = tuple(int(x) for x in peak_pos)
         if peak_value[0] < threshold:
-            return None, None
+            return None, None, None
+        peak_pos = tuple(int(x) for x in peak_pos)
+        model_pixel = self.template.clean_parameters.loop_gain * peak_pixel
 
         self._subtract_psf(peak_pos, psf_patch)
         # Update the tiles
@@ -887,7 +895,7 @@ class Clean(accel.OperationSequence):
         y0 = peak_pos[0] - psf_patch[1] // 2
         y1 = y0 + psf_patch[1]
         self._update_tiles(x0, y0, x1, y1)
-        return peak_value[0], peak_pos
+        return peak_value[0], peak_pos, model_pixel
 
 
 def psf_patch_host(psf, threshold, limit=None):
@@ -1044,7 +1052,7 @@ class CleanHost:
         self.image[..., y0:y1, x0:x1] -= (
             scale[:, np.newaxis, np.newaxis] * self.psf[..., psf_y0:psf_y1, psf_x0:psf_x1])
         self.model[..., y, x] += scale
-        return (y0, x0, y1, x1)
+        return (y0, x0, y1, x1), scale
 
     def reset(self):
         """Call when the dirty image has changed (including before the first
@@ -1062,8 +1070,8 @@ class CleanHost:
         peak_pos = self._tile_pos[peak_tile]
         peak_value = self._tile_max[peak_tile]
         if peak_value < threshold:
-            return None, None
-        (y0, x0, y1, x1) = self._subtract_psf(peak_pos[0], peak_pos[1], psf_patch)
+            return None, None, None
+        (y0, x0, y1, x1), model_pixel = self._subtract_psf(peak_pos[0], peak_pos[1], psf_patch)
         tile_y0 = max((y0 - self.border_pixels) // self.tile_size, 0)
         tile_x0 = max((x0 - self.border_pixels) // self.tile_size, 0)
         tile_y1 = min(accel.divup(y1 - self.border_pixels, self.tile_size), self._tile_max.shape[0])
@@ -1071,4 +1079,4 @@ class CleanHost:
         for y in range(tile_y0, tile_y1):
             for x in range(tile_x0, tile_x1):
                 self._update_tile(y, x)
-        return peak_value, tuple(int(x) for x in peak_pos)
+        return peak_value, tuple(int(x) for x in peak_pos), model_pixel
