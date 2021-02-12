@@ -341,6 +341,20 @@ class Imaging(accel.OperationSequence):
                 self._model_components[peak_pos] = model_pixel
         return peak_value
 
+    @profile_function(labels=['name'])
+    def get_buffer(self, name):
+        """Get the contents of a buffer as a numpy array."""
+        return self.buffer(name).get(self.command_queue)
+
+    @profile_function(labels=['name'])
+    def set_buffer(self, name, data):
+        """Copy a numpy array to a buffer (blocking).
+
+        Because this is blocking, it is not considered a high performance
+        path. It exists to simplify compatibility with :class:`ImagingHost`.
+        """
+        self.buffer(name).set(self.command_queue, data)
+
 
 class ImagingHost:
     """Host-only equivalent to :class:`Imaging`."""
@@ -390,6 +404,12 @@ class ImagingHost:
 
     def buffer(self, name):
         return self._buffer[name]
+
+    def get_buffer(self, name):
+        return self._buffer[name]
+
+    def set_buffer(self, name, data):
+        self._buffer[name][()] = data
 
     @property
     def num_vis(self):

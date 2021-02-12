@@ -494,23 +494,25 @@ def process_channel(dataset, args, start_channel,
         imager = imager_template.instantiate(
             queue, image_p, grid_p, args.vis_block, n_sources, args.major, allocator)
         device_allocator = accel.DeviceAllocator(context)
-        for name in ['vis', 'weights', 'uv', 'w_plane',
-                     'layer', 'tile_max', 'tile_pos', 'peak_pixel']:
+        for name in ['vis', 'predict_weights', 'uv', 'w_plane', 'weights', 'weights_grid',
+                     'grid', 'layer', 'tile_max', 'tile_pos',
+                     'peak_value', 'peak_pos', 'peak_pixel']:
             if name in imager.slots:
                 imager.slots[name].allocate(device_allocator)
         imager.ensure_all_bound()
     psf = imager.buffer('psf')
     dirty = imager.buffer('dirty')
     model = imager.buffer('model')
-    grid_data = imager.buffer('grid')
     imager.clear_model()
 
     # Compute imaging weights
     weights_noise, normalized_noise = make_weights(queue, reader, rel_channel,
                                                    imager, weight_p.weight_type, args.vis_block,
                                                    dataset.weight_scale())
-    writer.write_fits_image('weights', 'image weights',
-                            dataset, imager.buffer('weights_grid'), image_p, channel, bunit=None)
+    if writer.needs_fits_image('weights'):
+        writer.write_fits_image(
+            'weights', 'image weights',
+            dataset, imager.get_buffer('weights_grid'), image_p, channel, bunit=None)
 
     # Create PSF
     slice_w_step = float(grid_p.fixed.max_w / image_p.wavelength / (grid_p.w_slices - 0.5))
@@ -550,9 +552,13 @@ def process_channel(dataset, args, start_channel,
         imager.scale_dirty(scale)
         queue.finish()
         if i == 0:
-            writer.write_fits_grid('grid', 'grid', not args.host, grid_data, image_p, channel)
-            writer.write_fits_image('dirty', 'dirty image', dataset, dirty, image_p,
-                                    channel, restoring_beam)
+            if writer.needs_fits_grid('grid'):
+                writer.write_fits_grid(
+                    'grid', 'grid', not args.host, imager.get_buffer('grid'), image_p, channel)
+            if writer.needs_fits_image('dirty'):
+                writer.write_fits_image(
+                    'dirty', 'dirty image', dataset, imager.get_buffer('dirty'), image_p,
+                    channel, restoring_beam)
         major += 1
 
         # Deconvolution
@@ -595,7 +601,10 @@ def process_channel(dataset, args, start_channel,
         # Ignore polarization and length-1 frequency axis; square to
         # convert voltage to power.
         pbeam = np.square(np.abs(pbeam[0, 0, 0]))
-        imager.buffer('beam_power')[:] = pbeam
+        # TODO: make it the right precision from the beginning (which should
+        # speed up interpolation when it is single-precision).
+        pbeam = pbeam.astype(imager.buffer('beam_power').dtype, copy=False)
+        imager.set_buffer('beam_power', pbeam)
         imager.apply_primary_beam(args.primary_beam_cutoff)
         writer.write_fits_image(
             'primary_beam', 'primary beam', dataset,
@@ -609,7 +618,6 @@ def process_channel(dataset, args, start_channel,
                             channel, restoring_beam)
 
     # Try to free up memory for the beam convolution
-    del grid_data
     del psf
     del imager
 
