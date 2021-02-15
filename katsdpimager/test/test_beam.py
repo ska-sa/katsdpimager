@@ -48,8 +48,8 @@ class TestConvolveBeam:
     @device_test
     @cuda_test
     def test_device(self, context, command_queue):
-        template = beam.ConvolveBeamTemplate(command_queue, self.model.shape[1:], self.model.dtype)
-        fn = template.instantiate()
+        template = beam.ConvolveBeamTemplate(context, self.model.shape[1:], self.model.dtype)
+        fn = template.instantiate(command_queue)
         fn.ensure_all_bound()
         for pol in range(self.model.shape[0]):
             fn.buffer('image').set(command_queue, self.model[pol])

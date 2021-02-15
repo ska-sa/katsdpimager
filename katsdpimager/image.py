@@ -479,11 +479,6 @@ class GridImageTemplate:
     Because it uses :class:`~katsdpimager.fft.FftTemplate`, most of the
     parameters are baked into the template rather than the instance.
 
-    .. warning::
-        Instances created from the same template cannot be executed
-        simultaneously, due to limitations of CUFFT (work area is part of the
-        plan).
-
     Parameters
     ----------
     context : |Context|
@@ -493,32 +488,26 @@ class GridImageTemplate:
     """
 
     def __init__(self, context, real_dtype):
+        self.context = context
         self.real_dtype = real_dtype
         self.layer_to_image = LayerToImageTemplate(context, real_dtype)
         self.image_to_layer = ImageToLayerTemplate(context, real_dtype)
 
-    def make_fft_plan(self, command_queue, shape_layer, padded_shape_layer):
+    def make_fft_plan(self, shape_layer, padded_shape_layer):
         """Create an FFT plan.
 
         The plan should be passed to :meth:`instantiate_grid_to_image` and
         :meth:`instantiate_image_to_grid`.
 
-        .. warning::
-            Instances created from the same plan cannot be executed
-            simultaneously, due to limitations of CUFFT (work area is part of the
-            plan).
-
         Parameters
         ----------
-        command_queue : :class:`katsdpsigproc.cuda.CommandQueue`
-            Command queue for the operation
         shape_layer : tuple of int
             Shape for the intermediate layer, as (height, width)
         padded_shape_layer : tuple of int
             Padded shape of the intermediate layer
         """
         complex_dtype = katsdpimager.types.real_to_complex(self.real_dtype)
-        return fft.FftTemplate(command_queue, 2, shape_layer, complex_dtype, complex_dtype,
+        return fft.FftTemplate(self.context, 2, shape_layer, complex_dtype, complex_dtype,
                                padded_shape_layer, padded_shape_layer)
 
     def instantiate_grid_to_image(self, *args, **kwargs):
@@ -548,7 +537,7 @@ class GridToImage(accel.OperationSequence):
     """
     def __init__(self, template, command_queue, shape_grid,
                  lm_scale, lm_bias, fft_plan, allocator=None):
-        self._ifft = fft_plan.instantiate(fft.FFT_INVERSE, allocator)
+        self._ifft = fft_plan.instantiate(command_queue, fft.FFT_INVERSE, allocator)
         polarizations = shape_grid[0]
         shape_image = (polarizations,) + tuple(fft_plan.shape)
         self._layer_to_image = template.layer_to_image.instantiate(
@@ -617,7 +606,7 @@ class ImageToGrid(accel.OperationSequence):
                  lm_scale, lm_bias, fft_plan, allocator=None):
         polarizations = shape_grid[0]
         shape_image = (polarizations,) + tuple(fft_plan.shape)
-        self._fft = fft_plan.instantiate(fft.FFT_FORWARD, allocator)
+        self._fft = fft_plan.instantiate(command_queue, fft.FFT_FORWARD, allocator)
         self._image_to_layer = template.image_to_layer.instantiate(
             command_queue, shape_image, lm_scale, lm_bias, allocator)
         operations = [
