@@ -41,8 +41,6 @@ different beam shapes for the different polarizations.
 .. [Bri95] Briggs, D. S. 1995. High fidelity deconvolution of moderately
    resolved sources. PhD Thesis, The New Mexico Institute of Mining and Technology.
    http://www.aoc.nrao.edu/dissertations/dbriggs/
-
-.. include:: macros.rst
 """
 
 import enum
@@ -65,7 +63,7 @@ class GridWeightsTemplate:
 
     Parameters
     ----------
-    context : |Context|
+    context : :class:`katsdpsigproc.abc.AbstractContext`
         Context for which kernels will be compiled
     num_polarizations : int
         Number of polarizations to grid
@@ -110,13 +108,13 @@ class GridWeights(accel.Operation):
     ----------
     template : :class:`GridWeightsTemplate`
         Operation template
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for the operation
     grid_shape : tuple of ints
         Shape for the grid, (polarizations, height, width)
     max_vis : int
         Maximum number of weights that can be gridded in one pass
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
 
     Raises
@@ -190,7 +188,7 @@ class DensityWeightsTemplate:
 
     Parameters
     ----------
-    context : |Context|
+    context : :class:`katsdpsigproc.abc.AbstractContext`
         Context for which kernels will be compiled
     num_polarizations : int
         Number of polarizations to grid
@@ -237,11 +235,11 @@ class DensityWeights(accel.Operation):
     ----------
     template : :class:`DensityWeightsTemplate`
         Operation template
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for the operation
     grid_shape : tuple of ints
         Shape for the grid, (polarizations, height, width)
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
     """
     def __init__(self, template, command_queue, grid_shape, allocator=None):
@@ -305,7 +303,7 @@ class MeanWeightTemplate:
 
     Parameters
     ----------
-    context : |Context|
+    context : :class:`katsdpsigproc.abc.AbstractContext`
         Context for which kernels will be compiled
     tuning : dict, optional
         Tuning parameters (unused)
@@ -339,11 +337,11 @@ class MeanWeight(accel.Operation):
     ----------
     template : :class:`MeanWeightTemplate`
         Operation template
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for the operation
     grid_shape : tuple of ints
         Shape for the grid, (polarizations, height, width)
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
     """
     def __init__(self, template, command_queue, grid_shape, allocator=None):
@@ -387,7 +385,7 @@ class WeightsTemplate:
 
     Parameters
     ----------
-    context : |Context|
+    context : :class:`katsdpsigproc.abc.AbstractContext`
         Context for which kernels will be compiled
     weight_type : :class:`WeightType`
         Weighting method
@@ -448,13 +446,13 @@ class Weights(accel.OperationSequence):
 
     Parameters
     ----------
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for the operation
     grid_shape : tuple of ints
         Shape for the grid, (polarizations, height, width)
     max_vis : int
         Maximum number of weights that can be gridded in one pass
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
 
     Attributes

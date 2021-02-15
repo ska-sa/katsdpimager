@@ -1,7 +1,4 @@
-"""Utilities to wrap skcuda.fft for imaging purposes.
-
-.. include:: macros.rst
-"""
+"""Utilities to wrap skcuda.fft for imaging purposes."""
 
 import threading
 
@@ -65,7 +62,7 @@ class FftshiftTemplate:
 
     Parameters
     ----------
-    context : |Context|
+    context : :class:`katsdpsigproc.abc.AbstractContext`
         Context for which kernels will be compiled
     dtype : numpy dtype
         Data type being stored
@@ -103,11 +100,11 @@ class Fftshift(accel.Operation):
     ----------
     template : :class:`FftshiftTemplate`
         Operation template
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for the operation
     shape : tuple of int
         Shape of the data.
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
 
     Raises
@@ -250,7 +247,7 @@ class Fft(accel.Operation):
         Operation template
     mode : {:data:`FFT_FORWARD`, :data:`FFT_INVERSE`}
         FFT direction
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
     """
     def __init__(self, template, command_queue, mode, allocator=None):

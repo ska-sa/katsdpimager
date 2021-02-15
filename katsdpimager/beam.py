@@ -32,8 +32,6 @@ and its square root is
 :math:`M = R\left(\begin{smallmatrix}\sigma_1 & 0\\0 & \sigma_2\end{smallmatrix}\right)R^T`.
 
 .. _Mathworld: http://mathworld.wolfram.com/FourierTransformGaussian.html
-
-.. include:: macros.rst
 """
 
 import math
@@ -210,7 +208,7 @@ class FourierBeamTemplate:
 
     Parameters
     ----------
-    context : |Context|
+    context : :class:`katsdpsigproc.abc.AbstractContext`
         Context for which kernels will be compiled
     dtype : {`numpy.float32`, `numpy.float64`}
         Real data type
@@ -253,12 +251,12 @@ class FourierBeam(accel.Operation):
     ----------
     template : :class:`FourierBeamTemplate`
         Operation template
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for the operation
     image_shape : tuple
         (height, width) of the image. Note that the buffer on which this operation works
         will have shape (height, width // 2 + 1).
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
     """
     def __init__(self, template, command_queue, image_shape, allocator=None):
