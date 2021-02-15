@@ -104,13 +104,17 @@ class Imaging(accel.OperationSequence):
             template.context,
             (image_parameters.pixels,),
             image_parameters.fixed.real_dtype)
-        self._gridder.convolve_kernel.taper(image_parameters.pixels, taper1d)
+        taper1d_host = taper1d.empty_like()
+        self._gridder.convolve_kernel.taper(image_parameters.pixels, taper1d_host)
+        taper1d.set(command_queue, taper1d_host)
         self._grid_to_image.bind(kernel1d=taper1d)
+        del taper1d_host
         if grid_parameters.fixed.degrid:
             untaper1d = accel.DeviceArray(
                 template.context,
                 (image_parameters.pixels,),
                 image_parameters.fixed.real_dtype)
+            untaper1d_host = untaper1d.empty_like()
             self._predict = template.degridder.instantiate(
                 command_queue,
                 template.array_parameters,
@@ -118,7 +122,10 @@ class Imaging(accel.OperationSequence):
                 grid_parameters,
                 max_vis,
                 allocator)
-            self._predict.convolve_kernel.taper(image_parameters.pixels, untaper1d)
+            self._predict.convolve_kernel.taper(image_parameters.pixels, untaper1d_host)
+            untaper1d.set(command_queue, untaper1d_host)
+            del untaper1d_host
+
             degrid_shape = self._predict.slots['grid'].shape
             self._image_to_grid = template.grid_image.instantiate_image_to_grid(
                 command_queue, degrid_shape, lm_scale, lm_bias, fft_plan, allocator)
