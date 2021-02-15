@@ -434,19 +434,15 @@ class ConvolutionKernelDevice(ConvolutionKernel):
              grid_parameters.fixed.oversample,
              grid_parameters.fixed.kernel_width + 2 * pad),
             np.complex64)
-        if isinstance(out, accel.SVMArray):
-            host = out
-        else:
-            host = out.empty_like()
+        host = out.empty_like()
         host.fill(0)
         super().__init__(
             image_parameters,
             grid_parameters,
             host[:, :, pad:grid_parameters.fixed.kernel_width + pad]
         )
-        if not isinstance(out, accel.SVMArray):
-            queue = context.create_command_queue()
-            out.set(queue, host)
+        queue = context.create_command_queue()   # TODO: pass one in?
+        out.set(queue, host)
         self.padded_data = out
         self.pad = pad
 

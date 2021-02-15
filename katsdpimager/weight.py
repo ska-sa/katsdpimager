@@ -279,8 +279,6 @@ class DensityWeights(accel.Operation):
                              accel.roundup(grid.shape[1], self.template.wgs_y)),
                 local_size=(self.template.wgs_x, self.template.wgs_y)
             )
-        if isinstance(sums, accel.SVMArray):
-            self.command_queue.finish()
         sums.get(self.command_queue, self._sums_host)
         rms = np.sqrt(self._sums_host[2]) / self._sums_host[1]
         return rms, rms * np.sqrt(self._sums_host[0])
@@ -374,8 +372,6 @@ class MeanWeight(accel.Operation):
                              accel.roundup(grid.shape[1], self.template.wgs_y)),
                 local_size=(self.template.wgs_x, self.template.wgs_y)
             )
-        if isinstance(sums, accel.SVMArray):
-            self.command_queue.finish()
         sums.get(self.command_queue, self._sums_host)
         return self._sums_host[1] / self._sums_host[0]
 

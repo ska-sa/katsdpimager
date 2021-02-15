@@ -4,7 +4,6 @@ from unittest import mock
 
 import numpy as np
 import astropy.units as units
-import katsdpsigproc.accel as accel
 from katsdpsigproc.test.test_accel import device_test, force_autotune
 
 from .. import parameters, polarization, grid
@@ -148,10 +147,10 @@ class TestGridder(BaseTest):
                 self.array_parameters,
                 self.image_parameters,
                 self.grid_parameters,
-                max_vis, allocator=accel.SVMAllocator(context))
+                max_vis)
             fn.ensure_all_bound()
             grid_data = fn.buffer('grid')
-            grid_data.fill(0)
+            grid_data.zero(command_queue)
             weights_grid = fn.buffer('weights_grid')
             weights_grid_host = weights_grid.empty_like()
             _middle(weights_grid_host, self.weights_grid.shape)[:] = self.weights_grid
@@ -160,8 +159,7 @@ class TestGridder(BaseTest):
             fn.set_coordinates(self.uv, self.sub_uv, self.w_plane)
             fn.set_vis(vis)
             fn()
-            command_queue.finish()
-            return grid_data
+            return grid_data.get(command_queue)
         self.do_grid(callback)
 
     @device_test
@@ -199,7 +197,7 @@ class TestDegridder(BaseTest):
                 self.array_parameters,
                 self.image_parameters,
                 self.grid_parameters,
-                max_vis, allocator=accel.SVMAllocator(context))
+                max_vis)
             fn.ensure_all_bound()
             grid_buffer = fn.buffer('grid')
             grid_buffer.set(command_queue, _middle(grid_data, grid_buffer.shape))
@@ -208,8 +206,7 @@ class TestDegridder(BaseTest):
             fn.set_weights(weights)
             fn.set_vis(vis)
             fn()
-            command_queue.finish()
-            return fn.buffer('vis')[:n_vis]
+            return fn.buffer('vis').get(command_queue)[:n_vis]
         self.do_degrid(callback)
 
     @device_test

@@ -193,12 +193,20 @@ class PredictTemplate:
         # Need at least as many sources as the workgroup size to achieve full
         # throughput.
         num_sources = 1024
-        vis = accel.SVMArray(context, (num_vis, num_polarizations), dtype=np.complex64)
-        uv = accel.SVMArray(context, (num_vis, 4), dtype=np.int16)
-        w_plane = accel.SVMArray(context, (num_vis,), dtype=np.int16)
-        weights = accel.SVMArray(context, (num_vis, num_polarizations), dtype=np.float32)
-        lmn = accel.SVMArray(context, (num_sources, 3), dtype=np.float32)
-        flux = accel.SVMArray(context, (num_sources, num_polarizations), dtype=np.float32)
+        vis = accel.DeviceArray(context, (num_vis, num_polarizations), dtype=np.complex64)
+        uv = accel.DeviceArray(context, (num_vis, 4), dtype=np.int16)
+        w_plane = accel.DeviceArray(context, (num_vis,), dtype=np.int16)
+        weights = accel.DeviceArray(context, (num_vis, num_polarizations), dtype=np.float32)
+        lmn = accel.DeviceArray(context, (num_sources, 3), dtype=np.float32)
+        flux = accel.DeviceArray(context, (num_sources, num_polarizations), dtype=np.float32)
+        # The values don't really matter, but we want to avoid non-finites
+        # which would skew performance.
+        vis.zero(queue)
+        uv.zero(queue)
+        w_plane.zero(queue)
+        weights.zero(queue)
+        lmn.zero(queue)
+        flux.zero(queue)
 
         # The values don't make any difference to auto-tuning; they just affect
         # scale factors that have no impact on control flow.
@@ -263,8 +271,6 @@ class Predict(grid.VisOperation):
         The statistical weights associated with the visibilities. The input
         visibilities are assumed to be pre-weighted, and the predicted
         visibility is scaled by the weight before subtraction.
-
-    These slots must all be backed by SVM-allocated memory.
 
     Parameters
     ----------

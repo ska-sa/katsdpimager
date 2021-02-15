@@ -17,38 +17,13 @@ FFT_FORWARD = 0
 FFT_INVERSE = 1
 
 
-class _Gpudata:
-    """Adapter to allow skcuda.fft to work with managed memory
-    allocations. Add it as a `gpudata` member on an arbitrary object, to allow
-    that object to be passed instead of a :py:class`pycuda.gpuarray.GPUArray`.
-    """
-    def __init__(self, array):
-        # .buffer gives the ndarray created by PyCUDA, and .base the ManagedAllocation
-        self._allocation = array.buffer.base
-
-    def __int__(self):
-        return self._allocation.get_device_pointer()
-
-    def __eq__(self, other):
-        return int(self) == int(other)
-
-    def __ne__(self, other):
-        return int(self) != int(other)
-
-
 class _GpudataWrapper:
-    """Forwarding wrapper around a :py:class:`katsdpsigproc.accel.SVMArray` or
-    :py:class:`katsdpsigproc.accel.DeviceArray` that allows it to be passed
-    to skcuda.fft.
+    """Forwarding wrapper around a :py:class:`katsdpsigproc.accel.DeviceArray`
+    that allows it to be passed to skcuda.fft.
     """
     def __init__(self, wrapped):
         self._wrapped = wrapped
-        try:
-            # Handle DeviceArray case
-            self.gpudata = wrapped.buffer.gpudata
-        except AttributeError:
-            # SVMArray case
-            self.gpudata = _Gpudata(wrapped)
+        self.gpudata = wrapped.buffer.gpudata
 
     def __getattr__(self, attr):
         return getattr(self._wrapped, attr)

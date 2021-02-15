@@ -100,14 +100,14 @@ class Imaging(accel.OperationSequence):
             command_queue, image_shape, 0.0, np.nan, allocator)
 
         # TODO: handle taper1d/untaper1d as standard slots
-        taper1d = accel.SVMArray(
+        taper1d = accel.DeviceArray(
             template.context,
             (image_parameters.pixels,),
             image_parameters.fixed.real_dtype)
         self._gridder.convolve_kernel.taper(image_parameters.pixels, taper1d)
         self._grid_to_image.bind(kernel1d=taper1d)
         if grid_parameters.fixed.degrid:
-            untaper1d = accel.SVMArray(
+            untaper1d = accel.DeviceArray(
                 template.context,
                 (image_parameters.pixels,),
                 image_parameters.fixed.real_dtype)
