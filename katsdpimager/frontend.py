@@ -99,7 +99,6 @@ def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block, wei
         noise, normalized_noise = imager.finalize_weights()
         if noise is not None and weight_scale is not None:
             noise *= weight_scale
-        queue.finish()
     if noise is not None:
         logger.info('Thermal RMS noise (from weights): %g', noise)
     logger.info('Normalized thermal RMS noise: %g', normalized_noise)
@@ -137,11 +136,9 @@ def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block
                     imager.predict(mid_w[w_slice])
                 imager.grid()
                 bar.next(len(chunk))
-            queue.finish()
 
         with progress.step('IFFT {}'.format(label)):
             imager.grid_to_image(mid_w[w_slice])
-            queue.finish()
 
 
 @profile_function()
@@ -585,7 +582,6 @@ def process_channel(dataset, args, start_channel,
         if i == args.major - 1:
             # Update the noise estimate for output stats
             noise = imager.noise_est()
-        queue.finish()
 
     # Scale by primary beam
     model = imager.buffer('model')
