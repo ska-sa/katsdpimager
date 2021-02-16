@@ -689,12 +689,6 @@ class VisOperation(accel.Operation):
         self.slots['vis'] = accel.IOSlot(
             (max_vis, accel.Dimension(num_polarizations, exact=True)), np.complex64)
         self._num_vis = 0
-        self._host_uv = accel.HostArray(
-            (max_vis, 4), np.int16, context=command_queue.context)
-        self._host_w_plane = accel.HostArray(
-            (max_vis,), np.int16, context=command_queue.context)
-        self._host_vis = accel.HostArray(
-            (max_vis, num_polarizations), np.complex64, context=command_queue.context)
 
     @property
     def num_vis(self):
@@ -707,37 +701,6 @@ class VisOperation(accel.Operation):
             raise ValueError('Number of visibilities {} is out of range 0..{}'.format(
                 n, self.max_vis))
         self._num_vis = n
-
-    def set_coordinates(self, uv, sub_uv, w_plane):
-        """Set the UVW coordinates.
-
-        Before calling, first set :attr:`num_vis`.
-        """
-        N = self.num_vis
-        if len(uv) != N or len(sub_uv) != N or len(w_plane) != N:
-            raise ValueError('Lengths do not match')
-        self._host_uv[:N, 0:2] = uv
-        self._host_uv[:N, 2:4] = sub_uv
-        self._host_w_plane[:N] = w_plane
-        self.buffer('uv').set_region(
-            self.command_queue, self._host_uv,
-            np.s_[:N], np.s_[:N], blocking=False)
-        self.buffer('w_plane').set_region(
-            self.command_queue, self._host_w_plane,
-            np.s_[:N], np.s_[:N], blocking=False)
-
-    def set_vis(self, vis):
-        """Set input visibilities.
-
-        Before calling, first set :attr:`num_vis`.
-        """
-        N = self.num_vis
-        if len(vis) != N:
-            raise ValueError('Lengths do not match')
-        self._host_vis[:N] = vis
-        self.buffer('vis').set_region(
-            self.command_queue, self._host_vis,
-            np.s_[:N], np.s_[:N], blocking=False)
 
 
 class GridDegrid(VisOperation):
@@ -1017,23 +980,7 @@ class Degridder(GridDegrid):
         num_polarizations = len(self.image_parameters.fixed.polarizations)
         self.slots['weights'] = accel.IOSlot(
             (self.max_vis, accel.Dimension(num_polarizations, exact=True)), np.float32)
-        # TODO: move up to imaging.py
-        self._host_weights = accel.HostArray(
-            (self.max_vis, num_polarizations), np.float32, context=self.command_queue.context)
         self._kernel = self.template.program.get_kernel('degrid')
-
-    def set_weights(self, weights):
-        """Set statistical weights on visibilities.
-
-        Before calling, set :attr:`num_vis`.
-        """
-        N = self.num_vis
-        if len(weights) != N:
-            raise ValueError('Lengths do not match')
-        self._host_weights[:N] = weights
-        self.buffer('weights').set_region(
-            self.command_queue, self._host_weights,
-            np.s_[:N], np.s_[:N], blocking=False)
 
     @classmethod
     def static_run(cls, command_queue, kernel,

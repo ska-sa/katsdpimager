@@ -515,20 +515,10 @@ class Weights(accel.OperationSequence):
         if self._fill is None:
             self.buffer('grid').zero(self.command_queue)
 
-    def grid(self, uv, weights):
+    def grid(self, N):
         self.ensure_all_bound()
         if self._grid_weights is not None:
-            N = len(uv)
             self._grid_weights.num_vis = N
-            # TODO: share these buffers with grid/predict
-            self._host_uv[:N] = uv
-            self._host_weights[:N] = weights
-            self.buffer('uv').set_region(
-                self.command_queue, self._host_uv,
-                np.s_[:N, 0:2], np.s_[:N, 0:2], blocking=False)
-            self.buffer('weights').set_region(
-                self.command_queue, self._host_weights,
-                np.s_[:N], np.s_[:N], blocking=False)
             return self._grid_weights()
 
     def finalize(self):

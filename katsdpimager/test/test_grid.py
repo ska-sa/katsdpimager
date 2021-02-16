@@ -92,7 +92,7 @@ class BaseTest:
         max_vis = 1280
         n_vis = len(self.w_plane)
         rs = RandomState(seed=2)
-        vis = rs.complex_uniform(-1, 1, size=(n_vis, 4)).astype(np.complex128)
+        vis = rs.complex_uniform(-1, 1, size=(n_vis, 4)).astype(np.complex64)
         actual = callback(max_vis, vis)
         expected = np.zeros_like(actual)
         pixels = actual.shape[-1]
@@ -118,8 +118,8 @@ class BaseTest:
         shape = (4, pixels, pixels)
         rs = RandomState(seed=2)
         grid_data = rs.complex_uniform(-1, 1, size=shape).astype(np.complex128)
-        vis = rs.complex_uniform(-1, 1, size=(n_vis, 4)).astype(np.complex128)
-        weights = rs.uniform(0.5, 1.5, size=(n_vis, 4)).astype(np.float64)
+        vis = rs.complex_uniform(-1, 1, size=(n_vis, 4)).astype(np.complex64)
+        weights = rs.uniform(0.5, 1.5, size=(n_vis, 4)).astype(np.float32)
         expected = np.zeros_like(vis.copy())
         uv_bias = (self.convolve_kernel.data.shape[-1] - 1) // 2 - pixels // 2
         for i in range(n_vis):
@@ -155,9 +155,13 @@ class TestGridder(BaseTest):
             weights_grid_host = weights_grid.empty_like()
             _middle(weights_grid_host, self.weights_grid.shape)[:] = self.weights_grid
             weights_grid.set_async(command_queue, weights_grid_host)
-            fn.num_vis = len(self.uv)
-            fn.set_coordinates(self.uv, self.sub_uv, self.w_plane)
-            fn.set_vis(vis)
+            n_vis = len(self.uv)
+            fn.num_vis = n_vis
+            fn.buffer('uv').set_region(
+                command_queue, np.concatenate((self.uv, self.sub_uv), axis=1),
+                np.s_[:n_vis], np.s_[:])
+            fn.buffer('w_plane').set_region(command_queue, self.w_plane, np.s_[:n_vis], np.s_[:])
+            fn.buffer('vis').set_region(command_queue, vis, np.s_[:n_vis], np.s_[:])
             fn()
             return grid_data.get(command_queue)
         self.do_grid(callback)
@@ -202,9 +206,12 @@ class TestDegridder(BaseTest):
             grid_buffer = fn.buffer('grid')
             grid_buffer.set(command_queue, _middle(grid_data, grid_buffer.shape))
             fn.num_vis = n_vis
-            fn.set_coordinates(self.uv, self.sub_uv, self.w_plane)
-            fn.set_weights(weights)
-            fn.set_vis(vis)
+            fn.buffer('uv').set_region(
+                command_queue, np.concatenate((self.uv, self.sub_uv), axis=1),
+                np.s_[:n_vis], np.s_[:])
+            fn.buffer('w_plane').set_region(command_queue, self.w_plane, np.s_[:n_vis], np.s_[:])
+            fn.buffer('vis').set_region(command_queue, vis, np.s_[:n_vis], np.s_[:])
+            fn.buffer('weights').set_region(command_queue, weights, np.s_[:n_vis], np.s_[:])
             fn()
             return fn.buffer('vis').get(command_queue)[:n_vis]
         self.do_degrid(callback)

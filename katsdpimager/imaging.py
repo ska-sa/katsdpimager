@@ -49,6 +49,15 @@ class ImagingTemplate:
         return Imaging(self, *args, **kwargs)
 
 
+class _HostBuffer:
+    """A host array with supporting utilities for synchronisation."""
+
+    def __init__(self, context, slot):
+        self.array = accel.HostArray(slot.shape, slot.dtype, slot.required_padded_shape(),
+                                     context=context)
+        self.transfer_event = None
+
+
 class Imaging(accel.OperationSequence):
     @profile_function()
     def __init__(
@@ -151,12 +160,11 @@ class Imaging(accel.OperationSequence):
             ('apply_primary_beam_dirty', self._apply_primary_beam_dirty)
         ]
         compounds = {
-            'weights': ['weights:weights'],
+            'weights': ['weights:weights', 'predict:weights', 'continuum_predict:weights'],
             'weights_grid': ['weights:grid', 'gridder:weights_grid'],
             'uv': ['weights:uv', 'gridder:uv', 'predict:uv', 'continuum_predict:uv'],
             'w_plane': ['gridder:w_plane', 'predict:w_plane', 'continuum_predict:w_plane'],
             'vis': ['gridder:vis', 'predict:vis', 'continuum_predict:vis'],
-            'predict_weights': ['predict:weights', 'continuum_predict:weights'],
             'grid': ['gridder:grid', 'grid_to_image:grid'],
             'layer': ['grid_to_image:layer'],
             'dirty': ['grid_to_image:image', 'noise_est:dirty', 'clean:dirty', 'scale:data',
@@ -187,6 +195,11 @@ class Imaging(accel.OperationSequence):
         for x, y in zip(self.slots['dirty'].dimensions, self.slots['psf'].dimensions):
             x.link(y)
 
+        self.host_buffer = {}
+        for name in ['weights', 'weights', 'uv', 'w_plane', 'vis']:
+            if name in self.slots:
+                self.host_buffer[name] = _HostBuffer(command_queue.context, self.slots[name])
+
     def __call__(self, **kwargs):
         raise NotImplementedError()
 
@@ -208,7 +221,9 @@ class Imaging(accel.OperationSequence):
     @profile_function()
     def grid_weights(self, uv, weights):
         self.ensure_all_bound()
-        self._weights.grid(uv, weights)
+        self._set_buffer('uv', len(uv), uv, (np.s_[:2],))
+        self._set_buffer('weights', len(uv), weights)
+        self._weights.grid(len(uv))
 
     @profile_function()
     def finalize_weights(self):
@@ -234,26 +249,49 @@ class Imaging(accel.OperationSequence):
             self.buffer('model').zero(self.command_queue)
         self._model_components.clear()
 
-    @profile_function()
-    def set_coordinates(self, *args, **kwargs):
-        self.ensure_all_bound()
-        # The gridder and predictors share their coordinates, so we can
-        # use any here.
-        self._gridder.set_coordinates(*args, **kwargs)
+    def _set_buffer(self, name, N, data, extra_index=()):
+        if len(data) != N:
+            raise ValueError('Lengths do not match')
+        host = self.host_buffer[name]
+        device = self.buffer(name)
+        if host.transfer_event is not None:
+            host.transfer_event.wait()
+        idx = (np.s_[:N],) + extra_index
+        host.array[idx] = data
+        device.set_region(self.command_queue, host.array, idx, idx, blocking=False)
+        host.transfer_event = self.command_queue.enqueue_marker()
+
+    def _set_uv(self, uv, sub_uv):
+        # TODO: uv, sub_uv usually start interleaved anyway, so it would be more
+        # efficient to copy them jointly.
+        N = self.num_vis
+        if len(uv) != N or len(sub_uv) != N:
+            raise ValueError('Lengths do not match')
+        host = self.host_buffer['uv']
+        device = self.buffer('uv')
+        if host.transfer_event is not None:
+            host.transfer_event.wait()
+        host.array[:N, 0:2] = uv
+        host.array[:N, 2:4] = sub_uv
+        device.set_region(self.command_queue, host.array, np.s_[:N], np.s_[:N], blocking=False)
+        host.transfer_event = self.command_queue.enqueue_marker()
 
     @profile_function()
-    def set_vis(self, *args, **kwargs):
+    def set_coordinates(self, uv, sub_uv, w_plane):
         self.ensure_all_bound()
-        # The gridder and predicters share their visibilities, so we
-        # can use any here.
-        self._gridder.set_vis(*args, **kwargs)
+        self._set_uv(uv, sub_uv)
+        self._set_buffer('w_plane', self.num_vis, w_plane)
 
     @profile_function()
-    def set_weights(self, *args, **kwargs):
+    def set_vis(self, vis):
+        self.ensure_all_bound()
+        self._set_buffer('vis', self.num_vis, vis)
+
+    @profile_function()
+    def set_weights(self, weights):
         """Set statistical weights for prediction"""
         self.ensure_all_bound()
-        # The predicters share their weights, so we can use any here.
-        self._predict.set_weights(*args, **kwargs)
+        self._set_buffer('weights', self.num_vis, weights)
 
     @profile_function()
     def grid(self):

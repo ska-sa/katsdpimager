@@ -255,7 +255,7 @@ class Predict(grid.VisOperation):
     Before using a constructed instance, it's necessary to first
 
     1. Configure the visibilities, by setting :attr:`num_vis` and
-       calling :meth:`set_coordinates`, :meth:`set_vis` and :meth:`set_w`.
+       :meth:`set_w` and populating the visibility-related buffers.
     2. Configure the sources, by calling :meth:`set_sky_model` or
        :meth:`set_sky_image`.
 
@@ -312,8 +312,6 @@ class Predict(grid.VisOperation):
             (max_sources, 3), np.float32, context=command_queue.context)
         self._host_flux = accel.HostArray(
             (max_sources, template.num_polarizations), np.float32, context=command_queue.context)
-        self._host_weights = accel.HostArray(
-            (max_vis, template.num_polarizations), np.float32, context=command_queue.context)
 
     def _copy_lmn_flux(self):
         self.buffer('lmn').set_region(
@@ -370,20 +368,6 @@ class Predict(grid.VisOperation):
     @property
     def num_sources(self):
         return self._num_sources
-
-    def set_weights(self, weights):
-        """Set statistical weights on visibilities.
-
-        Before calling, set :attr:`num_vis`.
-        """
-        N = self.num_vis
-        if len(weights) != N:
-            raise ValueError('Lengths do not match')
-        self._host_weights[:N] = weights
-        self.buffer('weights').set_region(
-            self.command_queue, self._host_weights,
-            np.s_[:N], np.s_[:N],
-            blocking=False)
 
     def set_w(self, w):
         """Set the W slice.

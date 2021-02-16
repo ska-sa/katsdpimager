@@ -59,15 +59,17 @@ class TestPredict:
         sub_uv = rs.random_integers(0, gp.fixed.oversample - 1, size=(n_vis, 2)).astype(np.int16)
         w_plane = rs.random_integers(0, gp.w_planes - 1, size=n_vis).astype(np.int16)
         weights = rs.uniform(size=(n_vis, len(ip.fixed.polarizations))).astype(np.float32)
-        vis = rs.complex_normal(size=(n_vis, len(ip.fixed.polarizations)))
+        vis = rs.complex_normal(size=(n_vis, len(ip.fixed.polarizations))).astype(np.complex64)
 
         template = predict.PredictTemplate(context, np.float32, len(ip.fixed.polarizations))
         fn = template.instantiate(queue, ip, gp, n_vis, len(self.model))
         fn.ensure_all_bound()
         fn.num_vis = n_vis
-        fn.set_coordinates(uv, sub_uv, w_plane)
-        fn.set_vis(vis)
-        fn.set_weights(weights)
+        fn.buffer('uv').set_region(
+            queue, np.concatenate((uv, sub_uv), axis=1), np.s_[:n_vis], np.s_[:])
+        fn.buffer('w_plane').set_region(queue, w_plane, np.s_[:n_vis], np.s_[:])
+        fn.buffer('vis').set_region(queue, vis, np.s_[:n_vis], np.s_[:])
+        fn.buffer('weights').set_region(queue, weights, np.s_[:n_vis], np.s_[:])
         fn.set_sky_model(self.model, self.phase_centre)
         fn.set_w(1.2)
         fn()

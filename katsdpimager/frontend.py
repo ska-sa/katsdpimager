@@ -88,16 +88,11 @@ def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block, wei
     for w_slice in range(reader.num_w_slices(rel_channel)):
         total += reader.len(rel_channel, w_slice)
     bar = progress.make_progressbar('Computing weights', max=total)
-    queue.finish()
     with bar:
         if weight_type != weight.WeightType.NATURAL:
             for w_slice in range(reader.num_w_slices(rel_channel)):
                 for chunk in reader.iter_slice(rel_channel, w_slice, vis_block):
                     imager.grid_weights(chunk.uv, chunk.weights)
-                    # Need to serialise calls to grid, since otherwise the next
-                    # call will overwrite the incoming data before the previous
-                    # iteration is done with it.
-                    queue.finish()
                     bar.next(len(chunk.uv))
         else:
             bar.next(total)
@@ -115,7 +110,6 @@ def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block, wei
 def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block, degrid,
                full_cycle=False, subtract_model=None):
     imager.clear_dirty()
-    queue.finish()
     if full_cycle and not degrid:
         with progress.step('Extract components'):
             imager.model_to_predict()
@@ -130,7 +124,6 @@ def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block
                 imager.model_to_grid(mid_w[w_slice])
         bar = progress.make_progressbar('Grid {}'.format(label), max=N)
         imager.clear_grid()
-        queue.finish()
         with bar:
             for chunk in reader.iter_slice(rel_channel, w_slice, vis_block):
                 imager.num_vis = len(chunk.uv)
@@ -143,11 +136,8 @@ def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block
                 if full_cycle:
                     imager.predict(mid_w[w_slice])
                 imager.grid()
-                # Need to serialise calls to grid, since otherwise the next
-                # call will overwrite the incoming data before the previous
-                # iteration is done with it.
-                queue.finish()
                 bar.next(len(chunk))
+            queue.finish()
 
         with progress.step('IFFT {}'.format(label)):
             imager.grid_to_image(mid_w[w_slice])
@@ -538,7 +528,6 @@ def process_channel(dataset, args, start_channel,
         return
     scale = np.reciprocal(psf_peak)
     imager.scale_dirty(scale)
-    queue.finish()
     imager.dirty_to_psf()
     # dirty_to_psf works by swapping, so re-fetch the buffer pointers
     psf_patch = imager.psf_patch()
@@ -561,7 +550,6 @@ def process_channel(dataset, args, start_channel,
                    'image', 'vis', imager, mid_w, args.vis_block, args.degrid,
                    i != 0, subtract_model)
         imager.scale_dirty(scale)
-        queue.finish()
         if i == 0:
             if writer.needs_fits_grid('grid'):
                 writer.write_fits_grid(
@@ -621,7 +609,6 @@ def process_channel(dataset, args, start_channel,
         writer.write_fits_image(
             'primary_beam', 'primary beam', dataset,
             np.broadcast_to(pbeam, model.shape), image_p, channel)
-        queue.finish()   # Ensure model and dirty are updated before they're written
     else:
         pbeam = np.broadcast_to(np.ones(1, model.dtype), model.shape[-2:])
 
@@ -652,7 +639,6 @@ def process_channel(dataset, args, start_channel,
             model.copy_region(queue, restore_image, np.s_[pol], ())
             restore()
             restore_image.copy_region(queue, model, (), np.s_[pol])
-        queue.finish()
 
     # TODO: do the addition on the GPU
     if not args.host:

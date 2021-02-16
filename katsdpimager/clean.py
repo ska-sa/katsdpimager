@@ -875,7 +875,7 @@ class Clean(accel.OperationSequence):
         peak_value = peak_value_device.get_async(self.command_queue, self._peak_value_host)
         peak_pos = peak_pos_device.get_async(self.command_queue, self._peak_pos_host)
         peak_pixel = peak_pixel_device.get_async(self.command_queue, self._peak_pixel_host)
-        self.command_queue.finish()
+        self.command_queue.finish()   # Wait for all the above gets at once
         if peak_value[0] < threshold:
             return None, None, None
         peak_pos = tuple(int(x) for x in peak_pos)
