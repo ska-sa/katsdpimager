@@ -333,9 +333,6 @@ class Imaging(accel.OperationSequence):
     def model_to_predict(self):
         if self.template.fixed_grid_parameters.degrid:
             raise RuntimeError('Can only use model_to_predict with direct prediction')
-        # Ensure that the previous call has completed (since it copies data to the
-        # GPU asynchronously). TODO: can probably get rid of this later.
-        self._predict.command_queue.finish()
         self._predict.set_sky_image(self._model_components)
 
     @profile_function()

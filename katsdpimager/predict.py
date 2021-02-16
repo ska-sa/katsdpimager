@@ -312,8 +312,12 @@ class Predict(grid.VisOperation):
             (max_sources, 3), np.float32, context=command_queue.context)
         self._host_flux = accel.HostArray(
             (max_sources, template.num_polarizations), np.float32, context=command_queue.context)
+        self._transfer_event = None
 
     def _copy_lmn_flux(self):
+        if self._transfer_event is not None:
+            # Wait for the previous iteration's transfer to complete
+            self._transfer_event.wait()
         self.buffer('lmn').set_region(
             self.command_queue, self._host_lmn,
             np.s_[:self._num_sources], np.s_[:self._num_sources],
@@ -322,6 +326,7 @@ class Predict(grid.VisOperation):
             self.command_queue, self._host_flux,
             np.s_[:self._num_sources], np.s_[:self._num_sources],
             blocking=False)
+        self._transfer_event = self.command_queue.enqueue_marker()
 
     @profile_function()
     def set_sky_model(self, model, phase_centre):
