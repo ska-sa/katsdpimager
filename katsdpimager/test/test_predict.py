@@ -113,7 +113,9 @@ class TestPredict:
         image[:, 1024, 512] = [2.5, 1.5, 0.0]
         image[:, 0, 4095] = [4, 0, 0]
         image[:, 4095, 0] = [5, 1, 2]
-        lmn, flux = predict._extract_sky_image(self.image_parameters, self.grid_parameters, image)
+        coords = [(2048, 2048), (1024, 512), (0, 4095), (4095, 0)]
+        lmn, flux = predict._extract_sky_image(
+            self.image_parameters, self.grid_parameters, image, coords)
         assert_equal(lmn.shape, (4, 3))
         assert_equal(flux.shape, (4, 3))
         np.testing.assert_allclose(lmn[:, 0:2], [
