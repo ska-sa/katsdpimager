@@ -37,6 +37,8 @@ class ImagingTemplate:
             context, clean_parameters, fixed_image_parameters.real_dtype, num_polarizations)
         self.scale = image.ScaleTemplate(
             context, fixed_image_parameters.real_dtype, num_polarizations)
+        self.apply_primary_beam = image.ApplyPrimaryBeamTemplate(
+            context, fixed_image_parameters.real_dtype, num_polarizations)
         if fixed_grid_parameters.degrid:
             self.degridder = grid.DegridderTemplate(
                 context, fixed_image_parameters, fixed_grid_parameters)
@@ -92,6 +94,11 @@ class Imaging(accel.OperationSequence):
             command_queue, image_parameters, allocator)
         self._scale = template.scale.instantiate(
             command_queue, image_shape, allocator)
+        # Thresholds are set later by self.apply_primary_beam
+        self._apply_primary_beam_model = template.apply_primary_beam.instantiate(
+            command_queue, image_shape, 0.0, 0.0, allocator)
+        self._apply_primary_beam_dirty = template.apply_primary_beam.instantiate(
+            command_queue, image_shape, 0.0, np.nan, allocator)
 
         # TODO: handle taper1d/untaper1d as standard slots
         taper1d = accel.SVMArray(
@@ -133,7 +140,9 @@ class Imaging(accel.OperationSequence):
             ('psf_patch', self._psf_patch),
             ('noise_est', self._noise_est),
             ('clean', self._clean),
-            ('scale', self._scale)
+            ('scale', self._scale),
+            ('apply_primary_beam_model', self._apply_primary_beam_model),
+            ('apply_primary_beam_dirty', self._apply_primary_beam_dirty)
         ]
         compounds = {
             'weights': ['weights:weights'],
@@ -144,14 +153,17 @@ class Imaging(accel.OperationSequence):
             'predict_weights': ['predict:weights', 'continuum_predict:weights'],
             'grid': ['gridder:grid', 'grid_to_image:grid'],
             'layer': ['grid_to_image:layer'],
-            'dirty': ['grid_to_image:image', 'noise_est:dirty', 'clean:dirty', 'scale:data'],
-            'model': ['clean:model'],
+            'dirty': ['grid_to_image:image', 'noise_est:dirty', 'clean:dirty', 'scale:data',
+                      'apply_primary_beam_dirty:data'],
+            'model': ['clean:model', 'apply_primary_beam_model:data'],
             'psf': ['clean:psf', 'psf_patch:psf'],
             'tile_max': ['clean:tile_max'],
             'tile_pos': ['clean:tile_pos'],
             'peak_value': ['clean:peak_value'],
             'peak_pos': ['clean:peak_pos'],
-            'peak_pixel': ['clean:peak_pixel']
+            'peak_pixel': ['clean:peak_pixel'],
+            'beam_power': ['apply_primary_beam_model:beam_power',
+                           'apply_primary_beam_dirty:beam_power']
         }
         if grid_parameters.fixed.degrid:
             operations.append(('image_to_grid', self._image_to_grid))
@@ -288,6 +300,15 @@ class Imaging(accel.OperationSequence):
         self._scale()
 
     @profile_function()
+    def apply_primary_beam(self, threshold):
+        """Applies primary beam power to both model and dirty images."""
+        self.ensure_all_bound()
+        self._apply_primary_beam_model.threshold = threshold
+        self._apply_primary_beam_model()
+        self._apply_primary_beam_dirty.threshold = threshold
+        self._apply_primary_beam_dirty()
+
+    @profile_function()
     def dirty_to_psf(self):
         dirty = self.buffer('dirty')
         psf = self.buffer('psf')
@@ -336,6 +357,7 @@ class ImagingHost:
         self._dirty = np.empty(self._grid.shape, image_parameters.fixed.real_dtype)
         self._model = np.empty(self._grid.shape, image_parameters.fixed.real_dtype)
         self._psf = np.empty(self._grid.shape, image_parameters.fixed.real_dtype)
+        self._beam_power = np.empty(self._grid.shape[1:], image_parameters.fixed.real_dtype)
         self._grid_to_image = image.GridToImageHost(
             self._grid, self._layer, self._dirty,
             self._gridder.kernel.taper(image_parameters.pixels), lm_scale, lm_bias)
@@ -357,7 +379,8 @@ class ImagingHost:
             'dirty': self._dirty,
             'model': self._model,
             'grid': self._grid,
-            'weights_grid': self._weights_grid
+            'weights_grid': self._weights_grid,
+            'beam_power': self._beam_power
         }
         if self._degrid is not None:
             self._buffer['degrid'] = self._degrid
@@ -440,6 +463,13 @@ class ImagingHost:
 
     def scale_dirty(self, scale_factor):
         self._dirty *= scale_factor[:, np.newaxis, np.newaxis]
+
+    def apply_primary_beam(self, threshold):
+        mask = (self._beam_power < threshold)[np.newaxis, ...]
+        self._model /= self._beam_power
+        self._model[mask] = 0.0
+        self._dirty /= self._beam_power
+        self._dirty[mask] = np.nan
 
     def dirty_to_psf(self):
         self._psf[:] = self._dirty
