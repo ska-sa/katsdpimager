@@ -110,6 +110,14 @@ def write_fits_image(dataset, image, image_parameters, filename, channel,
     extra_fits_headers : mapping, optional
         Extra headers to add to the FITS headers present.
 
+    Returns
+    -------
+    image
+        Image data that is written to the file (in the order expected by
+        :mod:`astropy.io.fits`).
+    header
+        FITS headers.
+
     Raises
     ------
     ValueError
@@ -176,6 +184,12 @@ def write_fits_image(dataset, image, image_parameters, filename, channel,
         header.update(extra_fits_headers)
 
     # l axis is reversed, because RA increases right-to-left.
+    # The np.newaxis adds an axis for frequency. While it's not required for
+    # the FITS file to be valid (it's legal for the WCS transformations to
+    # reference additional virtual axes), aplpy 1.1.1 doesn't handle it
+    # (https://github.com/aplpy/aplpy/issues/350).
+    image = image[np.newaxis, :, :, ::-1]
+
     # Explicitly converting to big-endian has two advantages:
     # 1. It returns a contiguous array, which allows for a much faster path
     #    through writeto.
@@ -183,13 +197,10 @@ def write_fits_image(dataset, image, image_parameters, filename, channel,
     #    big endian, write, and convert back again.
     # The disadvantage is an increase in memory usage.
     #
-    # The np.newaxis adds an axis for frequency. While it's not required for
-    # the FITS file to be valid (it's legal for the WCS transformations to
-    # reference additional virtual axes), aplpy 1.1.1 doesn't handle it
-    # (https://github.com/aplpy/aplpy/issues/350).
-    image = np.require(image[np.newaxis, :, :, ::-1], image.dtype.newbyteorder('>'), 'C')
-    hdu = fits.PrimaryHDU(image, header)
+    image_be = np.require(image, image.dtype.newbyteorder('>'), 'C')
+    hdu = fits.PrimaryHDU(image_be, header)
     hdu.writeto(filename, overwrite=True)
+    return image, header
 
 
 def _split_array(x, dtype):

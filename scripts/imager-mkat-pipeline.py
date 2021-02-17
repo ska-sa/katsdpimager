@@ -90,20 +90,26 @@ class Writer(frontend.Writer):
         os.mkdir(tmp_dir)
         try:
             with progress.step('Write {}'.format(description)):
-                katsdpimager.io.write_fits_image(dataset, image, image_parameters, filename,
-                                                 channel, beam, bunit, self.extra_fits_headers)
+                fits_image, fits_headers = katsdpimager.io.write_fits_image(
+                    dataset, image, image_parameters, filename,
+                    channel, beam, bunit, self.extra_fits_headers)
             with progress.step('Write thumbnail'):
+                hdu = fits.PrimaryHDU(fits_image, fits_headers)
                 with profile(
                     'katsdpimageutils.render.write_image',
                     labels={'filename': filename + '.tnail.png'}
                 ):
                     katsdpimageutils.render.write_image(
-                        filename, filename + '.tnail.png',
+                        hdu, filename + '.tnail.png',
                         width=650, height=500
                     )
             with open(os.path.join(tmp_dir, 'metadata.json'), 'w') as f:
                 json.dump(metadata, f, allow_nan=False, indent=2)
             os.rename(tmp_dir, output_dir)
+            # Free some things ahead of the gc.collect below
+            del hdu
+            del fits_image
+            del fits_headers
         except Exception:
             # Make a best effort to clean up
             shutil.rmtree(tmp_dir, ignore_errors=True)
