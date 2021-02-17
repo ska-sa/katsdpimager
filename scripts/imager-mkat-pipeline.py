@@ -58,6 +58,12 @@ class Writer(frontend.Writer):
         sub_key = (dataset.raw_target.description, channel)
         return self.telstate.get_indexed('status', sub_key) is not None
 
+    def needs_fits_image(self, name):
+        return name == 'clean'
+
+    def needs_fits_grid(self, name):
+        return False
+
     @profile_function(labels=['name', 'channel'])
     def write_fits_image(self, name, description, dataset, image, image_parameters, channel,
                          beam=None, bunit='Jy/beam'):

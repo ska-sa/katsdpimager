@@ -25,6 +25,15 @@ class Writer(frontend.Writer):
         self.extra_fits_headers['HISTORY'] = \
             'Command line options: ' + ' '.join(shlex.quote(arg) for arg in options)
 
+    def needs_fits_image(self, name):
+        if name == 'clean':
+            return True
+        else:
+            return getattr(self.args, 'write_' + name) is not None
+
+    def needs_fits_grid(self, name):
+        return getattr(self.args, 'write_' + name) is not None
+
     def write_fits_image(self, name, description, dataset, image, image_parameters, channel,
                          beam=None, bunit='Jy/beam'):
         if name == 'clean':
