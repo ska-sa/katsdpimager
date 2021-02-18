@@ -7,10 +7,12 @@ import math
 import os
 import tempfile
 from typing import List, Iterable
+import warnings
 
 import numpy as np
 import numba
 from astropy import units
+import astropy.wcs
 import katsdpsigproc.accel as accel
 
 from . import (
@@ -630,6 +632,12 @@ def process_channel(dataset, args, start_channel,
 
 @profile_function()
 def run(args, context, queue, dataset, writer):
+    # Workaround for https://github.com/astropy/astropy/issues/10365
+    warnings.filterwarnings(
+        'ignore',
+        message=r'.*Set OBSGEO-. to .* from OBSGEO-\[XYZ\]',
+        category=astropy.wcs.FITSFixedWarning)
+
     # PyCUDA leaks resources that are freed when the corresponding context is
     # not active. We make it active for the rest of the execution to avoid
     # this.
