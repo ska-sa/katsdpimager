@@ -617,8 +617,9 @@ def process_channel(dataset, args, start_channel,
             channel, restoring_beam)
 
     model = imager.buffer('model')
-    # TODO: try to free up most of the memory at this point, to make more
-    # available for the restoring beam.
+    # Try to free up memory for the beam convolution
+    for name in ['weights_grid', 'grid', 'layer', 'psf', 'beam_power']:
+        imager.free_buffer(name)
 
     # Convolve with restoring beam, and add residuals back in
     if args.host:
