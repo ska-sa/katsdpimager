@@ -334,6 +334,7 @@ class Scale(accel.Operation):
     allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
     """
+
     def __init__(self, template, command_queue, shape, allocator=None):
         super().__init__(command_queue, allocator)
         self.template = template
@@ -363,6 +364,97 @@ class Scale(accel.Operation):
                 ],
                 global_size=(accel.roundup(data.shape[2], self.template.wgsx),
                              accel.roundup(data.shape[1], self.template.wgsy)),
+                local_size=(self.template.wgsx, self.template.wgsy)
+            )
+
+
+class AddImageTemplate:
+    """Add one image to another.
+
+    Parameters
+    ----------
+    context : :class:`katsdpsigproc.abc.AbstractContext`
+        Context for which kernels will be compiled
+    dtype : {`np.float32`, `np.float64`}
+        Image precision
+    num_polarizations : int
+        Number of polarizations stored in the image
+    tuning : dict, optional
+        Tuning parameters (currently unused)
+    """
+
+    def __init__(self, context, dtype, num_polarizations, tuning=None):
+        # TODO: autotuning
+        self.context = context
+        self.dtype = np.dtype(dtype)
+        self.num_polarizations = num_polarizations
+        self.wgsx = 16
+        self.wgsy = 16
+        self.program = accel.build(
+            context, "imager_kernels/add_image.mako",
+            {
+                'real_type': katsdpimager.types.dtype_to_ctype(dtype),
+                'wgsx': self.wgsx,
+                'wgsy': self.wgsy,
+                'num_polarizations': num_polarizations
+            },
+            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+
+    def instantiate(self, *args, **kwargs):
+        return AddImage(self, *args, **kwargs)
+
+
+class AddImage(accel.Operation):
+    """Instantiation of :class:`AddImageTemplate`.
+
+    .. rubric:: Slots
+
+    **src** : array of real values
+        Image to add, indexed by polarization, y, x
+    **dest** : array of real values
+        Image to which **src** is added in-place, of the same shape
+
+    Parameters
+    ----------
+    template : :class:`AddImageTemplate`
+        Operation template
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
+        Command queue for the operation
+    shape : tuple of int
+        Shape of the images
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
+        Allocator used to allocate unbound slots
+    """
+
+    def __init__(self, template, command_queue, shape, allocator=None):
+        super().__init__(command_queue, allocator)
+        self.template = template
+        if len(shape) != 3:
+            raise ValueError('Wrong number of dimensions in shape')
+        if shape[0] != template.num_polarizations:
+            raise ValueError('Mismatch in number of polarizations')
+        self.slots['src'] = accel.IOSlot(shape, template.dtype)
+        self.slots['dest'] = accel.IOSlot(shape, template.dtype)
+        self.kernel = template.program.get_kernel('add_image')
+
+    def _run(self):
+        src = self.buffer('src')
+        dest = self.buffer('dest')
+        with profile_device(self.command_queue, 'add_image'):
+            self.command_queue.enqueue_kernel(
+                self.kernel,
+                [
+                    dest.buffer,
+                    src.buffer,
+                    np.int32(dest.padded_shape[2]),
+                    np.int32(dest.padded_shape[1] * dest.padded_shape[2]),
+                    np.int32(src.padded_shape[2]),
+                    np.int32(src.padded_shape[1] * src.padded_shape[2]),
+                    np.int32(src.shape[2]),
+                    np.int32(src.shape[1])
+                ],
+                global_size=(accel.roundup(src.shape[2], self.template.wgsx),
+                             accel.roundup(src.shape[1], self.template.wgsy)),
                 local_size=(self.template.wgsx, self.template.wgsy)
             )
 

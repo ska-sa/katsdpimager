@@ -37,6 +37,8 @@ class ImagingTemplate:
             context, clean_parameters, fixed_image_parameters.real_dtype, num_polarizations)
         self.scale = image.ScaleTemplate(
             context, fixed_image_parameters.real_dtype, num_polarizations)
+        self.add_image = image.AddImageTemplate(
+            context, fixed_image_parameters.real_dtype, num_polarizations)
         self.apply_primary_beam = image.ApplyPrimaryBeamTemplate(
             context, fixed_image_parameters.real_dtype, num_polarizations)
         if fixed_grid_parameters.degrid:
@@ -102,6 +104,8 @@ class Imaging(accel.OperationSequence):
             command_queue, image_parameters, allocator)
         self._scale = template.scale.instantiate(
             command_queue, image_shape, allocator)
+        self._add_image = template.add_image.instantiate(
+            command_queue, image_shape, allocator)
         # Thresholds are set later by self.apply_primary_beam
         self._apply_primary_beam_model = template.apply_primary_beam.instantiate(
             command_queue, image_shape, 0.0, 0.0, allocator)
@@ -156,6 +160,7 @@ class Imaging(accel.OperationSequence):
             ('noise_est', self._noise_est),
             ('clean', self._clean),
             ('scale', self._scale),
+            ('add_image', self._add_image),
             ('apply_primary_beam_model', self._apply_primary_beam_model),
             ('apply_primary_beam_dirty', self._apply_primary_beam_dirty)
         ]
@@ -168,8 +173,8 @@ class Imaging(accel.OperationSequence):
             'grid': ['gridder:grid', 'grid_to_image:grid'],
             'layer': ['grid_to_image:layer'],
             'dirty': ['grid_to_image:image', 'noise_est:dirty', 'clean:dirty', 'scale:data',
-                      'apply_primary_beam_dirty:data'],
-            'model': ['clean:model', 'apply_primary_beam_model:data'],
+                      'add_image:dest', 'apply_primary_beam_dirty:data'],
+            'model': ['clean:model', 'apply_primary_beam_model:data', 'add_image:src'],
             'psf': ['clean:psf', 'psf_patch:psf'],
             'tile_max': ['clean:tile_max'],
             'tile_pos': ['clean:tile_pos'],
@@ -340,6 +345,11 @@ class Imaging(accel.OperationSequence):
         self.ensure_all_bound()
         self._scale.set_scale_factor(scale_factor)
         self._scale()
+
+    @profile_function()
+    def add_model_to_dirty(self):
+        self.ensure_all_bound()
+        self._add_image()
 
     @profile_function()
     def apply_primary_beam(self, threshold):
@@ -528,6 +538,9 @@ class ImagingHost:
 
     def scale_dirty(self, scale_factor):
         self._dirty *= scale_factor[:, np.newaxis, np.newaxis]
+
+    def add_model_to_dirty(self):
+        self._dirty += self._model
 
     def apply_primary_beam(self, threshold):
         mask = (self._beam_power < threshold)[np.newaxis, ...]

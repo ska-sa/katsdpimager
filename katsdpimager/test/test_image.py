@@ -3,6 +3,7 @@
 import math
 
 import numpy as np
+from katsdpsigproc import accel
 from katsdpsigproc.test.test_accel import device_test
 
 from .. import image
@@ -104,6 +105,38 @@ class TestScale:
         fn()
         actual = data.get(command_queue)
         expected = src * scale_factor[:, np.newaxis, np.newaxis]
+        np.testing.assert_allclose(expected, actual)
+
+
+class TestAddImage:
+    @classmethod
+    def override_padding(cls, slot, padded_shape):
+        """Modifies dimensions of a slot to ensure a minimum padding."""
+        for i, size in enumerate(padded_shape):
+            newdim = accel.Dimension(slot.shape[i], min_padded_size=size)
+            slot.dimensions[i].link(newdim)
+
+    @device_test
+    def test(self, context, command_queue):
+        shape = (4, 123, 234)
+        dtype = np.float32
+        rs = np.random.RandomState(1)
+        template = image.AddImageTemplate(context, dtype, shape[0])
+        fn = template.instantiate(command_queue, shape)
+        # Use different padding on src and dest, to check that it doesn't get
+        # mixed up.
+        self.override_padding(fn.slots['src'], (4, 128, 256))
+        self.override_padding(fn.slots['dest'], (4, 135, 240))
+        fn.ensure_all_bound()
+        src = fn.buffer('src')
+        dest = fn.buffer('dest')
+        src_host = rs.uniform(size=shape).astype(np.float32)
+        src.set(command_queue, src_host)
+        dest_host = rs.uniform(size=shape).astype(np.float32)
+        dest.set(command_queue, dest_host)
+        fn()
+        actual = dest.get(command_queue)
+        expected = src_host + dest_host
         np.testing.assert_allclose(expected, actual)
 
 
