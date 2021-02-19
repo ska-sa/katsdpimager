@@ -10,8 +10,6 @@ not supported at all.
 
 The visibilities are assumed to have already been passed through the
 :mod:`preprocess` module, and hence UVW coordinates will be quantised.
-
-.. include:: macros.rst
 """
 
 import logging
@@ -157,7 +155,7 @@ class PredictTemplate:
 
     Parameters
     ----------
-    context : |Context|
+    context : :class:`katsdpsigproc.abc.AbstractContext`
         Context for which kernels will be compiled
     real_dtype : {np.float32, np.float64}
         Data type for internal accumulation of values. This does not affect
@@ -273,7 +271,7 @@ class Predict(grid.VisOperation):
     ----------
     template : :class:`PredictTemplate`
         The template for the operation
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         The command queue for the operation
     image_parameters : :class:`~.ImageParameters`
         Parameters that determine the UVW quantisation
@@ -283,7 +281,7 @@ class Predict(grid.VisOperation):
         Maximum number of visibilities this instance can support
     max_sources : int
         Maximum number of sources this instance can support
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
     """
     def __init__(self, template, command_queue, image_parameters, grid_parameters,

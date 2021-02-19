@@ -113,8 +113,6 @@ devices, and even then may limit the block size.
    gridding radio-telescope data on GPUs. In *Proceedings of the 26th ACM International
    Conference on Supercomputing (ICS '12)*, 321-330.
    http://www.astron.nl/~romein/papers/ICS-12/gridding.pdf
-
-.. include:: macros.rst
 """
 
 import math
@@ -512,7 +510,7 @@ def _autotune_arrays(command_queue, oversample, real_dtype, num_polarizations, b
 
     Parameters
     ----------
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for zeroing the arrays
     oversample : int
         Grid oversampling
@@ -677,13 +675,13 @@ class VisOperation(accel.Operation):
 
     Parameters
     ----------
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for the operation
     num_polarizations : int
         Size of vis buffer on polarization dimension
     max_vis : int
         Number of visibilities that can be supported per kernel invocation
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
     """
     def __init__(self, command_queue, num_polarizations, max_vis, allocator=None):
@@ -749,7 +747,7 @@ class GridDegrid(VisOperation):
     ----------
     template : :class:`GridderTemplate` or :class:`DegridderTemplate`
         Operation template
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for the operation
     array_parameters : :class:`~katsdpimager.parameters.ArrayParameters`
         Array parameters
@@ -759,7 +757,7 @@ class GridDegrid(VisOperation):
         Channel-specific gridding parameters
     max_vis : int
         Number of visibilities that can be supported per kernel invocation
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
 
     Raises
@@ -821,9 +819,9 @@ class Gridder(GridDegrid):
 
         Parameters
         ----------
-        command_queue : |CommandQueue|
+        command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
             Command queue for the operation
-        kernel : :class:`katsdpsigproc.cuda.Kernel` or :class:`katsdpsigproc.opencl.Kernel`
+        kernel : :class:`katsdpsigproc.abc.AbstractKernel`
             Compiled kernel to run
         wgs_x,wgs_y,tile_x,tile_y,bin_size : int
             Tuning parameters (see :class:`GridTemplate`)

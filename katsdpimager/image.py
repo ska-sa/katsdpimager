@@ -1,8 +1,6 @@
 """Kernels for image-domain processing
 
 It also handles conversion between visibility and image planes.
-
-.. include:: macros.rst
 """
 
 import numpy as np
@@ -66,7 +64,7 @@ class _LayerImageTemplate:
 
     Parameters
     ----------
-    context : |Context|
+    context : :class:`katsdpsigproc.abc.AbstractContext`
         Context for which kernels will be compiled
     real_dtype : {`np.float32`, `np.float64`}
         Image type
@@ -105,7 +103,7 @@ class _LayerImage(accel.Operation):
     ----------
     template : :class:`_LayerImageTemplate`
         Operation template
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for the operation
     shape : tuple of int
         Shape of the image data (polarizations, height, width) - must be square
@@ -115,7 +113,7 @@ class _LayerImage(accel.Operation):
         Bias from scaled pixel coordinates to l/m coordinates
     kernel_name : str
         Name of the kernel function
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
 
     Raises
@@ -188,7 +186,7 @@ class LayerToImageTemplate(_LayerImageTemplate):
 
     Parameters
     ----------
-    context : |Context|
+    context : :class:`katsdpsigproc.abc.AbstractContext`
         Context for which kernels will be compiled
     real_dtype : {`np.float32`, `np.float64`}
         Image type
@@ -211,7 +209,7 @@ class LayerToImage(_LayerImage):
     ----------
     template : :class:`LayerToImageTemplate`
         Operation template
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for the operation
     shape : tuple of int
         Shape of the data (must be square)
@@ -219,7 +217,7 @@ class LayerToImage(_LayerImage):
         Scale factor from pixel coordinates to l/m coordinates
     lm_bias : float
         Bias from scaled pixel coordinates to l/m coordinates
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
 
     Raises
@@ -237,7 +235,7 @@ class ImageToLayerTemplate(_LayerImageTemplate):
 
     Parameters
     ----------
-    context : |Context|
+    context : :class:`katsdpsigproc.abc.AbstractContext`
         Context for which kernels will be compiled
     real_dtype : {`np.float32`, `np.float64`}
         Image type
@@ -260,7 +258,7 @@ class ImageToLayer(_LayerImage):
     ----------
     template : :class:`ImageToLayerTemplate`
         Operation template
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for the operation
     shape : tuple of int
         Shape of the image as (polarizations, height, width) - must be square
@@ -268,7 +266,7 @@ class ImageToLayer(_LayerImage):
         Scale factor from pixel coordinates to l/m coordinates
     lm_bias : float
         Bias from scaled pixel coordinates to l/m coordinates
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
 
     Raises
@@ -286,7 +284,7 @@ class ScaleTemplate:
 
     Parameters
     ----------
-    context : |Context|
+    context : :class:`katsdpsigproc.abc.AbstractContext`
         Context for which kernels will be compiled
     dtype : {`np.float32`, `np.float64`}
         Image precision
@@ -329,11 +327,11 @@ class Scale(accel.Operation):
     ----------
     template : :class:`ScaleTemplate`
         Operation template
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for the operation
     shape : tuple of int
         Shape of the data.
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
     """
     def __init__(self, template, command_queue, shape, allocator=None):
@@ -374,7 +372,7 @@ class ApplyPrimaryBeamTemplate:
 
     Parameters
     ----------
-    context : |Context|
+    context : :class:`katsdpsigproc.abc.AbstractContext`
         Context for which kernels will be compiled
     dtype : {`np.float32`, `np.float64`}
         Image precision
@@ -419,7 +417,7 @@ class ApplyPrimaryBeam(accel.Operation):
     ----------
     template : :class:`ApplyPrimaryBeamTemplate`
         Operation template
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for the operation
     shape : tuple of int
         Shape of the data.
@@ -428,7 +426,7 @@ class ApplyPrimaryBeam(accel.Operation):
         `replacement` instead of divided by the primary beam power
     replacement : float
         Substitute value for regions where beam power is below `threshold`
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
     """
 
@@ -481,7 +479,7 @@ class GridImageTemplate:
 
     Parameters
     ----------
-    context : |Context|
+    context : :class:`katsdpsigproc.abc.AbstractContext`
         Context for which kernels will be compiled
     real_dtype : {`np.float32`, `np.float64`}
         Precision
@@ -532,7 +530,7 @@ class GridToImage(accel.OperationSequence):
         See :class:`LayerToImage`
     fft_plan : :class:`fft.FftTemplate`
         See :meth:`GridImageTemplate.make_fft_plan`
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
     """
     def __init__(self, template, command_queue, shape_grid,
@@ -599,7 +597,7 @@ class ImageToGrid(accel.OperationSequence):
         See :class:`ImageToLayer`
     fft_plan : :class:`fft.FftTemplate`
         See :meth:`GridImageTemplate.make_fft_plan`
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
     """
     def __init__(self, template, command_queue, shape_grid,

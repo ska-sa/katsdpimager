@@ -11,8 +11,6 @@ The GPU implementation currently round-trips to the CPU on each minor cycle.
 It could be done entirely on the GPU, but round-tripping will make it easier
 to put in a threshold later. It should still be possible to do batches of
 minor cycles if the launch overheads become an issue.
-
-.. include:: macros.rst
 """
 
 import math
@@ -42,7 +40,7 @@ class PsfPatchTemplate:
 
     Parameters
     ----------
-    context : |Context|
+    context : :class:`katsdpsigproc.abc.AbstractContext`
         Context for which kernels will be compiled
     dtype : {`np.float32`, `np.float64`}
         Precision of image
@@ -94,11 +92,11 @@ class PsfPatch(accel.Operation):
     ----------
     template : :class:`PsfPatchTemplate`
         Operation template
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for the operation
     shape : tuple of ints
         Shape for the PSF
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
     """
 
@@ -215,7 +213,7 @@ class NoiseEstTemplate:
 
     Parameters
     ----------
-    context : |Context|
+    context : :class:`katsdpsigproc.abc.AbstractContext`
         Context for which kernels will be compiled
     dtype : {`np.float32`, `np.float64`}
         Image precision
@@ -263,13 +261,13 @@ class NoiseEst(accel.Operation):
     ----------
     template : :class:`NoiseEstTemplate`
         Operation template
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for the operation
     image_shape : tuple of ints
         Shape for the dirty image
     border : float
         Distance from each edge of dirty image to ignore in ranking, as fraction of image size
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
     """
 
@@ -365,7 +363,7 @@ class _UpdateTilesTemplate:
 
     Parameters
     ----------
-    context : |Context|
+    context : :class:`katsdpsigproc.abc.AbstractContext`
         Context for which kernels will be compiled
     dtype : {`np.float32`, `np.float64`}
         Precision of image
@@ -418,13 +416,13 @@ class _UpdateTiles(accel.Operation):
     ----------
     template : :class:`_UpdateTilesTemplate`
         Operation template
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for the operation
     image_shape : tuple of ints
         Shape for the dirty image
     border : float
         Distance from each edge of dirty image where tiles start, as a fraction of image size
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
     """
 
@@ -491,7 +489,7 @@ class _FindPeakTemplate:
 
     Parameters
     ----------
-    context : |Context|
+    context : :class:`katsdpsigproc.abc.AbstractContext`
         Context for which kernels will be compiled
     dtype : {`np.float32`, `np.float64`}
         Image precision
@@ -542,13 +540,13 @@ class _FindPeak(accel.Operation):
     ----------
     template : :class:`_FindPeakTemplate`
         Operation template
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for the operation
     image_shape : tuple of int
         Shape of the dirty image, as (num_polarizations, height, width)
     tile_shape : tuple of int
         Shape of the tile array, as (height, width)
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
     """
     def __init__(self, template, command_queue, image_shape, tile_shape, allocator=None):
@@ -599,7 +597,7 @@ class _SubtractPsfTemplate:
 
     Parameters
     ----------
-    context : |Context|
+    context : :class:`katsdpsigproc.abc.AbstractContext`
         Context for which kernels will be compiled
     dtype : {`np.float32`, `np.float64`}
         Image precision
@@ -647,7 +645,7 @@ class _SubtractPsf(accel.Operation):
     ----------
     template : :class:`_SubtractPsfTemplate`
         Operation template
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for the operation
     loop_gain : float
         Scale factor for subtraction. The PSF is scaled by both `loop_gain` and
@@ -656,7 +654,7 @@ class _SubtractPsf(accel.Operation):
         Shape for the dirty and model images, as (num_polarizations, height, width)
     psf_shape : tuple of int
         Shape for the point spread function, as (num_polarizations, height, width)
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
 
     Raises
@@ -737,7 +735,7 @@ class CleanTemplate:
 
     Parameters
     ----------
-    context : |Context|
+    context : :class:`katsdpsigproc.abc.AbstractContext`
         Context for which kernels will be compiled
     clean_parameters : :class:`katsdpimager.parameters.CleanParameters`
         Command-line parameters for CLEAN
@@ -790,11 +788,11 @@ class Clean(accel.OperationSequence):
     ----------
     template : :class:`_UpdateTilesTemplate`
         Operation template
-    command_queue : |CommandQueue|
+    command_queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
         Command queue for the operation
     image_parameters : :class:`katsdpimager.parameters.ImageParameters`
         Command-line parameters with image properties
-    allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
+    allocator : :class:`~katsdpsigproc.accel.AbstractAllocator`, optional
         Allocator used to allocate unbound slots
 
     Raises
