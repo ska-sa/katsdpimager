@@ -153,10 +153,8 @@ class Fftshift(accel.Operation):
 class FftTemplate:
     r"""Operation template for a forward or reverse FFT. The transformation is
     done over the last N dimensions, with the remaining dimensions for batching
-    multiple arrays to be transformed. Dimensions before the first N must have
-    consistent padding between the source and destination, and it is
-    recommended to have no padding at all since the padding arrays are also
-    transformed.
+    multiple arrays to be transformed. Dimensions before the first N must not
+    be padded.
 
     This template bakes in more information than most (data shapes), which is
     due to constraints in CUFFT.
@@ -191,8 +189,14 @@ class FftTemplate:
     """
     def __init__(self, context, N, shape, dtype_src, dtype_dest,
                  padded_shape_src, padded_shape_dest, tuning=None):
-        if padded_shape_src[:-N] != padded_shape_dest[:-N]:
-            raise ValueError('Source and destination padding does not match on batch dimensions')
+        if len(padded_shape_src) != len(shape):
+            raise ValueError('padded_shape_src and shape must have same length')
+        if len(padded_shape_dest) != len(shape):
+            raise ValueError('padded_shape_dest and shape must have same length')
+        if padded_shape_src[:-N] != shape[:-N]:
+            raise ValueError('Source must not be padded on batch dimensions')
+        if padded_shape_dest[:-N] != shape[:-N]:
+            raise ValueError('Destination must not be padded on batch dimensions')
         self.context = context
         self.shape = shape
         self.dtype_src = np.dtype(dtype_src)

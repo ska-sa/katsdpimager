@@ -53,7 +53,7 @@ class TestFft:
         rs = RandomState(1)
         template = fft.FftTemplate(
             context, 2, (3, 2, 16, 48), np.complex64, np.complex64,
-            (4, 5, 24, 64), (4, 5, 20, 48))
+            (3, 2, 24, 64), (3, 2, 20, 48))
         fn = template.instantiate(command_queue, fft.FFT_FORWARD,
                                   allocator=accel.SVMAllocator(context))
         fn.ensure_all_bound()
@@ -99,22 +99,22 @@ class TestFft:
     @device_test
     @cuda_test
     def test_r2c_even(self, context, command_queue):
-        self._test_r2c(context, command_queue, 2, (3, 2, 16, 48), (4, 5, 24, 64), (4, 5, 20, 27))
+        self._test_r2c(context, command_queue, 2, (3, 2, 16, 48), (3, 2, 24, 64), (3, 2, 20, 27))
 
     @device_test
     @cuda_test
     def test_r2c_odd(self, context, command_queue):
-        self._test_r2c(context, command_queue, 2, (3, 2, 15, 47), (4, 5, 23, 63), (4, 5, 17, 24))
+        self._test_r2c(context, command_queue, 2, (3, 2, 15, 47), (3, 2, 23, 63), (3, 2, 17, 24))
 
     @device_test
     @cuda_test
     def test_c2r_even(self, context, command_queue):
-        self._test_c2r(context, command_queue, 2, (3, 2, 16, 48), (4, 5, 20, 27), (4, 5, 24, 64))
+        self._test_c2r(context, command_queue, 2, (3, 2, 16, 48), (3, 2, 20, 27), (3, 2, 24, 64))
 
     @device_test
     @cuda_test
     def test_c2r_odd(self, context, command_queue):
-        self._test_c2r(context, command_queue, 2, (3, 2, 15, 47), (4, 5, 17, 24), (4, 5, 23, 63))
+        self._test_c2r(context, command_queue, 2, (3, 2, 15, 47), (3, 2, 17, 24), (3, 2, 23, 63))
 
     @device_test
     @cuda_test
@@ -122,7 +122,7 @@ class TestFft:
         rs = RandomState(1)
         template = fft.FftTemplate(
             context, 2, (3, 2, 16, 48), np.complex64, np.complex64,
-            (4, 5, 24, 64), (4, 5, 20, 48))
+            (3, 2, 24, 64), (3, 2, 20, 48))
         fn = template.instantiate(command_queue, fft.FFT_INVERSE,
                                   allocator=accel.SVMAllocator(context))
         fn.ensure_all_bound()
