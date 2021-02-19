@@ -1,11 +1,14 @@
-"""Utilities to wrap skcuda.fft for imaging purposes
+"""Utilities to wrap skcuda.fft for imaging purposes.
 
 .. include:: macros.rst
 """
 
+import threading
+
 import numpy as np
 import pkg_resources
 import skcuda.fft
+import skcuda.cufft
 from katsdpsigproc import accel
 
 import katsdpimager.types
@@ -155,8 +158,8 @@ class FftTemplate:
     recommended to have no padding at all since the padding arrays are also
     transformed.
 
-    This template bakes in more information than most (command queue and data
-    shapes), which is due to constraints in CUFFT.
+    This template bakes in more information than most (data shapes), which is
+    due to constraints in CUFFT.
 
     The template can specify real->complex, complex->real, or
     complex->complex. In the last case, the same template can be used to
@@ -169,8 +172,8 @@ class FftTemplate:
 
     Parameters
     ----------
-    command_queue : :class:`katsdpsigproc.cuda.CommandQueue`
-        Command queue for the operation
+    context : :class:`katsdpsigproc.cuda.Context`
+        Context for the operation
     N : int
         Number of dimensions for the transform
     shape : tuple
@@ -186,11 +189,11 @@ class FftTemplate:
     tuning : dict, optional
         Tuning parameters (currently unused)
     """
-    def __init__(self, command_queue, N, shape, dtype_src, dtype_dest,
+    def __init__(self, context, N, shape, dtype_src, dtype_dest,
                  padded_shape_src, padded_shape_dest, tuning=None):
         if padded_shape_src[:-N] != padded_shape_dest[:-N]:
             raise ValueError('Source and destination padding does not match on batch dimensions')
-        self.command_queue = command_queue
+        self.context = context
         self.shape = shape
         self.dtype_src = np.dtype(dtype_src)
         self.dtype_dest = np.dtype(dtype_dest)
@@ -200,18 +203,23 @@ class FftTemplate:
         # instead of the requested one, if dimensions are up to 1920. There is
         # a patch, but there is no query to detect whether it has been
         # applied.
-        self.needs_synchronize_workaround = any(x <= 1920 for x in shape[:N])
+        self.needs_synchronize_workaround = (
+            skcuda.cufft.cufftGetVersion() < 8000 and any(x <= 1920 for x in shape[:N])
+        )
         batches = int(np.product(padded_shape_src[:-N]))
-        with command_queue.context:
+        with context:
             self.plan = skcuda.fft.Plan(
                 shape[-N:], dtype_src, dtype_dest, batches,
-                stream=command_queue._pycuda_stream,
                 inembed=np.array(padded_shape_src[-N:], np.int32),
                 istride=1,
                 idist=int(np.product(padded_shape_src[-N:])),
                 onembed=np.array(padded_shape_dest[-N:], np.int32),
                 ostride=1,
-                odist=int(np.product(padded_shape_dest[-N:])))
+                odist=int(np.product(padded_shape_dest[-N:])),
+                auto_allocate=False)
+        # The stream and work area are associated with the plan rather than
+        # the execution, so we need to serialise executions.
+        self.lock = threading.RLock()
 
     def instantiate(self, *args, **kwargs):
         return Fft(self, *args, **kwargs)
@@ -226,9 +234,14 @@ class Fft(accel.Operation):
         Input data
     **dest**
         Output data
+    **work_area**
+        Scratch area for work. The contents should not be used; it is made
+        available so that it can be aliased with other scratch areas.
 
     Parameters
     ----------
+    command_queue : :class:`katsdpsigproc.cuda.CommandQueue`
+        Command queue for the operation
     template : :class:`FftTemplate`
         Operation template
     mode : {:data:`FFT_FORWARD`, :data:`FFT_INVERSE`}
@@ -236,8 +249,8 @@ class Fft(accel.Operation):
     allocator : :class:`DeviceAllocator` or :class:`SVMAllocator`, optional
         Allocator used to allocate unbound slots
     """
-    def __init__(self, template, mode, allocator=None):
-        super().__init__(template.command_queue, allocator)
+    def __init__(self, template, command_queue, mode, allocator=None):
+        super().__init__(command_queue, allocator)
         self.template = template
         src_shape = list(template.shape)
         dest_shape = list(template.shape)
@@ -255,19 +268,24 @@ class Fft(accel.Operation):
                      for d in zip(dest_shape, template.padded_shape_dest)]
         self.slots['src'] = accel.IOSlot(src_dims, template.dtype_src)
         self.slots['dest'] = accel.IOSlot(dest_dims, template.dtype_dest)
+        self.slots['work_area'] = accel.IOSlot((template.plan.worksize,), np.uint8)
         self.mode = mode
 
     def _run(self):
         src_buffer = self.buffer('src')
         dest_buffer = self.buffer('dest')
-        context = self.template.command_queue.context
-        with context:
+        work_area_buffer = self.buffer('work_area')
+        context = self.command_queue.context
+        with context, self.template.lock:
+            skcuda.cufft.cufftSetStream(self.template.plan.handle,
+                                        self.command_queue._pycuda_stream.handle)
+            self.template.plan.set_work_area(_GpudataWrapper(work_area_buffer))
             if self.mode == FFT_FORWARD:
-                with profile_device(self.template.command_queue, 'fft'):
+                with profile_device(self.command_queue, 'fft'):
                     skcuda.fft.fft(_GpudataWrapper(src_buffer), _GpudataWrapper(dest_buffer),
                                    self.template.plan)
             else:
-                with profile_device(self.template.command_queue, 'ifft'):
+                with profile_device(self.command_queue, 'ifft'):
                     skcuda.fft.ifft(_GpudataWrapper(src_buffer), _GpudataWrapper(dest_buffer),
                                     self.template.plan)
             if self.template.needs_synchronize_workaround:

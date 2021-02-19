@@ -321,8 +321,8 @@ class ConvolveBeamTemplate:
 
     Parameters
     ----------
-    command_queue : |CommandQueue|
-        Command queue for the operation
+    context : :class:`katsdpsigproc.abc.AbstractContext`
+        Context for the operation
     shape : tuple
         (height, width) of the image
     dtype : {`numpy.float32`, `numpy.float64`}
@@ -336,7 +336,7 @@ class ConvolveBeamTemplate:
     tuning : dict, optional
         Tuning parameters (currently unused)
     """
-    def __init__(self, command_queue, shape, dtype,
+    def __init__(self, context, shape, dtype,
                  padded_shape_image=None, padded_shape_fourier=None, tuning=None):
         if padded_shape_image is None:
             padded_shape_image = tuple(shape)
@@ -347,11 +347,11 @@ class ConvolveBeamTemplate:
         self.dtype = np.dtype(dtype)
         self.shape = shape
         complex_dtype = katsdpimager.types.real_to_complex(self.dtype)
-        self.fft = fft.FftTemplate(command_queue, 2, shape, dtype, complex_dtype,
+        self.fft = fft.FftTemplate(context, 2, shape, dtype, complex_dtype,
                                    padded_shape_image, padded_shape_fourier)
-        self.ifft = fft.FftTemplate(command_queue, 2, shape, complex_dtype, dtype,
+        self.ifft = fft.FftTemplate(context, 2, shape, complex_dtype, dtype,
                                     padded_shape_fourier, padded_shape_image)
-        self.fourier_beam = FourierBeamTemplate(command_queue.context, dtype, tuning)
+        self.fourier_beam = FourierBeamTemplate(context, dtype, tuning)
 
     def instantiate(self, *args, **kwargs):
         return ConvolveBeam(self, *args, **kwargs)
@@ -373,11 +373,11 @@ class ConvolveBeam(accel.OperationSequence):
     beam : :class:`Beam`
         Restoring beam. It must be set before invoking the operation.
     """
-    def __init__(self, template, allocator=None):
-        self._fft = template.fft.instantiate(fft.FFT_FORWARD, allocator=allocator)
-        self._ifft = template.ifft.instantiate(fft.FFT_INVERSE, allocator=allocator)
+    def __init__(self, template, command_queue, allocator=None):
+        self._fft = template.fft.instantiate(command_queue, fft.FFT_FORWARD, allocator=allocator)
+        self._ifft = template.ifft.instantiate(command_queue, fft.FFT_INVERSE, allocator=allocator)
         self._fourier_beam = template.fourier_beam.instantiate(
-            template.fft.command_queue, template.shape, allocator=allocator)
+            command_queue, template.shape, allocator=allocator)
         operations = [
             ('fft', self._fft),
             ('fourier_beam', self._fourier_beam),
@@ -388,7 +388,7 @@ class ConvolveBeam(accel.OperationSequence):
             'fourier': ['fft:dest', 'ifft:src', 'fourier_beam:data']
         }
         super().__init__(
-            template.fft.command_queue, operations, compounds, allocator=allocator)
+            command_queue, operations, compounds, allocator=allocator)
 
     @property
     def beam(self):

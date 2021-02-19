@@ -599,7 +599,8 @@ def process_channel(dataset, args, start_channel,
     if args.host:
         beam.convolve_beam(model, restoring_beam, model)
     else:
-        restore = beam.ConvolveBeamTemplate(queue, model.shape[1:], model.dtype).instantiate()
+        restore = beam.ConvolveBeamTemplate(
+            context, model.shape[1:], model.dtype).instantiate(queue)
         restore.beam = restoring_beam
         restore.ensure_all_bound()
         restore_image = restore.buffer('image')

@@ -52,9 +52,10 @@ class TestFft:
     def test_forward(self, context, command_queue):
         rs = RandomState(1)
         template = fft.FftTemplate(
-            command_queue, 2, (3, 2, 16, 48), np.complex64, np.complex64,
+            context, 2, (3, 2, 16, 48), np.complex64, np.complex64,
             (4, 5, 24, 64), (4, 5, 20, 48))
-        fn = template.instantiate(fft.FFT_FORWARD, allocator=accel.SVMAllocator(context))
+        fn = template.instantiate(command_queue, fft.FFT_FORWARD,
+                                  allocator=accel.SVMAllocator(context))
         fn.ensure_all_bound()
         src = fn.buffer('src')
         dest = fn.buffer('dest')
@@ -67,8 +68,9 @@ class TestFft:
     def _test_r2c(self, context, command_queue, N, shape, padded_shape_src, padded_shape_dest):
         rs = np.random.RandomState(1)
         template = fft.FftTemplate(
-            command_queue, N, shape, np.float32, np.complex64, padded_shape_src, padded_shape_dest)
-        fn = template.instantiate(fft.FFT_FORWARD, allocator=accel.SVMAllocator(context))
+            context, N, shape, np.float32, np.complex64, padded_shape_src, padded_shape_dest)
+        fn = template.instantiate(command_queue, fft.FFT_FORWARD,
+                                  allocator=accel.SVMAllocator(context))
         fn.ensure_all_bound()
         src = fn.buffer('src')
         dest = fn.buffer('dest')
@@ -81,8 +83,9 @@ class TestFft:
     def _test_c2r(self, context, command_queue, N, shape, padded_shape_src, padded_shape_dest):
         rs = np.random.RandomState(1)
         template = fft.FftTemplate(
-            command_queue, N, shape, np.complex64, np.float32, padded_shape_src, padded_shape_dest)
-        fn = template.instantiate(fft.FFT_INVERSE, allocator=accel.SVMAllocator(context))
+            context, N, shape, np.complex64, np.float32, padded_shape_src, padded_shape_dest)
+        fn = template.instantiate(command_queue, fft.FFT_INVERSE,
+                                  allocator=accel.SVMAllocator(context))
         fn.ensure_all_bound()
         src = fn.buffer('src')
         dest = fn.buffer('dest')
@@ -118,9 +121,10 @@ class TestFft:
     def test_inverse(self, context, command_queue):
         rs = RandomState(1)
         template = fft.FftTemplate(
-            command_queue, 2, (3, 2, 16, 48), np.complex64, np.complex64,
+            context, 2, (3, 2, 16, 48), np.complex64, np.complex64,
             (4, 5, 24, 64), (4, 5, 20, 48))
-        fn = template.instantiate(fft.FFT_INVERSE, allocator=accel.SVMAllocator(context))
+        fn = template.instantiate(command_queue, fft.FFT_INVERSE,
+                                  allocator=accel.SVMAllocator(context))
         fn.ensure_all_bound()
         src = fn.buffer('src')
         dest = fn.buffer('dest')

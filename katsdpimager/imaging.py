@@ -67,8 +67,7 @@ class Imaging(accel.OperationSequence):
         # It would be nice if there was a cleaner way to handle this; possibly
         # by deferring creation of the FFT plan until instantiation.
         padded_layer_shape = layer_shape = image_shape[1:]
-        fft_plan = template.grid_image.make_fft_plan(
-            command_queue, layer_shape, padded_layer_shape)
+        fft_plan = template.grid_image.make_fft_plan(layer_shape, padded_layer_shape)
 
         self._gridder = template.gridder.instantiate(
             command_queue,
