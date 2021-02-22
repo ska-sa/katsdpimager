@@ -390,6 +390,19 @@ class Writer:
         return False
 
     @abstractmethod
+    def needs_fits_image(self, name):
+        """Tell the caller whether it wants a call to :meth:`write_fits_image` for `name`.
+
+        The caller may still make the call even if this method returns False.
+        This is just an optimisation hint to avoid the need to retrieve the
+        data if it is not needed.
+        """
+
+    @abstractmethod
+    def needs_fits_grid(self, name):
+        """Like :meth:`needs_fits_image`, but for grids."""
+
+    @abstractmethod
     def write_fits_image(self, name, description, dataset, image, image_parameters, channel,
                          beam=None, bunit='Jy/beam'):
         """Optionally output a FITS image.
