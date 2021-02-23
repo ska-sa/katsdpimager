@@ -70,7 +70,7 @@ def _extract_sky_model(image_parameters, grid_parameters, model, phase_centre):
     return lmn.astype(np.float32), flux.astype(np.float32)
 
 
-def _extract_sky_image(image_parameters, grid_parameters, image, coords):
+def _extract_sky_image(image_parameters, grid_parameters, components):
     """Turn a sky model image into a model for direct prediction.
 
     The return values have the same meanings as for :func:`_extract_sky_model`.
@@ -81,10 +81,9 @@ def _extract_sky_image(image_parameters, grid_parameters, image, coords):
         Image parameters
     grid_parameters : :class:`~.GridParameters`
         Grid parameters for the corresponding UVW coordinates, for aliasing correction.
-    image : array of float
-        P×size×size image
-    coords : iterable[tuple[int, int]]
-        y, x coordinates of potentially non-zero elements of `image`.
+    components : Mapping[tuple[int, int], np.ndarray]
+        CLEAN components, indexed by (y, x) coordinates, with each value being a 1D
+        array of per-polarization values.
 
     Returns
     -------
@@ -94,27 +93,27 @@ def _extract_sky_image(image_parameters, grid_parameters, image, coords):
         Array of shape N×P, containing the Stokes parameters specified by
         `image_parameters` for each source.
     """
-    dtype = image.dtype
-    pols = image.shape[2]
-    # Create a list of non-zero pixels, in the format that np.nonzero would return.
-    # Sorting is not required but should improve memory access patterns.
-    pos = np.array(sorted(coords)).T.copy()
-    N = len(pos[0])
-
+    dtype = image_parameters.fixed.real_dtype
+    pols = len(image_parameters.fixed.polarizations)
+    N = len(components)
     lmn = np.empty((N, 3), np.float32)
     flux = np.empty((N, pols), dtype)
+
     # Note: These are currently done in double precision to avoid cancellation
     # issues in computing n-1.
     pixel_size = float(image_parameters.pixel_size)   # unitless Quantity -> plain float
-    l = (pos[1] - 0.5 * image_parameters.pixels) * pixel_size
-    m = (pos[0] - 0.5 * image_parameters.pixels) * pixel_size
+    x = np.array([pos[1] for pos in components])
+    y = np.array([pos[0] for pos in components])
+    l = (x - 0.5 * image_parameters.pixels) * pixel_size
+    m = (y - 0.5 * image_parameters.pixels) * pixel_size
     n1 = np.sqrt(1.0 - (np.square(l) + np.square(m))) - 1.0
     lmn[:, 0] = l
     lmn[:, 1] = m
     lmn[:, 2] = n1
-    flux = image[:, pos[0], pos[1]].T
+    flux[:] = list(components.values())
     # See :func:`_extract_sky_model` for explanation of this tapering
     taper_scale = float(image_parameters.image_size * grid_parameters.fixed.oversample)
+    # TODO: single precision probably suffices for l and m here
     taper = np.sinc(l / taper_scale) * np.sinc(m / taper_scale)
     flux *= taper[:, np.newaxis]
     return lmn, flux
@@ -323,20 +322,19 @@ class Predict(grid.VisOperation):
         self._num_sources = N
 
     @profile_function()
-    def set_sky_image(self, image, coords):
-        """Set the sky model from a model image.
+    def set_sky_image(self, components):
+        """Set the sky model from a component list.
 
         This extracts components from the image, so if the image is altered a
         subsequent call is needed.
 
         Parameters
         ----------
-        image : array-like
-            Image with dimensions polarization, y, x
-        coords : iterable[tuple[int, int]]
-            y, x coordinates of potentially non-zero pixels in `image`
+        components : Mapping[tuple[int, int], np.ndarray]
+            CLEAN components, indexed by (y, x) coordinates, with each value being a 1D
+            array of per-polarization values.
         """
-        lmn, flux = _extract_sky_image(self.image_parameters, self.grid_parameters, image, coords)
+        lmn, flux = _extract_sky_image(self.image_parameters, self.grid_parameters, components)
         N = len(lmn)
         if N > self.max_sources:
             raise ValueError('too many components ({} > {})'.format(N, self.max_sources))
@@ -456,15 +454,15 @@ class PredictHost(grid.VisOperationHost):
                                                  self.grid_parameters,
                                                  model, phase_centre)
 
-    def set_sky_image(self, image, coords):
+    def set_sky_image(self, components):
         """Set the sky model from an image.
 
-        This copies data, so if `image` is altered, a subsequent
+        This copies data, so if `components` is altered, a subsequent
         call is needed to update the internal structures.
         """
         self.lmn, self.flux = _extract_sky_image(self.image_parameters,
                                                  self.grid_parameters,
-                                                 image, coords)
+                                                 components)
 
     def __call__(self):
         """Subtract predicted visibilities from existing values"""
