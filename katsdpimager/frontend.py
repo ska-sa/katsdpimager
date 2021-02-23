@@ -594,11 +594,14 @@ def process_channel(dataset, args, start_channel,
         pbeam = pbeam_model.sample(start, image_p.pixel_size, image_p.pixels,
                                    start, image_p.pixel_size, image_p.pixels,
                                    [image_p.wavelength])
-        # Ignore polarization and length-1 frequency axis; square to
-        # convert voltage to power.
-        pbeam = np.square(np.abs(pbeam[0, 0, 0]))
-        # TODO: make it the right precision from the beginning (which should
-        # speed up interpolation when it is single-precision).
+        # Ignore polarization and length-1 frequency axis.
+        pbeam = pbeam[0, 0, 0]
+        # Square to convert voltage to power.
+        if pbeam.dtype.kind == 'c':
+            pbeam = np.square(pbeam.real) + np.square(pbeam.imag)
+        else:
+            pbeam = np.square(pbeam)
+        # Ensure the units match the destination buffer.
         pbeam = pbeam.astype(imager.buffer('beam_power').dtype, copy=False)
         imager.set_buffer('beam_power', pbeam)
         imager.apply_primary_beam(args.primary_beam_cutoff)
