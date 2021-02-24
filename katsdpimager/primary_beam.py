@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, Sequence, Mapping, Any
 
 import numpy as np
+import numba
 import h5py
 import pkg_resources
 import astropy.units as units
@@ -161,6 +162,43 @@ class BeamModelSet(ABC):
         """
 
 
+@profile_function()
+@numba.njit(parallel=True, nogil=True)
+def _sample_impl(az, el, beam, step, out):
+    """Do linear interpolation of a beam on a 2D grid.
+
+    Parameters
+    ----------
+    az
+        1D array of direction cosines in the azimuth axis
+    el
+        1D array of direction cosines in the elevation axis
+    beam
+        2D array of beam values, with axes for frequency and radius
+    step
+        Increase in radius for each step along the radius axis
+    out
+        Output array, with shape (2, 2, frequency, el, az). Only the
+        [0, 0] and [1, 1] elements (co-pol) are filled in.
+    """
+    pos = 0
+    deltas = np.empty(beam.shape[1] - 1, beam.dtype)
+    for i in range(beam.shape[0]):
+        for j in range(len(deltas)):
+            deltas[j] = beam[i, j + 1] - beam[i, j]
+        for j in numba.prange(len(el)):
+            for k in range(len(az)):
+                radius = np.sqrt(el[j] * el[j] + az[k] * az[k])
+                radius_steps = radius / step
+                pos = np.int_(radius_steps)
+                if pos < len(deltas):
+                    value = beam[i, pos] + deltas[pos] * (radius_steps - pos)
+                else:
+                    value = np.nan
+                out[0, 0, i, j, k] = value
+                out[1, 1, i, j, k] = value
+
+
 class TrivialBeamModel(BeamModel):
     """The simplest possible beam model.
 
@@ -201,18 +239,9 @@ class TrivialBeamModel(BeamModel):
 
         # Interpolate the original data to the new frequencies
         beam = np.apply_along_axis(interp, 0, self._beam, frequencies, self._frequencies)
-        # Interpolate by radius
-        radii = np.arange(beam.shape[1]) * self._step
-        az = az[np.newaxis, :]
-        el = el[:, np.newaxis]
-        eval_radii = np.sqrt(np.square(az) + np.square(el))
-        # Create model with axes for frequency, el, az
-        model = np.apply_along_axis(interp, 1, beam, eval_radii, radii)
-
         # Add polarization dimensions
-        out = np.zeros((2, 2) + model.shape, model.dtype)
-        out[0, 0] = model
-        out[1, 1] = model
+        out = np.zeros((2, 2, len(frequencies), len(el), len(az)), self._beam.dtype)
+        _sample_impl(az, el, beam, self._step, out)
         return out
 
 
