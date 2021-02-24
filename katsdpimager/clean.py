@@ -155,8 +155,6 @@ class PsfPatch(accel.Operation):
                 global_size=(wg_x * self.template.wgsx, wg_y * self.template.wgsy),
                 local_size=(self.template.wgsx, self.template.wgsy)
             )
-        if isinstance(bound, accel.SVMArray):
-            self.command_queue.finish()
         bound.get(self.command_queue, self._bound_host)
         # Turn distances from the centre into a symmetric bounding box size.
         box = 2 * np.max(self._bound_host[: wg_x * wg_y], axis=0) + 1
@@ -344,8 +342,6 @@ class NoiseEst(accel.Operation):
                     global_size=(self._num_tiles_x * self.template.wgsx,
                                  self._num_tiles_y * self.template.wgsy),
                     local_size=(self.template.wgsx, self.template.wgsy))
-            if isinstance(rank, accel.SVMArray):
-                self.command_queue.finish()
             rank.get(self.command_queue, rank_host)
             cur_rank = rank_host.sum()
             if cur_rank < median_rank:
@@ -876,13 +872,10 @@ class Clean(accel.OperationSequence):
         peak_value_device = self.buffer('peak_value')
         peak_pos_device = self.buffer('peak_pos')
         peak_pixel_device = self.buffer('peak_pixel')
-        if (isinstance(peak_value_device, accel.SVMArray)
-                or isinstance(peak_pos_device, accel.SVMArray)):
-            self.command_queue.finish()
         peak_value = peak_value_device.get_async(self.command_queue, self._peak_value_host)
         peak_pos = peak_pos_device.get_async(self.command_queue, self._peak_pos_host)
         peak_pixel = peak_pixel_device.get_async(self.command_queue, self._peak_pixel_host)
-        self.command_queue.finish()
+        self.command_queue.finish()   # Wait for all the above gets at once
         if peak_value[0] < threshold:
             return None, None, None
         peak_pos = tuple(int(x) for x in peak_pos)

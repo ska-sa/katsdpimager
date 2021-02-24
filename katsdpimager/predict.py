@@ -193,12 +193,20 @@ class PredictTemplate:
         # Need at least as many sources as the workgroup size to achieve full
         # throughput.
         num_sources = 1024
-        vis = accel.SVMArray(context, (num_vis, num_polarizations), dtype=np.complex64)
-        uv = accel.SVMArray(context, (num_vis, 4), dtype=np.int16)
-        w_plane = accel.SVMArray(context, (num_vis,), dtype=np.int16)
-        weights = accel.SVMArray(context, (num_vis, num_polarizations), dtype=np.float32)
-        lmn = accel.SVMArray(context, (num_sources, 3), dtype=np.float32)
-        flux = accel.SVMArray(context, (num_sources, num_polarizations), dtype=np.float32)
+        vis = accel.DeviceArray(context, (num_vis, num_polarizations), dtype=np.complex64)
+        uv = accel.DeviceArray(context, (num_vis, 4), dtype=np.int16)
+        w_plane = accel.DeviceArray(context, (num_vis,), dtype=np.int16)
+        weights = accel.DeviceArray(context, (num_vis, num_polarizations), dtype=np.float32)
+        lmn = accel.DeviceArray(context, (num_sources, 3), dtype=np.float32)
+        flux = accel.DeviceArray(context, (num_sources, num_polarizations), dtype=np.float32)
+        # The values don't really matter, but we want to avoid non-finites
+        # which would skew performance.
+        vis.zero(queue)
+        uv.zero(queue)
+        w_plane.zero(queue)
+        weights.zero(queue)
+        lmn.zero(queue)
+        flux.zero(queue)
 
         # The values don't make any difference to auto-tuning; they just affect
         # scale factors that have no impact on control flow.
@@ -247,7 +255,7 @@ class Predict(grid.VisOperation):
     Before using a constructed instance, it's necessary to first
 
     1. Configure the visibilities, by setting :attr:`num_vis` and
-       calling :meth:`set_coordinates`, :meth:`set_vis` and :meth:`set_w`.
+       :meth:`set_w` and populating the visibility-related buffers.
     2. Configure the sources, by calling :meth:`set_sky_model` or
        :meth:`set_sky_image`.
 
@@ -263,8 +271,6 @@ class Predict(grid.VisOperation):
         The statistical weights associated with the visibilities. The input
         visibilities are assumed to be pre-weighted, and the predicted
         visibility is scaled by the weight before subtraction.
-
-    These slots must all be backed by SVM-allocated memory.
 
     Parameters
     ----------
@@ -302,6 +308,25 @@ class Predict(grid.VisOperation):
         self.image_parameters = image_parameters
         self.grid_parameters = grid_parameters
         self._w = 0.0
+        self._host_lmn = accel.HostArray(
+            (max_sources, 3), np.float32, context=command_queue.context)
+        self._host_flux = accel.HostArray(
+            (max_sources, template.num_polarizations), np.float32, context=command_queue.context)
+        self._transfer_event = None
+
+    def _copy_lmn_flux(self):
+        if self._transfer_event is not None:
+            # Wait for the previous iteration's transfer to complete
+            self._transfer_event.wait()
+        self.buffer('lmn').set_region(
+            self.command_queue, self._host_lmn,
+            np.s_[:self._num_sources], np.s_[:self._num_sources],
+            blocking=False)
+        self.buffer('flux').set_region(
+            self.command_queue, self._host_flux,
+            np.s_[:self._num_sources], np.s_[:self._num_sources],
+            blocking=False)
+        self._transfer_event = self.command_queue.enqueue_marker()
 
     @profile_function()
     def set_sky_model(self, model, phase_centre):
@@ -317,9 +342,10 @@ class Predict(grid.VisOperation):
             raise ValueError('too many sources ({} > {})'.format(N, self.max_sources))
         lmn, flux = _extract_sky_model(self.image_parameters, self.grid_parameters,
                                        model, phase_centre)
-        self.buffer('lmn')[:N] = lmn
-        self.buffer('flux')[:N] = flux
+        self._host_lmn[:N] = lmn
+        self._host_flux[:N] = flux
         self._num_sources = N
+        self._copy_lmn_flux()
 
     @profile_function()
     def set_sky_image(self, components):
@@ -339,23 +365,14 @@ class Predict(grid.VisOperation):
         if N > self.max_sources:
             raise ValueError('too many components ({} > {})'.format(N, self.max_sources))
         # TODO: have _extract_sky_image write directly to the buffer
-        self.buffer('lmn')[:N] = lmn
-        self.buffer('flux')[:N] = flux
+        self._host_lmn[:N] = lmn
+        self._host_flux[:N] = flux
         self._num_sources = N
+        self._copy_lmn_flux()
 
     @property
     def num_sources(self):
         return self._num_sources
-
-    def set_weights(self, weights):
-        """Set statistical weights on visibilities.
-
-        Before calling, set :attr:`num_vis`.
-        """
-        N = self.num_vis
-        if len(weights) != N:
-            raise ValueError('Lengths do not match')
-        self.buffer('weights')[:N] = weights
 
     def set_w(self, w):
         """Set the W slice.

@@ -434,19 +434,15 @@ class ConvolutionKernelDevice(ConvolutionKernel):
              grid_parameters.fixed.oversample,
              grid_parameters.fixed.kernel_width + 2 * pad),
             np.complex64)
-        if isinstance(out, accel.SVMArray):
-            host = out
-        else:
-            host = out.empty_like()
+        host = out.empty_like()
         host.fill(0)
         super().__init__(
             image_parameters,
             grid_parameters,
             host[:, :, pad:grid_parameters.fixed.kernel_width + pad]
         )
-        if not isinstance(out, accel.SVMArray):
-            queue = context.create_command_queue()
-            out.set(queue, host)
+        queue = context.create_command_queue()   # TODO: pass one in?
+        out.set(queue, host)
         self.padded_data = out
         self.pad = pad
 
@@ -705,28 +701,6 @@ class VisOperation(accel.Operation):
             raise ValueError('Number of visibilities {} is out of range 0..{}'.format(
                 n, self.max_vis))
         self._num_vis = n
-
-    def set_coordinates(self, uv, sub_uv, w_plane):
-        """Set the UVW coordinates.
-
-        Before calling, first set :attr:`num_vis`.
-        """
-        N = self.num_vis
-        if len(uv) != N or len(sub_uv) != N or len(w_plane) != N:
-            raise ValueError('Lengths do not match')
-        self.buffer('uv')[:N, 0:2] = uv
-        self.buffer('uv')[:N, 2:4] = sub_uv
-        self.buffer('w_plane')[:N] = w_plane
-
-    def set_vis(self, vis):
-        """Set input visibilities.
-
-        Before calling, first set :attr:`num_vis`.
-        """
-        N = self.num_vis
-        if len(vis) != N:
-            raise ValueError('Lengths do not match')
-        self.buffer('vis')[:N] = vis
 
 
 class GridDegrid(VisOperation):
@@ -1007,16 +981,6 @@ class Degridder(GridDegrid):
         self.slots['weights'] = accel.IOSlot(
             (self.max_vis, accel.Dimension(num_polarizations, exact=True)), np.float32)
         self._kernel = self.template.program.get_kernel('degrid')
-
-    def set_weights(self, weights):
-        """Set statistical weights on visibilities.
-
-        Before calling, set :attr:`num_vis`.
-        """
-        N = self.num_vis
-        if len(weights) != N:
-            raise ValueError('Lengths do not match')
-        self.buffer('weights')[:N] = weights
 
     @classmethod
     def static_run(cls, command_queue, kernel,

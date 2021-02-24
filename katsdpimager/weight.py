@@ -279,8 +279,6 @@ class DensityWeights(accel.Operation):
                              accel.roundup(grid.shape[1], self.template.wgs_y)),
                 local_size=(self.template.wgs_x, self.template.wgs_y)
             )
-        if isinstance(sums, accel.SVMArray):
-            self.command_queue.finish()
         sums.get(self.command_queue, self._sums_host)
         rms = np.sqrt(self._sums_host[2]) / self._sums_host[1]
         return rms, rms * np.sqrt(self._sums_host[0])
@@ -374,8 +372,6 @@ class MeanWeight(accel.Operation):
                              accel.roundup(grid.shape[1], self.template.wgs_y)),
                 local_size=(self.template.wgs_x, self.template.wgs_y)
             )
-        if isinstance(sums, accel.SVMArray):
-            self.command_queue.finish()
         sums.get(self.command_queue, self._sums_host)
         return self._sums_host[1] / self._sums_host[0]
 
@@ -472,8 +468,13 @@ class Weights(accel.OperationSequence):
             compounds['grid'].append('grid_weights:grid')
             compounds['uv'] = ['grid_weights:uv']
             compounds['weights'] = ['grid_weights:weights']
+            self._host_uv = accel.HostArray((max_vis, 2), np.int16, context=command_queue.context)
+            self._host_weights = accel.HostArray(
+                (max_vis, grid_shape[0]), np.float32, context=command_queue.context)
         else:
             self._grid_weights = None
+            self._host_uv = None
+            self._host_weights = None
 
         if template.fill is not None:
             self._fill = template.fill.instantiate(
@@ -514,13 +515,10 @@ class Weights(accel.OperationSequence):
         if self._fill is None:
             self.buffer('grid').zero(self.command_queue)
 
-    def grid(self, uv, weights):
+    def grid(self, N):
         self.ensure_all_bound()
         if self._grid_weights is not None:
-            N = len(uv)
             self._grid_weights.num_vis = N
-            self.buffer('uv')[:N, 0:2] = uv
-            self.buffer('weights')[:N] = weights
             return self._grid_weights()
 
     def finalize(self):

@@ -54,47 +54,43 @@ class TestFft:
         template = fft.FftTemplate(
             context, 2, (3, 2, 16, 48), np.complex64, np.complex64,
             (3, 2, 24, 64), (3, 2, 20, 48))
-        fn = template.instantiate(command_queue, fft.FFT_FORWARD,
-                                  allocator=accel.SVMAllocator(context))
+        fn = template.instantiate(command_queue, fft.FFT_FORWARD)
         fn.ensure_all_bound()
         src = fn.buffer('src')
         dest = fn.buffer('dest')
-        src[:] = rs.complex_normal(size=src.shape).astype(np.complex64)
+        src_host = rs.complex_normal(size=src.shape).astype(np.complex64)
+        src.set(command_queue, src_host)
         fn()
-        command_queue.finish()
-        expected = np.fft.fftn(src, axes=(2, 3))
-        np.testing.assert_allclose(expected, dest, rtol=1e-4)
+        expected = np.fft.fftn(src_host, axes=(2, 3))
+        np.testing.assert_allclose(expected, dest.get(command_queue), rtol=1e-4)
 
     def _test_r2c(self, context, command_queue, N, shape, padded_shape_src, padded_shape_dest):
         rs = np.random.RandomState(1)
         template = fft.FftTemplate(
             context, N, shape, np.float32, np.complex64, padded_shape_src, padded_shape_dest)
-        fn = template.instantiate(command_queue, fft.FFT_FORWARD,
-                                  allocator=accel.SVMAllocator(context))
+        fn = template.instantiate(command_queue, fft.FFT_FORWARD)
         fn.ensure_all_bound()
         src = fn.buffer('src')
         dest = fn.buffer('dest')
-        src[:] = rs.standard_normal(src.shape)
+        src_host = rs.standard_normal(src.shape).astype(np.float32)
+        src.set(command_queue, src_host)
         fn()
-        command_queue.finish()
-        expected = np.fft.rfftn(src, axes=(2, 3))
-        np.testing.assert_allclose(expected, dest, rtol=1e-4)
+        expected = np.fft.rfftn(src_host, axes=(2, 3))
+        np.testing.assert_allclose(expected, dest.get(command_queue), rtol=1e-4)
 
     def _test_c2r(self, context, command_queue, N, shape, padded_shape_src, padded_shape_dest):
         rs = np.random.RandomState(1)
         template = fft.FftTemplate(
             context, N, shape, np.complex64, np.float32, padded_shape_src, padded_shape_dest)
-        fn = template.instantiate(command_queue, fft.FFT_INVERSE,
-                                  allocator=accel.SVMAllocator(context))
+        fn = template.instantiate(command_queue, fft.FFT_INVERSE)
         fn.ensure_all_bound()
         src = fn.buffer('src')
         dest = fn.buffer('dest')
-        signal = rs.standard_normal(shape) + 3
-        src[:] = np.fft.rfftn(signal, axes=(2, 3))
+        signal = rs.standard_normal(shape).astype(np.float32) + 3
+        src.set(command_queue, np.fft.rfftn(signal, axes=(2, 3)).astype(np.complex64))
         fn()
-        command_queue.finish()
         expected = signal * shape[2] * shape[3]
-        np.testing.assert_allclose(expected, dest, rtol=1e-4)
+        np.testing.assert_allclose(expected, dest.get(command_queue), rtol=1e-4)
 
     @device_test
     @cuda_test
@@ -123,13 +119,12 @@ class TestFft:
         template = fft.FftTemplate(
             context, 2, (3, 2, 16, 48), np.complex64, np.complex64,
             (3, 2, 24, 64), (3, 2, 20, 48))
-        fn = template.instantiate(command_queue, fft.FFT_INVERSE,
-                                  allocator=accel.SVMAllocator(context))
+        fn = template.instantiate(command_queue, fft.FFT_INVERSE)
         fn.ensure_all_bound()
         src = fn.buffer('src')
         dest = fn.buffer('dest')
-        src[:] = rs.complex_normal(size=src.shape).astype(np.complex64)
+        src_host = rs.complex_normal(size=src.shape).astype(np.complex64)
+        src.set(command_queue, src_host)
         fn()
-        command_queue.finish()
-        expected = np.fft.ifftn(src, axes=(2, 3)) * (src.shape[2] * src.shape[3])
-        np.testing.assert_allclose(expected, dest, rtol=1e-4)
+        expected = np.fft.ifftn(src_host, axes=(2, 3)) * (src.shape[2] * src.shape[3])
+        np.testing.assert_allclose(expected, dest.get(command_queue), rtol=1e-4)

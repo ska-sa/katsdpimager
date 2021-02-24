@@ -88,23 +88,17 @@ def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block, wei
     for w_slice in range(reader.num_w_slices(rel_channel)):
         total += reader.len(rel_channel, w_slice)
     bar = progress.make_progressbar('Computing weights', max=total)
-    queue.finish()
     with bar:
         if weight_type != weight.WeightType.NATURAL:
             for w_slice in range(reader.num_w_slices(rel_channel)):
                 for chunk in reader.iter_slice(rel_channel, w_slice, vis_block):
                     imager.grid_weights(chunk.uv, chunk.weights)
-                    # Need to serialise calls to grid, since otherwise the next
-                    # call will overwrite the incoming data before the previous
-                    # iteration is done with it.
-                    queue.finish()
                     bar.next(len(chunk.uv))
         else:
             bar.next(total)
         noise, normalized_noise = imager.finalize_weights()
         if noise is not None and weight_scale is not None:
             noise *= weight_scale
-        queue.finish()
     if noise is not None:
         logger.info('Thermal RMS noise (from weights): %g', noise)
     logger.info('Normalized thermal RMS noise: %g', normalized_noise)
@@ -115,7 +109,6 @@ def make_weights(queue, reader, rel_channel, imager, weight_type, vis_block, wei
 def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block, degrid,
                full_cycle=False, subtract_model=None):
     imager.clear_dirty()
-    queue.finish()
     if full_cycle and not degrid:
         with progress.step('Extract components'):
             imager.model_to_predict()
@@ -130,7 +123,6 @@ def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block
                 imager.model_to_grid(mid_w[w_slice])
         bar = progress.make_progressbar('Grid {}'.format(label), max=N)
         imager.clear_grid()
-        queue.finish()
         with bar:
             for chunk in reader.iter_slice(rel_channel, w_slice, vis_block):
                 imager.num_vis = len(chunk.uv)
@@ -143,28 +135,36 @@ def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block
                 if full_cycle:
                     imager.predict(mid_w[w_slice])
                 imager.grid()
-                # Need to serialise calls to grid, since otherwise the next
-                # call will overwrite the incoming data before the previous
-                # iteration is done with it.
-                queue.finish()
                 bar.next(len(chunk))
 
         with progress.step('IFFT {}'.format(label)):
             imager.grid_to_image(mid_w[w_slice])
-            queue.finish()
 
 
 @profile_function()
-def extract_psf(psf, psf_patch):
+def extract_psf(queue, psf, psf_patch):
     """Extract the central region of a PSF.
 
-    This function is 2D: the polarization axis must have already been removed.
+    Parameters
+    ----------
+    queue : :class:`katsdpsigproc.abc.AbstractCommandQueue`
+        Command queue for the copy (ignored if `psf` is already on the host)
+    psf : :class:`katsdpsigproc.accel.DeviceArray` or :class:`np.ndarray`
+        Point spread function (shape pols × height × width). Only the first
+        polarization is returned.
+    psf_patch : tuple[int, int]
+        Size to extract, in the y and x directions respectively
     """
-    y0 = (psf.shape[0] - psf_patch[0]) // 2
+    y0 = (psf.shape[1] - psf_patch[0]) // 2
     y1 = y0 + psf_patch[0]
-    x0 = (psf.shape[1] - psf_patch[1]) // 2
+    x0 = (psf.shape[2] - psf_patch[1]) // 2
     x1 = x0 + psf_patch[1]
-    return psf[..., y0:y1, x0:x1]
+    if isinstance(psf, accel.DeviceArray):
+        out = accel.HostArray((y1 - y0, x1 - x0), psf.dtype, context=queue.context)
+        psf.get_region(queue, out, np.s_[0, y0:y1, x0:x1], np.s_[:, :])
+        return out
+    else:
+        return psf[0, y0:y1, x0:x1]
 
 
 @profile_function()
@@ -489,23 +489,20 @@ def process_channel(dataset, args, start_channel,
     if args.host:
         imager = imaging.ImagingHost(image_p, weight_p, grid_p, clean_p)
     else:
-        allocator = accel.SVMAllocator(context)
         n_sources = len(subtract_model) if subtract_model else 0
         imager = imager_template.instantiate(
-            queue, image_p, grid_p, args.vis_block, n_sources, args.major, allocator)
+            queue, image_p, grid_p, args.vis_block, n_sources, args.major)
         imager.ensure_all_bound()
-    psf = imager.buffer('psf')
-    dirty = imager.buffer('dirty')
-    model = imager.buffer('model')
-    grid_data = imager.buffer('grid')
     imager.clear_model()
 
     # Compute imaging weights
     weights_noise, normalized_noise = make_weights(queue, reader, rel_channel,
                                                    imager, weight_p.weight_type, args.vis_block,
                                                    dataset.weight_scale())
-    writer.write_fits_image('weights', 'image weights',
-                            dataset, imager.buffer('weights_grid'), image_p, channel, bunit=None)
+    if writer.needs_fits_image('weights'):
+        writer.write_fits_image(
+            'weights', 'image weights',
+            dataset, imager.get_buffer('weights_grid'), image_p, channel, bunit=None)
 
     # Create PSF
     slice_w_step = float(grid_p.fixed.max_w / image_p.wavelength / (grid_p.w_slices - 0.5))
@@ -513,24 +510,31 @@ def process_channel(dataset, args, start_channel,
     make_dirty(queue, reader, rel_channel,
                'PSF', 'weights', imager, mid_w, args.vis_block, args.degrid)
     # Normalization
-    psf_peak = dirty[..., dirty.shape[1] // 2, dirty.shape[2] // 2]
+    dirty = imager.buffer('dirty')
+    if args.host:
+        psf_peak = dirty[..., dirty.shape[1] // 2, dirty.shape[2] // 2]
+    else:
+        psf_peak = accel.HostArray((dirty.shape[0],), dirty.dtype, context=context)
+        dirty.get_region(
+            queue, psf_peak,
+            np.s_[:, dirty.shape[1] // 2, dirty.shape[2] // 2],
+            np.s_[:])
     if np.any(psf_peak == 0):
         logger.info('Skipping channel %d which has no usable data', channel)
         writer.skip_channel(dataset, image_p, channel)
         return
     scale = np.reciprocal(psf_peak)
     imager.scale_dirty(scale)
-    queue.finish()
     imager.dirty_to_psf()
     # dirty_to_psf works by swapping, so re-fetch the buffer pointers
-    psf = imager.buffer('psf')
-    dirty = imager.buffer('dirty')
     psf_patch = imager.psf_patch()
     logger.info('Using %dx%d patch for PSF', psf_patch[2], psf_patch[1])
     # Extract the patch for beam fitting
-    psf_core = extract_psf(psf[0], psf_patch[1:])
+    psf_core = extract_psf(queue, imager.buffer('psf'), psf_patch[1:])
     restoring_beam = beam.fit_beam(psf_core)
-    writer.write_fits_image('psf', 'PSF', dataset, psf, image_p, channel, restoring_beam)
+    if writer.needs_fits_image('psf'):
+        writer.write_fits_image(
+            'psf', 'PSF', dataset, imager.get_buffer('psf'), image_p, channel, restoring_beam)
 
     # Imaging
     if subtract_model:
@@ -543,11 +547,14 @@ def process_channel(dataset, args, start_channel,
                    'image', 'vis', imager, mid_w, args.vis_block, args.degrid,
                    i != 0, subtract_model)
         imager.scale_dirty(scale)
-        queue.finish()
         if i == 0:
-            writer.write_fits_grid('grid', 'grid', not args.host, grid_data, image_p, channel)
-            writer.write_fits_image('dirty', 'dirty image', dataset, dirty, image_p,
-                                    channel, restoring_beam)
+            if writer.needs_fits_grid('grid'):
+                writer.write_fits_grid(
+                    'grid', 'grid', not args.host, imager.get_buffer('grid'), image_p, channel)
+            if writer.needs_fits_image('dirty'):
+                writer.write_fits_image(
+                    'dirty', 'dirty image', dataset, imager.get_buffer('dirty'), image_p,
+                    channel, restoring_beam)
         major += 1
 
         # Deconvolution
@@ -575,9 +582,9 @@ def process_channel(dataset, args, start_channel,
         if i == args.major - 1:
             # Update the noise estimate for output stats
             noise = imager.noise_est()
-        queue.finish()
 
     # Scale by primary beam
+    model = imager.buffer('model')
     if grid_p.fixed.beams:
         pbeam_model = grid_p.fixed.beams.sample()
         # Sample beam model at the pixel grid. It's circularly symmetric, so
@@ -590,22 +597,28 @@ def process_channel(dataset, args, start_channel,
         # Ignore polarization and length-1 frequency axis; square to
         # convert voltage to power.
         pbeam = np.square(np.abs(pbeam[0, 0, 0]))
-        imager.buffer('beam_power')[:] = pbeam
+        # TODO: make it the right precision from the beginning (which should
+        # speed up interpolation when it is single-precision).
+        pbeam = pbeam.astype(imager.buffer('beam_power').dtype, copy=False)
+        imager.set_buffer('beam_power', pbeam)
         imager.apply_primary_beam(args.primary_beam_cutoff)
         writer.write_fits_image(
             'primary_beam', 'primary beam', dataset,
             np.broadcast_to(pbeam, model.shape), image_p, channel)
-        queue.finish()   # Ensure model and dirty are updated before they're written
     else:
         pbeam = np.broadcast_to(np.ones(1, model.dtype), model.shape[-2:])
 
-    writer.write_fits_image('model', 'model', dataset, model, image_p, channel)
-    writer.write_fits_image('residuals', 'residuals', dataset, dirty, image_p,
-                            channel, restoring_beam)
+    if writer.needs_fits_image('model'):
+        writer.write_fits_image(
+            'model', 'model', dataset, imager.get_buffer('model'), image_p, channel)
+    if writer.needs_fits_image('residuals'):
+        writer.write_fits_image(
+            'residuals', 'residuals', dataset, imager.get_buffer('dirty'), image_p,
+            channel, restoring_beam)
 
+    model = imager.buffer('model')
+    dirty = imager.buffer('dirty')
     # Try to free up memory for the beam convolution
-    del grid_data
-    del psf
     del imager
 
     # Convolve with restoring beam, and add residuals back in
@@ -622,8 +635,11 @@ def process_channel(dataset, args, start_channel,
             model.copy_region(queue, restore_image, np.s_[pol], ())
             restore()
             restore_image.copy_region(queue, model, (), np.s_[pol])
-        queue.finish()
 
+    # TODO: do the addition on the GPU
+    if not args.host:
+        model = model.get(queue)
+        dirty = dirty.get(queue)
     model += dirty
     del dirty
     writer.write_fits_image('clean', 'clean image', dataset, model, image_p,
