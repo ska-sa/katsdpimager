@@ -196,7 +196,7 @@ class Imaging(accel.OperationSequence):
             x.link(y)
 
         self.host_buffer = {}
-        for name in ['weights', 'weights', 'uv', 'w_plane', 'vis']:
+        for name in ['weights', 'uv', 'w_plane', 'vis']:
             if name in self.slots:
                 self.host_buffer[name] = _HostBuffer(command_queue.context, self.slots[name])
 
