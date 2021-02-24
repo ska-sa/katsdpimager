@@ -64,6 +64,42 @@ class Writer(frontend.Writer):
     def needs_fits_grid(self, name):
         return False
 
+    @profile_function()
+    def _downsample(self, image, headers):
+        """Create a reduced HDU appropriate for the thumbnail.
+
+        Only the first polarization is retained, and it is downsampled to
+        approximately match the thumbnail image size. katsdpimageutils (via
+        matplotlib) handles the final rescaling, so this is just to speed
+        things up (probably at a small cost in accuracy, but the thumbnail
+        image is just for a quick look, not science).
+        """
+        MIN_SIZE = 512
+        scale = 1
+        # Keep things simple by only considering exact scale factors, which
+        # makes scaling down easy. is_smooth enforces multiples of 8,
+        # so we can always go at least that far before encountering
+        # divisibility problems.
+        while (image.shape[-1] % (scale * 2) == 0
+               and image.shape[-1] // (scale * 2) >= MIN_SIZE
+               and image.shape[-2] % (scale * 2) == 0
+               and image.shape[-2] // (scale * 2) >= MIN_SIZE):
+            scale *= 2
+        headers = headers.copy()
+        headers['CDELT1'] *= scale
+        headers['CDELT2'] *= scale
+        # FITS interprets 1.0 as the centre of the first pixel
+        headers['CRPIX1'] = (headers['CRPIX1'] - 0.5) / scale + 0.5
+        headers['CRPIX2'] = (headers['CRPIX2'] - 0.5) / scale + 0.5
+
+        image = image[:, :1, ...]    # Keep only the first polarization
+        image = np.add.reduceat(image, range(0, image.shape[-1], scale), axis=-1)
+        image = np.add.reduceat(image, range(0, image.shape[-2], scale), axis=-2)
+        image /= scale * scale
+        hdu = fits.PrimaryHDU(image, headers)
+        hdu.update_header()    # Updates NAXIS*
+        return hdu
+
     @profile_function(labels=['name', 'channel'])
     def write_fits_image(self, name, description, dataset, image, image_parameters, channel,
                          beam=None, bunit='Jy/beam'):
@@ -90,20 +126,26 @@ class Writer(frontend.Writer):
         os.mkdir(tmp_dir)
         try:
             with progress.step('Write {}'.format(description)):
-                katsdpimager.io.write_fits_image(dataset, image, image_parameters, filename,
-                                                 channel, beam, bunit, self.extra_fits_headers)
+                fits_image, fits_headers = katsdpimager.io.write_fits_image(
+                    dataset, image, image_parameters, filename,
+                    channel, beam, bunit, self.extra_fits_headers)
             with progress.step('Write thumbnail'):
+                hdu = self._downsample(fits_image, fits_headers)
                 with profile(
                     'katsdpimageutils.render.write_image',
                     labels={'filename': filename + '.tnail.png'}
                 ):
                     katsdpimageutils.render.write_image(
-                        filename, filename + '.tnail.png',
+                        hdu, filename + '.tnail.png',
                         width=650, height=500
                     )
             with open(os.path.join(tmp_dir, 'metadata.json'), 'w') as f:
                 json.dump(metadata, f, allow_nan=False, indent=2)
             os.rename(tmp_dir, output_dir)
+            # Free some things ahead of the gc.collect below
+            del hdu
+            del fits_image
+            del fits_headers
         except Exception:
             # Make a best effort to clean up
             shutil.rmtree(tmp_dir, ignore_errors=True)
