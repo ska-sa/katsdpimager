@@ -37,6 +37,8 @@ class ImagingTemplate:
             context, clean_parameters, fixed_image_parameters.real_dtype, num_polarizations)
         self.scale = image.ScaleTemplate(
             context, fixed_image_parameters.real_dtype, num_polarizations)
+        self.add_image = image.AddImageTemplate(
+            context, fixed_image_parameters.real_dtype, num_polarizations)
         self.apply_primary_beam = image.ApplyPrimaryBeamTemplate(
             context, fixed_image_parameters.real_dtype, num_polarizations)
         if fixed_grid_parameters.degrid:
@@ -102,6 +104,8 @@ class Imaging(accel.OperationSequence):
             command_queue, image_parameters, allocator)
         self._scale = template.scale.instantiate(
             command_queue, image_shape, allocator)
+        self._add_image = template.add_image.instantiate(
+            command_queue, image_shape, allocator)
         # Thresholds are set later by self.apply_primary_beam
         self._apply_primary_beam_model = template.apply_primary_beam.instantiate(
             command_queue, image_shape, 0.0, 0.0, allocator)
@@ -156,6 +160,7 @@ class Imaging(accel.OperationSequence):
             ('noise_est', self._noise_est),
             ('clean', self._clean),
             ('scale', self._scale),
+            ('add_image', self._add_image),
             ('apply_primary_beam_model', self._apply_primary_beam_model),
             ('apply_primary_beam_dirty', self._apply_primary_beam_dirty)
         ]
@@ -168,8 +173,8 @@ class Imaging(accel.OperationSequence):
             'grid': ['gridder:grid', 'grid_to_image:grid'],
             'layer': ['grid_to_image:layer'],
             'dirty': ['grid_to_image:image', 'noise_est:dirty', 'clean:dirty', 'scale:data',
-                      'apply_primary_beam_dirty:data'],
-            'model': ['clean:model', 'apply_primary_beam_model:data'],
+                      'add_image:dest', 'apply_primary_beam_dirty:data'],
+            'model': ['clean:model', 'apply_primary_beam_model:data', 'add_image:src'],
             'psf': ['clean:psf', 'psf_patch:psf'],
             'tile_max': ['clean:tile_max'],
             'tile_pos': ['clean:tile_pos'],
@@ -215,36 +220,30 @@ class Imaging(accel.OperationSequence):
 
     @profile_function()
     def clear_weights(self):
-        self.ensure_all_bound()
         self._weights.clear()
 
     @profile_function()
     def grid_weights(self, uv, weights):
-        self.ensure_all_bound()
         self._set_buffer('uv', len(uv), uv, (np.s_[:2],))
         self._set_buffer('weights', len(uv), weights)
         self._weights.grid(len(uv))
 
     @profile_function()
     def finalize_weights(self):
-        self.ensure_all_bound()
         return self._weights.finalize()
 
     @profile_function()
     def clear_grid(self):
-        self.ensure_all_bound()
         with profile_device(self.command_queue, 'clear_grid'):
             self.buffer('grid').zero(self.command_queue)
 
     @profile_function()
     def clear_dirty(self):
-        self.ensure_all_bound()
         with profile_device(self.command_queue, 'clear_dirty'):
             self.buffer('dirty').zero(self.command_queue)
 
     @profile_function()
     def clear_model(self):
-        self.ensure_all_bound()
         with profile_device(self.command_queue, 'clear_model'):
             self.buffer('model').zero(self.command_queue)
         self._model_components.clear()
@@ -278,46 +277,38 @@ class Imaging(accel.OperationSequence):
 
     @profile_function()
     def set_coordinates(self, uv, sub_uv, w_plane):
-        self.ensure_all_bound()
         self._set_uv(uv, sub_uv)
         self._set_buffer('w_plane', self.num_vis, w_plane)
 
     @profile_function()
     def set_vis(self, vis):
-        self.ensure_all_bound()
         self._set_buffer('vis', self.num_vis, vis)
 
     @profile_function()
     def set_weights(self, weights):
         """Set statistical weights for prediction"""
-        self.ensure_all_bound()
         self._set_buffer('weights', self.num_vis, weights)
 
     @profile_function()
     def grid(self):
-        self.ensure_all_bound()
         self._gridder()
 
     @profile_function()
     def predict(self, w):
-        self.ensure_all_bound()
         if not self.template.fixed_grid_parameters.degrid:
             self._predict.set_w(w)
         self._predict()
 
     @profile_function()
     def continuum_predict(self, w):
-        self.ensure_all_bound()
         self._continuum_predict.set_w(w)
         self._continuum_predict()
 
     def set_sky_model(self, sky_model, phase_centre):
-        self.ensure_all_bound()
         self._continuum_predict.set_sky_model(sky_model, phase_centre)
 
     @profile_function()
     def grid_to_image(self, w):
-        self.ensure_all_bound()
         self._grid_to_image.set_w(w)
         self._grid_to_image()
 
@@ -325,7 +316,6 @@ class Imaging(accel.OperationSequence):
     def model_to_grid(self, w):
         if not self._image_to_grid:
             raise RuntimeError('Can only use model_to_grid with degridding')
-        self.ensure_all_bound()
         self._image_to_grid.set_w(w)
         self._image_to_grid()
 
@@ -337,14 +327,16 @@ class Imaging(accel.OperationSequence):
 
     @profile_function()
     def scale_dirty(self, scale_factor):
-        self.ensure_all_bound()
         self._scale.set_scale_factor(scale_factor)
         self._scale()
 
     @profile_function()
+    def add_model_to_dirty(self):
+        self._add_image()
+
+    @profile_function()
     def apply_primary_beam(self, threshold):
         """Applies primary beam power to both model and dirty images."""
-        self.ensure_all_bound()
         self._apply_primary_beam_model.threshold = threshold
         self._apply_primary_beam_model()
         self._apply_primary_beam_dirty.threshold = threshold
@@ -358,23 +350,19 @@ class Imaging(accel.OperationSequence):
 
     @profile_function()
     def psf_patch(self):
-        self.ensure_all_bound()
         return self._psf_patch(self.template.clean_parameters.psf_cutoff,
                                self.template.clean_parameters.psf_limit)
 
     @profile_function()
     def noise_est(self):
-        self.ensure_all_bound()
         return self._noise_est()
 
     @profile_function()
     def clean_reset(self):
-        self.ensure_all_bound()
         self._clean.reset()
 
     @profile_function()
     def clean_cycle(self, psf_patch, threshold=0.0):
-        self.ensure_all_bound()
         peak_value, peak_pos, model_pixel = self._clean(psf_patch, threshold)
         if peak_pos is not None:
             try:
@@ -396,6 +384,15 @@ class Imaging(accel.OperationSequence):
         path. It exists to simplify compatibility with :class:`ImagingHost`.
         """
         self.buffer(name).set(self.command_queue, data)
+
+    def free_buffer(self, name):
+        """Free the memory associated with a given buffer.
+
+        It is the caller's responsibility to ensure that the buffer is not
+        needed in future operations.
+        """
+        if name in self.slots:
+            self.slots[name].bind(None)
 
 
 class ImagingHost:
@@ -452,6 +449,10 @@ class ImagingHost:
 
     def set_buffer(self, name, data):
         self._buffer[name][()] = data
+
+    def free_buffer(self, name):
+        if name in self._buffer:
+            self._buffer[name] = None
 
     @property
     def num_vis(self):
@@ -528,6 +529,9 @@ class ImagingHost:
 
     def scale_dirty(self, scale_factor):
         self._dirty *= scale_factor[:, np.newaxis, np.newaxis]
+
+    def add_model_to_dirty(self):
+        self._dirty += self._model
 
     def apply_primary_beam(self, threshold):
         mask = (self._beam_power < threshold)[np.newaxis, ...]

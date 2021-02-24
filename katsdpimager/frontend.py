@@ -617,9 +617,9 @@ def process_channel(dataset, args, start_channel,
             channel, restoring_beam)
 
     model = imager.buffer('model')
-    dirty = imager.buffer('dirty')
     # Try to free up memory for the beam convolution
-    del imager
+    for name in ['weights_grid', 'grid', 'layer', 'psf', 'beam_power']:
+        imager.free_buffer(name)
 
     # Convolve with restoring beam, and add residuals back in
     if args.host:
@@ -636,16 +636,15 @@ def process_channel(dataset, args, start_channel,
             restore()
             restore_image.copy_region(queue, model, (), np.s_[pol])
 
-    # TODO: do the addition on the GPU
-    if not args.host:
-        model = model.get(queue)
-        dirty = dirty.get(queue)
-    model += dirty
-    del dirty
-    writer.write_fits_image('clean', 'clean image', dataset, model, image_p,
+    # Combine the restored model image with the residuals
+    imager.add_model_to_dirty()
+    del model
+    final_image = imager.get_buffer('dirty')
+
+    writer.write_fits_image('clean', 'clean image', dataset, final_image, image_p,
                             channel, restoring_beam)
-    peak = find_peak(model, pbeam, noise)
-    totals = get_totals(image_p, model, restoring_beam)
+    peak = find_peak(final_image, pbeam, noise)
+    totals = get_totals(image_p, final_image, restoring_beam)
     compressed_vis = sum(reader.len(rel_channel, w_slice)
                          for w_slice in range(reader.num_w_slices(rel_channel)))
     writer.statistics(dataset, channel,
