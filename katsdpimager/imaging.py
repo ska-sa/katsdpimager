@@ -60,6 +60,24 @@ class _HostBuffer:
         self.transfer_event = None
 
 
+def _get_uv(coords):
+    """Extract view of uv and sub_uv fields as an Nx4 array."""
+    # Check that types are as expected and contiguous
+    assert coords.dtype['uv'] == np.dtype(('i2', (2,)))
+    assert coords.dtype['sub_uv'] == np.dtype(('i2', (2,)))
+    assert (coords.dtype.fields['sub_uv'][1]
+            == coords.dtype.fields['uv'][1] + coords.dtype['uv'].itemsize)
+    # Create a dtype alias where these are just a single field
+    new_dtype = np.dtype(dict(
+        names=['uv_sub_uv'],
+        formats=[('i2', (4,))],
+        offsets=[coords.dtype.fields['uv'][1]],
+        itemsize=coords.dtype.itemsize
+    ))
+    alias = coords.view(new_dtype)
+    return alias['uv_sub_uv']
+
+
 class Imaging(accel.OperationSequence):
     @profile_function()
     def __init__(
@@ -260,25 +278,31 @@ class Imaging(accel.OperationSequence):
         device.set_region(self.command_queue, host.array, idx, idx, blocking=False)
         host.transfer_event = self.command_queue.enqueue_marker()
 
-    def _set_uv(self, uv, sub_uv):
-        # TODO: uv, sub_uv usually start interleaved anyway, so it would be more
-        # efficient to copy them jointly.
+    def _set_uv(self, coords):
         N = self.num_vis
-        if len(uv) != N or len(sub_uv) != N:
+        if len(coords) != N:
             raise ValueError('Lengths do not match')
         host = self.host_buffer['uv']
         device = self.buffer('uv')
         if host.transfer_event is not None:
             host.transfer_event.wait()
-        host.array[:N, 0:2] = uv
-        host.array[:N, 2:4] = sub_uv
+        host.array[:N] = _get_uv(coords)
         device.set_region(self.command_queue, host.array, np.s_[:N], np.s_[:N], blocking=False)
         host.transfer_event = self.command_queue.enqueue_marker()
 
     @profile_function()
-    def set_coordinates(self, uv, sub_uv, w_plane):
-        self._set_uv(uv, sub_uv)
-        self._set_buffer('w_plane', self.num_vis, w_plane)
+    def set_coordinates(self, coords):
+        """Set UVW coordinates.
+
+        Parameters
+        ----------
+        coords
+            Structured array with fields ``uv``, ``sub_uv`` and ``w_plane``. The
+            former two must each be a 2-element int16 array, and they must be
+            contiguous in the structure.
+        """
+        self._set_uv(coords)
+        self._set_buffer('w_plane', self.num_vis, coords['w_plane'])
 
     @profile_function()
     def set_vis(self, vis):
@@ -486,10 +510,10 @@ class ImagingHost:
     def set_sky_model(self, sky_model, phase_centre):
         self._continuum_predict.set_sky_model(sky_model, phase_centre)
 
-    def set_coordinates(self, *args, **kwargs):
-        self._gridder.set_coordinates(*args, **kwargs)
-        self._predict.set_coordinates(*args, **kwargs)
-        self._continuum_predict.set_coordinates(*args, **kwargs)
+    def set_coordinates(self, coords):
+        self._gridder.set_coordinates(coords.uv, coords.sub_uv, coords.w_plane)
+        self._predict.set_coordinates(coords.uv, coords.sub_uv, coords.w_plane)
+        self._continuum_predict.set_coordinates(coords.uv, coords.sub_uv, coords.w_plane)
 
     def set_vis(self, *args, **kwargs):
         self._gridder.set_vis(*args, **kwargs)
