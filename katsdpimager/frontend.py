@@ -126,7 +126,7 @@ def make_dirty(queue, reader, rel_channel, name, field, imager, mid_w, vis_block
         with bar:
             for chunk in reader.iter_slice(rel_channel, w_slice, vis_block):
                 imager.num_vis = len(chunk.uv)
-                imager.set_coordinates(chunk.uv, chunk.sub_uv, chunk.w_plane)
+                imager.set_coordinates(chunk)
                 imager.set_vis(chunk[field])
                 if full_cycle or subtract_model:
                     imager.set_weights(chunk.weights)

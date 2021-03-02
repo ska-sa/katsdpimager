@@ -248,7 +248,7 @@ class VisibilityCollectorHDF5(VisibilityCollector):
         self._dataset[channel : channel+1,
                       w_slice : w_slice+1,
                       old_length : self._length[channel, w_slice]] = \
-            elements.astype(self.store_dtype)[np.newaxis, np.newaxis, :]
+            elements[np.newaxis, np.newaxis, :]
 
     def close(self):
         super().close()
