@@ -14,8 +14,6 @@ katsdp.setDependencies([
     'ska-sa/katsdptelstate/master'])
 katsdp.standardBuild(
     cuda: true,
-    python3: true,
-    python2: false,
     prepare_timeout: [time: 90, unit: 'MINUTES'],
     test_timeout: [time: 90, unit: 'MINUTES'])
 katsdp.mail('sdpdev+katsdpimager@ska.ac.za')

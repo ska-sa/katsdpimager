@@ -1,60 +1,24 @@
+# TODO: switch from -d to -c and unpin jinja2, bokeh once katsdpdockerbase
+# updated.
+-d https://raw.githubusercontent.com/ska-sa/katsdpdockerbase/master/docker-base-build/base-requirements.txt
+
 ansicolors
-appdirs                   # via katsdpsigproc
-argparse                  # via python-casacore
 astropy
 bokeh==2.0.2              # katsdpdockerbase currently provides only 1.x
 botocore                  # for S3 authentication in katdal
-certifi                   # via requests
 cffi==1.14.1
-chardet                   # via requests
-cityhash                  # via katdal
 contextvars==2.4
-cycler                    # via matplotlib
-dask                      # via katdal
-decorator                 # via pycuda, katsdpsigproc
-docutils                  # via botocore
-ephem                     # via pyephem
-future                    # via katdal, katpoint
-h5py                      # via katdal, katsdpmodels
-idna                      # via requests
 immutables==0.14          # via contextvars
 jinja2==2.11.2            # katsdpdockerbase version is currently too old
-jmespath                  # via botocore
-kiwisolver                # via matplotlib
-llvmlite                  # via numba
-Mako
-MarkupSafe                # via Mako
 matplotlib
-msgpack                   # via katsdptelstate
-netifaces                 # via katsdptelstate
 numba
 numpy
-packaging                 # via bokeh
-pandas                    # via katsdpsigproc
-pillow                    # via bokeh
 progress==1.5
 pycparser==2.20           # via cffi
 pycuda
-pyephem                   # via katpoint
-pygelf                    # via katsdpservices
-pyjwt                     # via katdal
 python-casacore
-python-dateutil           # via pandas, botocore, bokeh
-python-lzf                # via katsdptelstate
-pytools                   # via pycuda
-pytz                      # via pandas
-pyyaml                    # via bokeh
-rdbtools                  # via katsdptelstate
-redis                     # via katsdptelstate
-requests                  # via katdal, katsdpmodels
 scikit-cuda
 scipy                     # via katdal (its fallback interpolation behaves differently)
-strict-rfc3339            # via katsdpmodels
-six                       # via pytools, python-dateutil, bokeh
-toolz                     # via dask[array]
-tornado                   # via bokeh
-typing_extensions         # via katsdpsigproc, katsdpmodels
-urllib3                   # via requests
 
 katdal @ git+https://github.com/ska-sa/katdal
 katpoint @ git+https://github.com/ska-sa/katpoint
