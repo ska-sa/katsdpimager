@@ -1,6 +1,6 @@
+-c https://raw.githubusercontent.com/ska-sa/katsdpdockerbase/master/docker-base-build/base-requirements.txt
+
 coverage
-fakeredis
+fakeredis[lua]
 lupa==1.9                   # via fakeredis[lua]
 nose
-six
-sortedcontainers            # via fakeredis
