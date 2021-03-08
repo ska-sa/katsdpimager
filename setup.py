@@ -40,12 +40,11 @@ install_requires = [
     'astropy>=1.3',
     'contextvars; python_version<"3.7"',
     'h5py',
-    'katsdpsigproc',
+    'katsdpsigproc[CUDA]',
     'katpoint',
     'numba',
     'numpy>=1.17.0',
     'progress>=1.5',
-    'pycuda',
     'scikit-cuda',
     'scipy'
 ]
@@ -102,8 +101,14 @@ setup(
         'ms': ['python-casacore'],
         'katdal': ['katdal', 'katsdpmodels[requests]'],
         'benchmark': ['katpoint'],
-        'pipeline': ['katsdpservices', 'katsdpimageutils',
-                     'matplotlib>=3.1', 'jinja2>=2.11', 'bokeh>=2.0.0']
+        'pipeline': [
+            'bokeh>=2.0.0',
+            'jinja2>=2.11',
+            'katdal[s3credentials]',
+            'katsdpservices',
+            'katsdpimageutils',
+            'matplotlib>=3.1'
+        ]
     },
     use_katversion=True,
     classifiers=[
