@@ -1,15 +1,14 @@
-# TODO: switch from -d to -c and unpin jinja2, bokeh once katsdpdockerbase
-# updated.
--d https://raw.githubusercontent.com/ska-sa/katsdpdockerbase/master/docker-base-build/base-requirements.txt
+-c https://raw.githubusercontent.com/ska-sa/katsdpdockerbase/master/docker-base-build/base-requirements.txt
+-c https://raw.githubusercontent.com/ska-sa/katsdpdockerbase/master/docker-base-gpu-build/requirements.txt
 
 ansicolors
 astropy
-bokeh==2.0.2              # katsdpdockerbase currently provides only 1.x
+bokeh
 cffi==1.14.1
 contextvars==2.4; python_version<"3.7"
 h5py
 immutables==0.14; python_version<"3.7"          # via contextvars
-jinja2==2.11.2            # katsdpdockerbase version is currently too old
+jinja2
 matplotlib
 numba
 numpy
