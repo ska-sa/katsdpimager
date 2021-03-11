@@ -3,6 +3,7 @@
 
 ansicolors
 astropy
+bokeh
 cffi==1.14.1
 contextvars==2.4; python_version<"3.7"
 h5py
