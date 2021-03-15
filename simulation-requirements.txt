@@ -186,6 +186,8 @@ nest-asyncio==1.5.1
     # via nbclient
 networkx==2.5
     # via scikit-image
+git+https://gitlab.mpcdf.mpg.de/ift/nifty_gridder.git@f1540b9cca161e1aa32aa3cd09a592b3dac5f16b
+    # via -r simulation-requirements.in
 notebook==6.2.0
     # via
     #   jupyter
@@ -211,6 +213,7 @@ numpy==1.20.1
     #   imageio
     #   katpoint
     #   matplotlib
+    #   nifty-gridder
     #   numba
     #   numcodecs
     #   pandas
@@ -264,6 +267,8 @@ ptyprocess==0.7.0
     # via
     #   pexpect
     #   terminado
+pybind11==2.6.2
+    # via nifty-gridder
 pycparser==2.20
     # via cffi
 pyerfa==1.7.2

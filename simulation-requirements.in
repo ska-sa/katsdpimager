@@ -6,3 +6,5 @@ numpy
 pandas
 python-casacore
 rascil==0.2.0
+# Needed by RASCIL, but missing from its setup file in 0.2.0
+nifty-gridder @ git+https://gitlab.mpcdf.mpg.de/ift/nifty_gridder.git@f1540b9cca161e1aa32aa3cd09a592b3dac5f16b

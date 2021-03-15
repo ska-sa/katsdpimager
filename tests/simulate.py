@@ -11,8 +11,6 @@ meerkat_antennas.txt.
 """
 
 import os
-import sys
-import unittest.mock
 
 import numpy as np
 import pandas
@@ -24,9 +22,6 @@ from astropy.coordinates import SkyCoord, Angle
 from astropy.time import Time
 import astropy.io.ascii
 
-# RASCIL 0.2.0 imports nifty_gridder but doesn't install it. It's not needed
-# for this simulation, so just mock it out.
-sys.modules['nifty_gridder'] = unittest.mock.Mock()
 # RASCIL gets upset if it can't find its data directory, but doesn't actually
 # need it for this simulation. Just give it a fake one.
 if 'RASCIL_DATA' not in os.environ:
