@@ -1,6 +1,26 @@
 Changelog
 =========
 
+.. rubric:: 1.5
+
+This version mainly focuses on performance. Improvements of 5× have been
+observed in the MeerKAT pipeline.
+
+Other changes:
+
+- MVF (katdal datasets) older that v4 (such as KAT-7) data are no longer
+  supported. Use the katdal :program:`mvftoms` tool to convert them to Measurement
+  Sets instead (this is necessary anyway since they are uncalibrated).
+- Add more internal profiling.
+- Disable compression of the temporary file, as it substantially reduced
+  performance. This does mean that temporary space requirements will increase,
+  and that performance could be harmed if the temporary filesystem is slow.
+- When using an RFI mask with MeerKAT data, exclude channels that are only
+  partially covered by the mask.
+- Suppress an unwanted `astropy warning`_.
+
+.. _astropy warning: https://github.com/astropy/astropy/issues/10365
+
 .. rubric:: 1.4
 
 - Fix estimation of image noise (estimates were about 2.7× too high).

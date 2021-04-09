@@ -40,7 +40,7 @@ install_requires = [
     'astropy>=1.3',
     'contextvars; python_version<"3.7"',
     'h5py',
-    'katsdpsigproc[CUDA]',
+    'katsdpsigproc[CUDA]>=1.2',
     'katpoint',
     'numba',
     'numpy>=1.17.0',
