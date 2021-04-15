@@ -244,6 +244,10 @@ def main():
     if args.log_level is not None:
         logger.setLevel(args.log_level.upper())
 
+    # Use the NullProfiler (i.e. disable profiling) because the real one
+    # uses excessive memory. TODO: re-enable once the profiler is optimised.
+    profiling.Profiler.set_profiler(profiling.NullProfiler())
+
     with closing(loader.load(args.input_file, args.input_option,
                              args.start_channel, args.stop_channel)) as dataset:
         writer = Writer(args, dataset)

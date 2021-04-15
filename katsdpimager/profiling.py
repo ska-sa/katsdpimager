@@ -410,6 +410,11 @@ class NullProfiler(Profiler):
                 labels: Mapping[str, Any] = {}) -> Generator[Stopwatch, None, None]:
         yield NullStopwatch(self, Frame(name, {}))
 
+    @contextlib.contextmanager
+    def profile_device(self, queue: katsdpsigproc.abc.AbstractCommandQueue,
+                       name: str, labels: Mapping[str, Any] = {}):
+        yield
+
 
 @contextlib.contextmanager
 def profile_device(queue: katsdpsigproc.abc.AbstractCommandQueue,
