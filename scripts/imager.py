@@ -149,8 +149,8 @@ def main():
         if '%' not in args.output_file:
             parser.error('More than one channel selected but no %d in output filename')
     configure_logging(args)
-    if not args.write_profile and not args.write_device_profile:
-        profiling.Profiler.set_profiler(profiling.NullProfiler())
+    if args.write_profile or args.write_device_profile:
+        profiling.Profiler.set_profiler(profiling.FlamegraphProfiler())
 
     queue = None
     context = None
@@ -165,12 +165,15 @@ def main():
                              args.start_channel, args.stop_channel)) as dataset:
         frontend.run(args, context, queue, dataset, Writer(args, dataset))
 
+    profiler = profiling.Profiler.get_profiler()
     if args.write_profile:
         with open(args.write_profile, 'w') as f:
-            profiling.Profiler.get_profiler().write_flamegraph(f)
+            assert isinstance(profiler, profiling.FlamegraphProfiler)
+            profiler.write_flamegraph(f)
     if args.write_device_profile:
         with open(args.write_device_profile, 'w') as f:
-            profiling.Profiler.get_profiler().write_device_flamegraph(f)
+            assert isinstance(profiler, profiling.FlamegraphProfiler)
+            profiler.write_device_flamegraph(f)
 
 
 if __name__ == '__main__':
