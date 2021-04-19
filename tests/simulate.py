@@ -75,7 +75,7 @@ baselines = pandas.MultiIndex.from_arrays(
     names=('antenna1', 'antenna2')
 )
 ref_ant = antennas[0].array_reference_antenna()
-target = katpoint.Target(katpoint.body.FixedBody('phase_centre', phase_centre), 'radec')
+target = katpoint.Target(phase_centre)
 uvw_ant = target.uvw(antennas, times, ref_ant)
 uvw = (uvw_ant[..., baselines.get_level_values('antenna1')]
        - uvw_ant[..., baselines.get_level_values('antenna2')])
