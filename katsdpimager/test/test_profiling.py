@@ -2,6 +2,8 @@
 
 import contextvars
 import functools
+import inspect
+import io
 from unittest import mock
 from typing import Generator
 
@@ -12,7 +14,10 @@ from nose.tools import (
 import katsdpsigproc.abc
 from katsdpsigproc.test.test_accel import device_test
 
-from ..profiling import Frame, Record, Profiler, profile, profile_function, profile_generator
+from ..profiling import (
+    Frame, Record, DeviceRecord, Profiler, CollectProfiler, FlamegraphProfiler,
+    profile, profile_function, profile_generator
+)
 
 
 class TestFrame:
@@ -92,15 +97,32 @@ def temporary_context(func):
     return wrapper
 
 
+def use_self_profiler(func):
+    """Modify a class or member to use self.profiler in all tests."""
+    if inspect.isclass(func):
+        for name, member in func.__dict__.items():
+            if name.startswith('test_') and inspect.isfunction(member):
+                setattr(func, name, use_self_profiler(member))
+        return func
+
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        Profiler.set_profiler(self.profiler)
+        return func(self, *args, **kwargs)
+
+    return temporary_context(wrapper)
+
+
 @profile_function()
 def empty():
     pass
 
 
 @mock.patch('time.monotonic', return_value=0.0)
+@use_self_profiler
 class TestProfiler:
     def setup(self) -> None:
-        self.profiler = Profiler()
+        self.profiler = CollectProfiler()
 
     def test_simple(self, monotonic) -> None:
         with self.profiler.profile('foo'):
@@ -147,24 +169,24 @@ class TestProfiler:
         ])
 
     def test_context(self, monotonic) -> None:
+        other_profiler = CollectProfiler()
+
         def inner():
-            Profiler.set_profiler(self.profiler)
+            Profiler.set_profiler(other_profiler)
             with profile('foo', {'x': 1}):
                 monotonic.return_value += 1.0
 
         context = contextvars.copy_context()
         context.run(inner)
-        assert_is_not(Profiler.get_profiler(), self.profiler)
+        assert_is_not(Profiler.get_profiler(), other_profiler)
         frame = Frame('foo', {'x': 1})
-        assert_equal(self.profiler.records, [Record(frame, 0.0, 1.0)])
+        assert_equal(other_profiler.records, [Record(frame, 0.0, 1.0)])
 
-    @temporary_context
     def test_profile_function_sequence_labels(self, monotonic):
         @profile_function('blah', ('x', 'y'))
         def inner(y, z, x=4):
             pass
 
-        Profiler.set_profiler(self.profiler)
         inner(2, 3)
         inner(y=5, z=6, x=7)
         assert_equal(self.profiler.records, [
@@ -172,28 +194,23 @@ class TestProfiler:
             Record(Frame('blah', {'x': 7, 'y': 5}), 0.0, 0.0)
         ])
 
-    @temporary_context
     def test_profile_function_mapping_labels(self, monotonic):
         @profile_function('blah',
                           {'x': 'xx', 'y': lambda bound_args: 2 * bound_args.arguments['y']})
         def inner(xx, y):
             pass
 
-        Profiler.set_profiler(self.profiler)
         inner(2, 3)
         assert_equal(self.profiler.records, [
             Record(Frame('blah', {'x': 2, 'y': 6}), 0.0, 0.0)
         ])
 
-    @temporary_context
     def test_profile_function_auto_name(self, monotonic):
-        Profiler.set_profiler(self.profiler)
         empty()
         assert_equal(self.profiler.records, [
             Record(Frame('katsdpimager.test.test_profiling.empty', {}), 0.0, 0.0)
         ])
 
-    @temporary_context
     def test_profile_generator(self, monotonic):
         @profile_generator(name='slow_range', labels=('reps',))
         def slow_range(reps: int) -> Generator[int, None, None]:
@@ -202,7 +219,6 @@ class TestProfiler:
                 yield i
             monotonic.return_value += 0.5
 
-        Profiler.set_profiler(self.profiler)
         result = []
         for item in slow_range(3):
             with profile('other_work'):
@@ -221,3 +237,57 @@ class TestProfiler:
             Record(frame2, 7.0, 9.0),
             Record(frame, 9.0, 9.5)
         ])
+
+
+class DummyEvent(katsdpsigproc.abc.AbstractEvent):
+    def __init__(self, timestamp: float) -> None:
+        self._timestamp = timestamp
+
+    def wait(self) -> None:
+        pass
+
+    def time_since(self, prior_event: 'DummyEvent') -> float:
+        return self._timestamp - prior_event._timestamp
+
+    def time_till(self, next_event: 'DummyEvent') -> float:
+        return next_event._timestamp - self._timestamp
+
+
+class TestFlamegraphProfiler:
+    def setup(self) -> None:
+        self.profiler = FlamegraphProfiler()
+        self.parent_frame = Frame('parent', {})
+        self.child1_frame = Frame('child1', {}, self.parent_frame)
+        self.child2_frame = Frame('child2', {}, self.parent_frame)
+
+    def test_host(self) -> None:
+        self.profiler.add_record(Record(self.child1_frame, 2.0, 3.0))
+        self.profiler.add_record(Record(self.child2_frame, 4.0, 4.5))
+        self.profiler.add_record(Record(self.parent_frame, 1.0, 11.0))
+        out = io.StringIO()
+        self.profiler.write_flamegraph(out)
+        assert_equal(
+            sorted(out.getvalue().splitlines()),
+            [
+                'parent 8500000',
+                'parent;child1 1000000',
+                'parent;child2 500000'
+            ]
+        )
+
+    def test_device(self) -> None:
+        self.profiler.add_device_record(
+            DeviceRecord(self.child1_frame, DummyEvent(1.0), DummyEvent(3.0))
+        )
+        self.profiler.add_device_record(
+            DeviceRecord(self.child2_frame, DummyEvent(5.0), DummyEvent(5.5))
+        )
+        out = io.StringIO()
+        self.profiler.write_device_flamegraph(out)
+        assert_equal(
+            sorted(out.getvalue().splitlines()),
+            [
+                'parent;child1 2000000',
+                'parent;child2 500000'
+            ]
+        )

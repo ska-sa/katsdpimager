@@ -1,18 +1,18 @@
 """Functions for recording profiling information."""
 
+from abc import abstractmethod, ABC
 import time
 import collections.abc
+from collections import deque
 import contextlib
 from contextvars import ContextVar, Token
-import csv
 import functools
 import inspect
 import io
-import pathlib
 import weakref
 import typing
 from typing import (
-    List, Tuple, Dict, Mapping, Sequence, Callable, TextIO,
+    List, Tuple, Dict, Deque, Mapping, Sequence, Callable, TextIO,
     Generator, Union, Optional, TypeVar, Any
 )
 
@@ -191,7 +191,7 @@ class Stopwatch(contextlib.ContextDecorator):
         self._nvtx_range.__exit__(None, None, None)
         stop_time = time.monotonic()
         record = Record(self._frame, self._start_time, stop_time)
-        self._profiler.records.append(record)
+        self._profiler.add_record(record)
         self._start_time = None
 
 
@@ -207,12 +207,16 @@ class NullStopwatch(Stopwatch):
         self._start_time = None
 
 
-class Profiler:
+class Profiler(ABC):
     """Top-level class to hold profiling results."""
 
-    def __init__(self) -> None:
-        self.records: List[Record] = []
-        self.device_records: List[DeviceRecord] = []
+    @abstractmethod
+    def add_record(self, record: Record) -> None:
+        """Add a single event record to the results."""
+
+    @abstractmethod
+    def add_device_record(self, record: DeviceRecord) -> None:
+        """Add a single device event record to the results."""
 
     @contextlib.contextmanager
     def profile(self, name: str,
@@ -229,65 +233,7 @@ class Profiler:
         start_event = queue.enqueue_marker()
         yield
         stop_event = queue.enqueue_marker()
-        self.device_records.append(DeviceRecord(frame, start_event, stop_event))
-
-    def write_csv(self, filename: Union[str, pathlib.Path]) -> None:
-        labelset = set()
-        for record in self.records:
-            for frame in record.frame.stack():
-                labelset |= set(frame.labels)
-        labels = sorted(labelset)
-        with open(filename, 'w') as f:
-            writer = csv.DictWriter(f, ['name', 'start', 'stop', 'elapsed'] + labels)
-            writer.writeheader()
-            for record in self.records:
-                row = {
-                    'name': record.frame.name,
-                    'start': record.start_time,
-                    'stop': record.stop_time,
-                    'elapsed': record.elapsed,
-                    **record.frame.all_labels()
-                }
-                writer.writerow(row)
-
-    def write_flamegraph(self, file: Union[TextIO, io.TextIOBase]) -> None:
-        """Writes data in a form that can be converted to a flame graph.
-
-        Specifically, use https://github.com/brendangregg/FlameGraph to
-        post-process the output.
-
-        Labels are discarded.
-        """
-        samples: typing.Counter[Tuple[str, ...]] = collections.Counter()
-        for record in self.records:
-            stack = tuple(frame.name for frame in record.frame.stack())
-            # flamegraph.pl wants integers, so convert to microseconds
-            elapsed = round(1000000 * record.elapsed)
-            samples[stack] += elapsed
-            # We need to produce exclusive counts (time with no child frames
-            # active), so subtract from parent frame.
-            if len(stack) >= 2:
-                samples[stack[:-1]] -= elapsed
-
-        for names, value in samples.items():
-            print(';'.join(names), value, file=file)
-
-    def write_device_flamegraph(self, file: Union[TextIO, io.TextIOBase]) -> None:
-        """Writes device records in a form that can be converted to a flame graph.
-
-        See :meth:`write_flamegraph` for details. The full stack frames are
-        emitted, but only time spent in device functions is shown. The
-        flamegraph is only meaningful if kernels do not execute concurrently.
-        """
-        samples: typing.Counter[Tuple[str, ...]] = collections.Counter()
-        for record in self.device_records:
-            stack = tuple(frame.name for frame in record.frame.stack())
-            # flamegraph.pl wants integers, so convert to microseconds
-            elapsed = round(1000000 * record.elapsed)
-            samples[stack] += elapsed
-
-        for names, value in samples.items():
-            print(';'.join(names), value, file=file)
+        self.add_device_record(DeviceRecord(frame, start_event, stop_event))
 
     @staticmethod
     def get_profiler() -> 'Profiler':
@@ -298,8 +244,96 @@ class Profiler:
         _current_profiler.set(profiler)
 
 
+class CollectProfiler(Profiler):
+    """Profiler that collects all the raw records.
+
+    This can use an excessive amount of memory and is only intended for unit tests.
+    """
+
+    def __init__(self):
+        self.records: List[Record] = []
+        self.device_records: List[DeviceRecord] = []
+
+    def add_record(self, record: Record) -> None:
+        self.records.append(record)
+
+    def add_device_record(self, record: DeviceRecord) -> None:
+        self.device_records.append(record)
+
+
+class FlamegraphProfiler(Profiler):
+    """Profiler that summarises results by call stack to produce flame graphs.
+
+    Specifically, use https://github.com/brendangregg/FlameGraph to
+    post-process the output.
+
+    Labels are discarded.
+    """
+
+    def __init__(self, device_record_buffer_size: int = 100000) -> None:
+        self.flamegraph_samples: typing.Counter[Tuple[str, ...]] = collections.Counter()
+        self.device_flamegraph_samples: typing.Counter[Tuple[str, ...]] = collections.Counter()
+        # Querying device records immediately causes unwanted synchronisation
+        # with the device. Keep a buffer to let them age.
+        self.device_records: Deque[DeviceRecord] = deque()
+        self.device_record_buffer_size = device_record_buffer_size
+
+    def add_record(self, record: Record) -> None:
+        stack = tuple(frame.name for frame in record.frame.stack())
+        # flamegraph.pl wants integers, so convert to microseconds
+        elapsed = round(1000000 * record.elapsed)
+        self.flamegraph_samples[stack] += elapsed
+        # We need to produce exclusive counts (time with no child frames
+        # active), so subtract from parent frame.
+        if len(stack) >= 2:
+            self.flamegraph_samples[stack[:-1]] -= elapsed
+
+    def _add_device_record(self, record: DeviceRecord) -> None:
+        stack = tuple(frame.name for frame in record.frame.stack())
+        # flamegraph.pl wants integers, so convert to microseconds
+        elapsed = round(1000000 * record.elapsed)
+        self.device_flamegraph_samples[stack] += elapsed
+
+    def add_device_record(self, record: DeviceRecord) -> None:
+        self.device_records.append(record)
+        while len(self.device_records) > self.device_record_buffer_size:
+            self._add_device_record(self.device_records.popleft())
+
+    def write_flamegraph(self, file: Union[TextIO, io.TextIOBase]) -> None:
+        """Writes host data that can be read by flamegraph.pl."""
+        for names, value in self.flamegraph_samples.items():
+            print(';'.join(names), value, file=file)
+
+    def write_device_flamegraph(self, file: Union[TextIO, io.TextIOBase]) -> None:
+        """Writes device data that can be read by flamegraph.pl."""
+        while self.device_records:
+            self._add_device_record(self.device_records.popleft())
+        for names, value in self.device_flamegraph_samples.items():
+            print(';'.join(names), value, file=file)
+
+
+class NullProfiler(Profiler):
+    """Implements the :class:`Profiler` interface but does not record anything."""
+
+    def add_record(self, record: Record) -> None:
+        pass
+
+    def add_device_record(self, record: DeviceRecord) -> None:
+        pass
+
+    @contextlib.contextmanager
+    def profile(self, name: str,
+                labels: Mapping[str, Any] = {}) -> Generator[Stopwatch, None, None]:
+        yield NullStopwatch(self, Frame(name, {}))
+
+    @contextlib.contextmanager
+    def profile_device(self, queue: katsdpsigproc.abc.AbstractCommandQueue,
+                       name: str, labels: Mapping[str, Any] = {}):
+        yield
+
+
 # Create a default profiler that any context should inherit
-_current_profiler: ContextVar[Profiler] = ContextVar('_current_profiler', default=Profiler())
+_current_profiler: ContextVar[Profiler] = ContextVar('_current_profiler', default=NullProfiler())
 _current_frame: ContextVar[Optional[Frame]] = ContextVar('_current_frame', default=None)
 
 
@@ -400,20 +434,6 @@ def profile_generator(name: Optional[str] = None, labels: _LabelSpec = ()) \
 
         return wrapper
     return decorator
-
-
-class NullProfiler(Profiler):
-    """Implements the :class:`Profiler` interface but does not record anything."""
-
-    @contextlib.contextmanager
-    def profile(self, name: str,
-                labels: Mapping[str, Any] = {}) -> Generator[Stopwatch, None, None]:
-        yield NullStopwatch(self, Frame(name, {}))
-
-    @contextlib.contextmanager
-    def profile_device(self, queue: katsdpsigproc.abc.AbstractCommandQueue,
-                       name: str, labels: Mapping[str, Any] = {}):
-        yield
 
 
 @contextlib.contextmanager
