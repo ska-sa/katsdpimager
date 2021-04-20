@@ -41,7 +41,7 @@ install_requires = [
     'contextvars; python_version<"3.7"',
     'h5py',
     'katsdpsigproc[CUDA]>=1.2',
-    'katpoint',
+    'katpoint<1',
     'numba',
     'numpy>=1.17.0',
     'progress>=1.5',
@@ -99,7 +99,7 @@ setup(
         'cpu': [],
         'report': ['aplpy', 'matplotlib', 'mako'],
         'ms': ['python-casacore'],
-        'katdal': ['katdal', 'katsdpmodels[requests]'],
+        'katdal': ['katdal>=0.18', 'katsdpmodels[requests]'],
         'benchmark': ['katpoint'],
         'pipeline': [
             'bokeh>=2.0.0',
