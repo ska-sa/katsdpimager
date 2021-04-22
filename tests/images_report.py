@@ -250,6 +250,7 @@ def main():
               'wsclean-{rel_channel:04}-{stokes}-image.fits',
               'wsclean-{rel_channel:04}-{stokes}-dirty.fits',
               [['wsclean', '-mgain', '0.85', '-niter', '1000', '-threshold', '0.01',
+                '-abs-mem', '8',    # Limit to 8GB
                 '-weight', 'natural',
                 '-size', '{}'.format(pixels), '{}'.format(pixels),
                 '-scale', '{}asec'.format(pixel_size), '-pol', '${",".join(stokes.lower())}',
