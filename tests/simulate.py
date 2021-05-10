@@ -87,7 +87,7 @@ bvis = rascil.data_models.BlockVisibility(
     channel_bandwidth=np.repeat(freqs[1] - freqs[0], len(freqs)),
     phasecentre=phase_centre,
     configuration=config,
-    uvw=np.moveaxis(uvw, 0, -1),     # Move u/v/w axis to the end
+    uvw=uvw.get_xyz(xyz_axis=-1).to_value(u.m),
     time=times_mjds,
     vis=np.zeros(vis_shape, np.complex64),
     integration_time=np.repeat(time_step.to_value(u.s), len(times)),
