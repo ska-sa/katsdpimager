@@ -1,205 +1,59 @@
 """Primary beam models and correction."""
 
-from abc import ABC, abstractmethod
-from typing import Optional, Sequence, Mapping, Any
+from typing import Tuple, Optional, Union, Any
 
 import numpy as np
+try:
+    from numpy.typing import ArrayLike
+except ImportError:
+    ArrayLike = Any  # type: ignore
+import scipy.interpolate
 import numba
 import h5py
 import pkg_resources
-import astropy.units as units
+import astropy.units as u
+from katsdpmodels.primary_beam import PrimaryBeam, AltAzFrame, RADecFrame, OutputType
 
 from .profiling import profile_function
 
 
-class Parameter:
-    """A parameter on which a `BeamModelSet` is parametrised.
-
-    Some parameters are standardized: refer to the constants in this class.
-
-    Parameters
-    ----------
-    name
-        Short name of the parameter, which must be a valid Python identifier.
-    description
-        Human-readable description of the parameter.
-    unit
-        Units in which the parameter should be specified (or a compatible
-        unit). If ``None``, the parameter is not numeric (for a unit-less
-        numeric quantity, use ``units.dimensionless_unscaled``).
-    """
-
-    def __init__(self, name: str, description: str, unit: Optional[units.Unit] = None) -> None:
-        self.name = name
-        self.description = description
-        self.unit = unit
-
-    ANTENNA: 'Parameter'
-    ELEVATION: 'Parameter'
-
-
-Parameter.ANTENNA = Parameter('antenna', 'Name of the antenna')
-Parameter.ELEVATION = Parameter('elevation', 'Elevation at which the antenna is pointing',
-                                units.rad)
-
-
-class BeamModel(ABC):
-    r"""Model of an antenna primary beam.
-
-    This is a model that describes the response of an antenna in a particular
-    direction relative to nominal pointing direction, for each polarization
-    and for a range of frequencies.
-
-    It is most likely specific to an antenna, elevation, or other variables.
-    However, it is specified in a frame oriented to the dish rather than the
-    sky, so remains valid with parallactic angle rotation. Description of the
-    mount type (e.g. Alt-Az versus equatorial or 3-axis) is currently beyond
-    the scope of this class.
-
-    The phase of the electric field at a point increases with time i.e., the
-    phasor is
-
-    .. math:: e^{(\omega t - kz)i}
-
-    The "ideal" complex voltage is multiplied by the beam model to obtain the
-    measured voltage.
-
-    If you stick your right arm out and left hand up, then pretend to be an
-    antenna (lean back and look at the sky) then they correspond to the
-    directions of positive horizontal and vertical polarization respectively
-    (the absolute signs don't matter but the signs relative to each other do
-    for cross-hand terms).
-
-    The grid is regularly sampled in azimuth and elevation, but may be
-    irregularly sampled in frequency. The samples are ordered in increasing
-    order of azimuth (north to east) and elevation (horizon to zenith). Note
-    that this system has the opposite handedness to RA/Dec.
-    """
-
-    @property
-    @abstractmethod
-    def parameter_values(self) -> Mapping[str, Any]:
-        """Get the parameter values for which this model has been specialised."""
-
-    @abstractmethod
-    def sample(self,
-               az_start: float, az_step: float, az_samples: int,
-               el_start: float, el_step: float, el_samples: int,
-               frequencies: units.Quantity) -> np.ndarray:
-        """Generate a grid of samples.
-
-        Samples that fall outside the support of the beam model will be filled
-        with NaNs.
-
-        Parameters
-        ----------
-        az_start
-            Relative azimuth of the first sample (in the SIN projection).
-        az_step
-            Step between samples in the azimuth direction (in the SIN projection).
-        az_samples
-            Number of samples in the azimuth direction.
-        el_start
-            Relative elevation of the first sample (in the SIN projection).
-        el_step
-            Step between samples in the elevation direction (in the SIN projection).
-        el_samples
-            Number of samples in the elevation direction.
-        frequencies
-            1D array of frequencies.
-
-        Returns
-        -------
-        beam
-            A 5D array. The axes are:
-
-              1. The feed (0=horizontal, 1=vertical).
-              2. The polarization of the signal (0=horizontal, 1=vertical).
-              3. Frequency (indexed as per `frequencies`).
-              4. Elevation (of the source relative to the dish).
-              5. Azimuth (of the source relative to the dish).
-        """
-        pass
-
-
-class BeamModelSet(ABC):
-    """Generator for beam models.
-
-    The interface is relatively general and allows models to be specialised for
-    on variety of parameters. It is intended that a single instance can
-    describe a whole telescope for an observation.
-    """
-
-    @property
-    @abstractmethod
-    def parameters(self) -> Sequence[Parameter]:
-        """Describes the variables by which the general model is parametrized."""
-
-    @abstractmethod
-    def sample(self, **kwargs) -> BeamModel:
-        """Obtain a specific model.
-
-        It is expected that this may be an expensive function and the caller
-        should cache the result if appropriate.
-
-        Where parameters are omitted, the implementation should return a
-        model that is suitable for the typical range of the parameter. Extra
-        parameters are ignored. Thus, calling code can always safely supply
-        the parameters is knows about, without needing to check
-        :attr:`parameters`.
-
-        Parameters
-        ----------
-        **kwargs
-            Parameter values to specialize on.
-
-        Raises
-        ------
-        ValueError
-            if the value of any parameter is out of range of the model (optional).
-        TypeError
-            if the type of any parameter is inappropriate (optional).
-        """
-
-
 @profile_function()
 @numba.njit(parallel=True, nogil=True)
-def _sample_impl(az, el, beam, step, out):
+def _sample_impl(l, m, beam, step, out):
     """Do linear interpolation of a beam on a 2D grid.
 
     Parameters
     ----------
-    az
-        1D array of direction cosines in the azimuth axis
-    el
-        1D array of direction cosines in the elevation axis
+    l
+        1D array of direction cosines in one axis
+    m
+        1D array of direction cosines in the orthogonal axis
     beam
-        2D array of beam values, with axes for frequency and radius
+        array of beam values, the last axis for radius and the rest for frequency
     step
         Increase in radius for each step along the radius axis
     out
-        Output array, with shape (2, 2, frequency, el, az). Only the
-        [0, 0] and [1, 1] elements (co-pol) are filled in.
+        Output array, with shape (frequency, el/az).
     """
     pos = 0
-    deltas = np.empty(beam.shape[1] - 1, beam.dtype)
-    for i in range(beam.shape[0]):
-        for j in range(len(deltas)):
-            deltas[j] = beam[i, j + 1] - beam[i, j]
-        for j in numba.prange(len(el)):
-            for k in range(len(az)):
-                radius = np.sqrt(el[j] * el[j] + az[k] * az[k])
-                radius_steps = radius / step
-                pos = np.int_(radius_steps)
-                if pos < len(deltas):
-                    value = beam[i, pos] + deltas[pos] * (radius_steps - pos)
-                else:
-                    value = np.nan
-                out[0, 0, i, j, k] = value
-                out[1, 1, i, j, k] = value
+    deltas = np.empty(beam.shape[-1] - 1, beam.dtype)
+    for freq_idx in np.ndindex(beam.shape[:-1]):
+        fbeam = beam[freq_idx]
+        fout = out[freq_idx]
+        for i in range(len(deltas)):
+            deltas[i] = fbeam[i + 1] - fbeam[i]
+        for i in numba.prange(len(l)):
+            radius = np.sqrt(l[i] * l[i] + m[i] * m[i])
+            radius_steps = radius / step
+            pos = np.int_(radius_steps)
+            if pos < len(deltas):
+                value = fbeam[pos] + deltas[pos] * (radius_steps - pos)
+            else:
+                value = np.nan
+            fout[i] = value * value  # Convert voltage scale to power
 
 
-class TrivialBeamModel(BeamModel):
+class TrivialPrimaryBeam(PrimaryBeam):
     """The simplest possible beam model.
 
     It is
@@ -208,59 +62,127 @@ class TrivialBeamModel(BeamModel):
     - elevation-independent
     - real-valued
     - polarization-independent (assumes no leakage and same response in H and V)
+
+    It only supports the UNPOLARIZED_POWER output type. There may be other
+    areas where it falls short of the katsdpmodels implementation; it is only
+    intended to be used within katsdpimager.
+
+    Parameters
+    ----------
+    step
+        Distance (in sine projection) between samples
+    frequency
+        1D array of frequencies for which samples are available
+    samples
+        2D array of samples along a radial slice, with axes for frequency and
+        position. The samples start at boresight and have step `step`.
+    band
+        Name of the receiver band
     """
 
-    def __init__(self, filename: str) -> None:
-        group = h5py.File(filename, 'r')
-        self._frequencies = group['frequencies'][:] << units.Hz
-        self._step = group['beam'].attrs['step']
-        self._beam = group['beam'][:]
+    def __init__(self, step: float, frequency: u.Quantity, samples: np.ndarray, *,
+                 band: str) -> None:
+        if len(samples) != len(frequency):
+            raise ValueError('frequency and samples have inconsistent shape')
+        self._step = step
+        self._samples = samples
+        self._frequency = frequency
+        self._band = band
+        self._interp_samples = scipy.interpolate.interp1d(
+            frequency.to_value(u.Hz), samples,
+            axis=0, copy=False, bounds_error=False, fill_value=np.nan,
+            assume_sorted=True)
+
+    def spatial_resolution(self, frequency: u.Quantity) -> np.ndarray:
+        return self._step
+
+    def frequency_range(self) -> Tuple[u.Quantity, u.Quantity]:
+        return self._frequency[0], self._frequency[-1]
+
+    def frequency_resolution(self) -> u.Quantity:
+        if len(self._frequency) <= 1:
+            return 0 * u.Hz
+        else:
+            return np.min(np.diff(self._frequency))
+
+    def inradius(self, frequency: u.Quantity) -> float:
+        return self._step * (self._samples.shape[1] - 1)
+
+    def circumradius(self, frequency: u.Quantity) -> float:
+        return self.inradius(frequency)
 
     @property
-    def parameter_values(self) -> Mapping[str, Any]:
-        return {}
+    def is_circular(self) -> bool:
+        return True
 
-    @profile_function()
-    def sample(self,
-               az_start: float, az_step: float, az_samples: int,
-               el_start: float, el_step: float, el_samples: int,
-               frequencies: units.Quantity) -> np.ndarray:
-        # Compute coordinates for az and el
-        az = np.arange(az_samples) * az_step + az_start
-        el = np.arange(el_samples) * el_step + el_start
-        # Ensure we have matching units, so that versions of numpy prior to NEP 18
-        # will do the right thing in np.interp.
-        frequencies = units.Quantity(frequencies, copy=False)
-        frequencies = frequencies.to(self._frequencies.unit, equivalencies=units.spectral())
+    @property
+    def is_unpolarized(self) -> bool:
+        return True
 
-        # Reorder arguments to match what apply_along_axis will use
-        def interp(fp, x, xp):
-            return np.interp(x, xp, fp, left=np.nan, right=np.nan)
+    @property
+    def antenna(self) -> None:
+        return None
 
-        # Interpolate the original data to the new frequencies
-        beam = np.apply_along_axis(interp, 0, self._beam, frequencies, self._frequencies)
-        # Add polarization dimensions
-        out = np.zeros((2, 2, len(frequencies), len(el), len(az)), self._beam.dtype)
-        _sample_impl(az, el, beam, self._step, out)
+    @property
+    def receiver(self) -> None:
+        return None
+
+    @property
+    def band(self) -> str:
+        return self._band
+
+    def sample(self, l: ArrayLike, m: ArrayLike, frequency: u.Quantity,
+               frame: Union[AltAzFrame, RADecFrame],
+               output_type: OutputType, *,
+               out: Optional[np.ndarray] = None) -> np.ndarray:
+        l_ = np.asarray(l)
+        m_ = np.asarray(m)
+        if output_type != OutputType.UNPOLARIZED_POWER:
+            raise NotImplementedError('Only UNPOLARIZED_POWER is currently implemented')
+        in_shape = np.broadcast_shapes(l_.shape, m_.shape, frame.shape)
+        out_shape = frequency.shape + in_shape
+        if out is not None:
+            if out.shape != out_shape:
+                raise ValueError(f'out must have shape {out_shape}, not {out.shape}')
+            if out.dtype != np.float32:
+                raise TypeError(f'out must have dtype float32, not {out.dtype}')
+            if not out.flags.c_contiguous:
+                raise ValueError('out must be C contiguous')
+        else:
+            out = np.empty(out_shape, np.float32)
+        frequency_Hz = frequency.to_value(u.Hz).astype(np.float32, copy=False, casting='same_kind')
+        samples = self._interp_samples(frequency_Hz)
+        # Create view with l/m axis flattened to 1D for benefit of numba
+        l_view = np.broadcast_to(l_, in_shape).ravel()
+        m_view = np.broadcast_to(m_, in_shape).ravel()
+        out_view = out.view()
+        out_view.shape = frequency.shape + l_view.shape
+        _sample_impl(l_view, m_view, samples, self._step, out_view)
         return out
 
+    def sample_grid(self, l: ArrayLike, m: ArrayLike, frequency: u.Quantity,
+                    frame: Union[AltAzFrame, RADecFrame],
+                    output_type: OutputType, *,
+                    out: Optional[np.ndarray] = None) -> np.ndarray:
+        l_ = np.asarray(l)
+        m_ = np.asarray(m)
+        return self.sample(
+            l_[np.newaxis, :], m_[:, np.newaxis], frequency,
+            frame, output_type, out=out
+        )
 
-class MeerkatBeamModelSet1(BeamModelSet):
-    """A very simple model of the MeerKAT dish beam."""
 
-    BANDS = {'L', 'UHF'}
+BANDS = {'L', 'UHF'}
 
-    def __init__(self, band: str) -> None:
-        if band not in self.BANDS:
-            raise ValueError(f'band ({band}) must be one of {self.BANDS}')
-        filename = pkg_resources.resource_filename(
-            'katsdpimager',
-            f'models/beams/meerkat/v1/beam_{band}.h5')
-        self._model = TrivialBeamModel(filename)
 
-    @property
-    def parameters(self) -> Sequence[Parameter]:
-        return []
-
-    def sample(self, **kwargs) -> BeamModel:
-        return self._model
+def meerkat_v1_beam(band: str) -> TrivialPrimaryBeam:
+    if band not in BANDS:
+        raise ValueError(f'band ({band}) must be one of {BANDS}')
+    filename = pkg_resources.resource_filename(
+        'katsdpimager',
+        f'models/beams/meerkat/v1/beam_{band}.h5')
+    group = h5py.File(filename, 'r')
+    frequencies = group['frequencies'][:] << u.Hz
+    step = group['beam'].attrs['step']
+    beam = group['beam'][:]
+    return TrivialPrimaryBeam(step, frequencies, beam, band=band)
