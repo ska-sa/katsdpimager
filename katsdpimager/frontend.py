@@ -11,9 +11,10 @@ import warnings
 
 import numpy as np
 import numba
-from astropy import units
+import astropy.units as u
 import astropy.wcs
 import katsdpsigproc.accel as accel
+from katsdpmodels.primary_beam import AltAzFrame, OutputType
 
 from . import (
     loader, loader_core, parameters, polarization, preprocess, clean, weight, sky_model,
@@ -289,7 +290,7 @@ def add_options(parser):
                        help='Field of view to image, relative to main lobe of beam [%(default)s]')
     group.add_argument('--image-oversample', type=float, default=5,
                        help='Pixels per beam [%(default)s]')
-    group.add_argument('--pixel-size', type=units.Quantity,
+    group.add_argument('--pixel-size', type=u.Quantity,
                        help='Size of each image pixel [computed from array]')
     group.add_argument('--pixels', type=int,
                        help='Number of pixels in image [computed from array]')
@@ -314,10 +315,10 @@ def add_options(parser):
                        help='Oversampling factor for kernel generation [%(default)s]')
     group.add_argument('--w-slices', type=int,
                        help='Number of W slices [computed from --kernel-width]')
-    group.add_argument('--w-step', type=units.Quantity, default=units.Quantity(1.0),
+    group.add_argument('--w-step', type=u.Quantity, default=u.Quantity(1.0),
                        help='Separation between W planes, in subgrid cells or a distance '
                             '[%(default)s]')
-    group.add_argument('--max-w', type=units.Quantity,
+    group.add_argument('--max-w', type=u.Quantity,
                        help='Largest w, in units of distance [longest baseline]')
     group.add_argument('--aa-width', type=float, default=7,
                        help='Support of anti-aliasing kernel [%(default)s]')
@@ -586,21 +587,16 @@ def process_channel(dataset, args, start_channel,
     # Scale by primary beam
     model = imager.buffer('model')
     if grid_p.fixed.beams:
-        pbeam_model = grid_p.fixed.beams.sample()
+        pbeam_model = grid_p.fixed.beams
         # Sample beam model at the pixel grid. It's circularly symmetric, so
         # we don't need to worry about parallactic angle rotations or the
-        # different sign conventions for azimuth versus RA.
-        start = -image_p.pixels / 2 * image_p.pixel_size
-        pbeam = pbeam_model.sample(start, image_p.pixel_size, image_p.pixels,
-                                   start, image_p.pixel_size, image_p.pixels,
-                                   [image_p.wavelength])
-        # Ignore polarization and length-1 frequency axis.
-        pbeam = pbeam[0, 0, 0]
-        # Square to convert voltage to power.
-        if pbeam.dtype.kind == 'c':
-            pbeam = np.square(pbeam.real) + np.square(pbeam.imag)
-        else:
-            pbeam = np.square(pbeam)
+        # different sign conventions for azimuth versus RA, and can just
+        # sample in AltAz space.
+        coords = (np.arange(image_p.pixels) - image_p.pixels / 2) * image_p.pixel_size
+        pbeam = pbeam_model.sample_grid(
+            coords, coords, image_p.wavelength.to(u.Hz, equivalencies=u.spectral()),
+            AltAzFrame(), OutputType.UNPOLARIZED_POWER
+        )
         # Ensure the units match the destination buffer.
         pbeam = pbeam.astype(imager.buffer('beam_power').dtype, copy=False)
         imager.set_buffer('beam_power', pbeam)
@@ -714,7 +710,7 @@ def run(args, context, queue, dataset, writer):
             if band is None:
                 raise ValueError(
                     'Data set does not specify a band, so --primary-beam cannot be used')
-            beams = primary_beam.MeerkatBeamModelSet1(band)
+            beams = primary_beam.meerkat_v1_beam(band)
         elif args.primary_beam == 'none':
             beams = None
         else:

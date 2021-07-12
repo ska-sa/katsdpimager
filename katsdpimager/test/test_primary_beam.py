@@ -2,110 +2,90 @@
 
 import hashlib
 
-import pkg_resources
 import numpy as np
-import astropy.units as units
+import astropy.units as u
 from nose.tools import assert_raises, assert_equal, assert_true
+from katsdpmodels.primary_beam import OutputType, AltAzFrame
 
 from .. import primary_beam
 
 
-class TestTrivialBeamModel:
+class TestTrivialPrimaryBeam:
     def setup(self) -> None:
-        filename = pkg_resources.resource_filename(
-            'katsdpimager',
-            'models/beams/meerkat/v1/beam_L.h5')
-        self.model = primary_beam.TrivialBeamModel(filename)
+        self.model = primary_beam.meerkat_v1_beam('L')
+        N = 101
+        STEP = 0.001
+        self.coords = (np.arange(N) - N // 2) * STEP
 
     def test_out_of_range(self) -> None:
-        freqs = units.Quantity([1.4], units.GHz)
+        freqs = u.Quantity([1.4], u.GHz)
         # Azimuth out of range
-        beam = self.model.sample(-0.5, 0.01, 100, 0.0, 0.01, 1, freqs)
-        assert_true(np.isnan(beam[0, 0, 0, 0, 0]))
+        beam = self.model.sample_grid(
+            [-0.5], [0.0], freqs, AltAzFrame(), OutputType.UNPOLARIZED_POWER
+        )
+        assert_true(np.isnan(beam[0, 0, 0]))
         # Elevation out of range
-        beam = self.model.sample(0.0, 0.01, 1, -0.5, 0.01, 100, freqs)
-        assert_true(np.isnan(beam[0, 0, 0, 0, 0]))
+        beam = self.model.sample_grid(
+            [0.0], [-0.5], freqs, AltAzFrame(), OutputType.UNPOLARIZED_POWER
+        )
+        assert_true(np.isnan(beam[0, 0, 0]))
         # Frequency too low
-        beam = self.model.sample(0.0, 0.01, 1, 0.0, 0.01, 1, units.Quantity([0.5], units.GHz))
-        assert_true(np.all(np.isnan(beam[0, 0])))
-        assert_true(np.all(np.isnan(beam[1, 1])))
+        beam = self.model.sample_grid(
+            [0.0], [0.0], 0.5 * u.GHz, AltAzFrame(), OutputType.UNPOLARIZED_POWER
+        )
+        assert_true(np.all(np.isnan(beam)))
         # Frequency too high
-        beam = self.model.sample(0.0, 0.01, 1, 0.0, 0.01, 1, units.Quantity([3], units.GHz))
-        assert_true(np.all(np.isnan(beam[0, 0])))
-        assert_true(np.all(np.isnan(beam[1, 1])))
-
-    def test_parameter_values(self) -> None:
-        assert_equal(dict(self.model.parameter_values), {})
-
-    def _check_scalar(self, beam: np.ndarray) -> None:
-        """Validate that the beam has no leakage and same H and V response."""
-        np.testing.assert_array_equal(beam[1, 0], beam[0, 1])
-        np.testing.assert_array_equal(beam[0, 0], beam[1, 1])
-        np.testing.assert_array_equal(beam[0, 1], np.zeros_like(beam[0, 1]))
+        beam = self.model.sample_grid(
+            [0.0], [0.0], 3 * u.GHz, AltAzFrame(), OutputType.UNPOLARIZED_POWER
+        )
+        assert_true(np.all(np.isnan(beam)))
 
     def _show_beam(self, beam: np.ndarray) -> None:
         """Debug function to plot a beam (should not be any calls checked in)."""
         import matplotlib.pyplot as plt
-        rows = 1 if beam.shape[2] == 1 else 2
-        fig, axs = plt.subplots(rows, beam.shape[2], sharex=True, sharey=True, squeeze=False)
-        for channel in range(beam.shape[2]):
-            axs[0][channel].imshow(beam[0, 0, channel], vmin=0, vmax=1.01)
+        if beam.ndim == 2:
+            beam = beam[np.newaxis]
+        rows = 1 if beam.shape[0] == 1 else 2
+        fig, axs = plt.subplots(rows, beam.shape[0], sharex=True, sharey=True, squeeze=False)
+        for channel in range(beam.shape[0]):
+            axs[0][channel].imshow(beam[channel], vmin=0, vmax=1.01)
             if channel > 0:
-                delta = beam[0, 0, channel] - beam[0, 0, 0]
+                delta = beam[channel] - beam[0]
                 axs[1, channel].imshow(delta, vmin=-0.01, vmax=0.01)
         plt.show()
 
     def test_given_frequency(self) -> None:
         """Sample at frequency already present in the model."""
-        N = 101
-        STEP = 0.001
-        beam = self.model.sample(-STEP * (N // 2), STEP, N,
-                                 -STEP * (N // 2), STEP, N,
-                                 [1284] * units.MHz)
-        assert_equal(beam.shape, (2, 2, 1, N, N))
-        self._check_scalar(beam)
+        beam = self.model.sample_grid(
+            self.coords, self.coords, 1284 * u.MHz, AltAzFrame(), OutputType.UNPOLARIZED_POWER
+        )
+        N = len(self.coords)
+        assert_equal(beam.shape, (N, N))
         # Should be unity at the centre of the beam
-        np.testing.assert_allclose(beam[0, 0, 0, N // 2, N // 2], 1.0, rtol=1e-2)
+        np.testing.assert_allclose(beam[N // 2, N // 2], 1.0, rtol=1e-2)
         # If it fails due to code/model changes, uncomment to inspect visually:
         # self._show_beam(beam)
-        assert_equal(hashlib.md5(beam[0, 0, 0]).hexdigest(), '30726bc4a42ddb1813dcdf3a1d54251c')
+        assert_equal(hashlib.md5(beam).hexdigest(), '36a37a6a08f071ed0e26fd523dc7b8a8')
 
     def test_interpolated_frequency(self) -> None:
         """Sample at frequency not present in the model."""
-        N = 101
-        STEP = 0.001
         # Outer two are frequencies in the model
-        freqs = [856, 856.41796875, 856.8359375] * units.MHz
-        beam = self.model.sample(-STEP * (N // 2), STEP, N,
-                                 -STEP * (N // 2), STEP, N,
-                                 freqs)
-        assert_equal(beam.shape, (2, 2, 3, N, N))
-        self._check_scalar(beam)
+        freqs = [856, 856.41796875, 856.8359375] * u.MHz
+        beam = self.model.sample_grid(
+            self.coords, self.coords, freqs, AltAzFrame(), OutputType.UNPOLARIZED_POWER
+        )
+        assert_equal(beam.shape, (3, len(self.coords), len(self.coords)))
         # If it fails due to code/model changes, uncomment to inspect visually:
         # self._show_beam(beam)
-        assert_equal(hashlib.md5(beam[0, 0, 1]).hexdigest(), '0049684903ec7ce8cb74135fdb17ef15')
-
-    def test_offset(self) -> None:
-        N = 128
-        STEP = 1 / 2048
-        freqs = [1284] * units.MHz
-        full = self.model.sample(-STEP * (N // 2), STEP, N,
-                                 -STEP * (N // 2), STEP, N,
-                                 freqs)
-        part = self.model.sample(-STEP * (N // 2), STEP, N // 2,
-                                 0, STEP, N // 4,
-                                 freqs)
-        np.testing.assert_array_equal(part, full[..., 64:96, 0:64])
+        assert_equal(hashlib.md5(beam[1]).hexdigest(), 'a6a288680257d59ccebdec14e28a029c')
 
 
-class TestMeerkatBeamModelSet1:
+class TestMeerkatV1Beam:
     def test_load(self):
         """Smoke test to check that the files can be found."""
-        for band in primary_beam.MeerkatBeamModelSet1.BANDS:
-            models = primary_beam.MeerkatBeamModelSet1(band)
-            models.sample()
-            assert_equal(models.parameters, [])
+        for band in primary_beam.BANDS:
+            primary_beam.meerkat_v1_beam(band)
 
     def test_bad_band(self):
         with assert_raises(ValueError):
-            primary_beam.MeerkatBeamModelSet1('Z')
+            primary_beam.meerkat_v1_beam('Z')

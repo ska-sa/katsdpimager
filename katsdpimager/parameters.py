@@ -222,8 +222,8 @@ class FixedGridParameters:
         Number of UV cells corresponding to the combined W+antialias kernel.
     degrid : bool, optional
         If true, use degridding, otherwise use direct prediction.
-    beams : :class:`primary_beam.BeamModelSet`, optional
-        Primary beam models for correction.
+    beams : :class:`katsdpmodels.primary_beam.PrimaryBeam`, optional
+        Primary beam model for correction.
     """
     def __init__(self, antialias_width, oversample, image_oversample,
                  max_w, kernel_width, degrid=False, beams=None):
