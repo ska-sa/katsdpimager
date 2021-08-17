@@ -20,7 +20,9 @@ catchError {
              * in a separate venv.
              */
             katsdp.virtualenv('venv-simulate', true) {
-                sh('pip install -r git/simulation-requirements.txt')
+                // GIT_LFS_SKIP_SMUDGE prevents git-lfs from checking out the large files.
+                // We don't need them to just install RASCIL.
+                sh('GIT_LFS_SKIP_SMUDGE=1 pip install -r git/simulation-requirements.txt')
                 dir(testdir) {
                     sh './simulate.py'
                 }
