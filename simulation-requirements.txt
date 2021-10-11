@@ -186,7 +186,7 @@ networkx==2.5
     # via scikit-image
 git+https://gitlab.mpcdf.mpg.de/ift/nifty_gridder.git@f1540b9cca161e1aa32aa3cd09a592b3dac5f16b
     # via -r simulation-requirements.in
-notebook==6.2.0
+notebook==6.4.4
     # via
     #   jupyter
     #   jupyter-contrib-core
@@ -247,7 +247,7 @@ photutils==1.0.2
     # via rascil
 pickleshare==0.7.5
     # via ipython
-pillow==8.2.0
+pillow==8.3.2
     # via
     #   bokeh
     #   imageio
