@@ -16,12 +16,12 @@ import io
 import glob
 from contextlib import closing
 
-from mako.template import Template
-import matplotlib
-matplotlib.use('Agg')   # noqa: E402
-import aplpy
 from astropy.io import fits
 from astropy.wcs import WCS
+from mako.template import Template
+import matplotlib
+matplotlib.use('Agg')
+import aplpy     # noqa: E402
 
 
 MODE_CLEAN = 'Clean'
