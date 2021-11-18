@@ -40,10 +40,9 @@ import numpy as np
 import pkg_resources
 from astropy.modeling import models, fitting
 from astropy import units
-from katsdpsigproc import accel
+from katsdpsigproc import accel, fft
 import katsdpimager.types
 
-from . import fft
 from .profiling import profile_function, profile_device
 
 
@@ -372,8 +371,10 @@ class ConvolveBeam(accel.OperationSequence):
         Restoring beam. It must be set before invoking the operation.
     """
     def __init__(self, template, command_queue, allocator=None):
-        self._fft = template.fft.instantiate(command_queue, fft.FFT_FORWARD, allocator=allocator)
-        self._ifft = template.ifft.instantiate(command_queue, fft.FFT_INVERSE, allocator=allocator)
+        self._fft = template.fft.instantiate(
+            command_queue, fft.FftMode.FORWARD, allocator=allocator)
+        self._ifft = template.ifft.instantiate(
+            command_queue, fft.FftMode.INVERSE, allocator=allocator)
         self._fourier_beam = template.fourier_beam.instantiate(
             command_queue, template.shape, allocator=allocator)
         operations = [

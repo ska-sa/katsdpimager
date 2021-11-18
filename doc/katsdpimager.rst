@@ -19,7 +19,6 @@ Submodules
    katsdpimager.beam
    katsdpimager.clean
    katsdpimager.fast_math
-   katsdpimager.fft
    katsdpimager.frontend
    katsdpimager.grid
    katsdpimager.image
