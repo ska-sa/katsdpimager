@@ -5,10 +5,9 @@ It also handles conversion between visibility and image planes.
 
 import numpy as np
 import pkg_resources
-from katsdpsigproc import accel
+from katsdpsigproc import accel, fft
 
 import katsdpimager.types
-from . import fft
 from .profiling import profile_device
 from .fast_math import expj2pi
 
@@ -566,7 +565,7 @@ class GridImageTemplate:
     complex-to-complex transformation, and the real part of the result is
     returned. Both the grid and the image have the DC term in the middle.
 
-    Because it uses :class:`~katsdpimager.fft.FftTemplate`, most of the
+    Because it uses :class:`~katsdpsigproc.fft.FftTemplate`, most of the
     parameters are baked into the template rather than the instance.
 
     Parameters
@@ -627,7 +626,7 @@ class GridToImage(accel.OperationSequence):
     """
     def __init__(self, template, command_queue, shape_grid,
                  lm_scale, lm_bias, fft_plan, allocator=None):
-        self._ifft = fft_plan.instantiate(command_queue, fft.FFT_INVERSE, allocator)
+        self._ifft = fft_plan.instantiate(command_queue, fft.FftMode.INVERSE, allocator)
         polarizations = shape_grid[0]
         shape_image = (polarizations,) + tuple(fft_plan.shape)
         self._layer_to_image = template.layer_to_image.instantiate(
@@ -696,7 +695,7 @@ class ImageToGrid(accel.OperationSequence):
                  lm_scale, lm_bias, fft_plan, allocator=None):
         polarizations = shape_grid[0]
         shape_image = (polarizations,) + tuple(fft_plan.shape)
-        self._fft = fft_plan.instantiate(command_queue, fft.FFT_FORWARD, allocator)
+        self._fft = fft_plan.instantiate(command_queue, fft.FftMode.FORWARD, allocator)
         self._image_to_layer = template.image_to_layer.instantiate(
             command_queue, shape_image, lm_scale, lm_bias, allocator)
         operations = [

@@ -26,7 +26,7 @@ import katsdpimager
 
 # Work around C extensions that can't be installed on readthedocs
 if os.environ.get('READTHEDOCS') == 'True':
-    MOCK_MODULES = ['skcuda', 'skcuda.fft', 'katsdpimager._preprocess']
+    MOCK_MODULES = ['katsdpimager._preprocess']
     sys.modules.update({mod_name: MagicMock() for mod_name in MOCK_MODULES})
 
 # -- General configuration ------------------------------------------------
