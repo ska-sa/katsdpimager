@@ -2,4 +2,4 @@
 
 sphinx
 sphinx_rtd_theme
-sphinxcontrib-tikz==0.4.8
+sphinxcontrib-tikz==0.4.15
