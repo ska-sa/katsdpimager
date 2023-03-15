@@ -2,5 +2,5 @@
 
 coverage
 fakeredis[lua]
-lupa==1.9                   # via fakeredis[lua]
+lupa==1.14.1                # via fakeredis[lua]
 nose
