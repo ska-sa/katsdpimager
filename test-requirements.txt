@@ -4,3 +4,4 @@ coverage
 fakeredis[lua]
 lupa                        # via fakeredis[lua]
 nose
+pytest
