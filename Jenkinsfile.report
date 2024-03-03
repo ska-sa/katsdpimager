@@ -47,4 +47,4 @@ catchError {
         }
     }
 }
-katsdp.mail('bmerry@ska.ac.za')
+katsdp.mail('sdpdev+katsdpimager@ska.ac.za')
