@@ -1,4 +1,4 @@
-ARG KATSDPDOCKERBASE_REGISTRY=sdp-docker-registry.kat.ac.za:5000
+ARG KATSDPDOCKERBASE_REGISTRY=harbor.sdp.kat.ac.za/dpp
 
 FROM $KATSDPDOCKERBASE_REGISTRY/docker-base-gpu-build as build
 
