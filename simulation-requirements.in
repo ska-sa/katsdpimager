@@ -1,5 +1,5 @@
 astropy
-katpoint @ git+https://gitlab.com/ska-telescope/katpoint.git
+katpoint @ git+https://github.com/ska-sa/katpoint.git
 numpy
 pandas
 python-casacore
