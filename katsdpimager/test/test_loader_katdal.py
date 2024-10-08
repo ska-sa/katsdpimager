@@ -140,7 +140,10 @@ class TestLoaderKatdal:
         assert_equal(loader.frequency(48), 1284 * u.MHz)
         assert_equal(loader.frequency(72), 1498 * u.MHz)
         assert_equal(loader.band(), 'L')
-        assert_equal(loader.phase_centre()[0], Angle('19:39:25.03 hours').to(u.rad))
+        assert astropy.units.quantity.allclose(
+            loader.phase_centre()[0],
+            Angle('19:39:25.03 hours').to(u.rad)
+        )
         assert_equal(loader.phase_centre()[1], Angle('-63:42:45.7 degrees').to(u.rad))
         assert_true(loader.has_feed_angles())
         assert_equal(
