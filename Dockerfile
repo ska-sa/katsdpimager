@@ -1,6 +1,6 @@
 ARG KATSDPDOCKERBASE_REGISTRY=harbor.sdp.kat.ac.za/dpp
 
-FROM $KATSDPDOCKERBASE_REGISTRY/docker-base-gpu-build as build
+FROM $KATSDPDOCKERBASE_REGISTRY/base-gpu-build:focaluvpip AS build
 
 # Build ffmpeg from source. The Ubuntu package has all sorts of dependencies
 # (including X11) that we'd rather avoid. We can also build a minimal ffmpeg
@@ -34,7 +34,13 @@ ENV PATH="$PATH_PYTHON3" VIRTUAL_ENV="$VIRTUAL_ENV_PYTHON3"
 # Install dependencies
 RUN mkdir -p /tmp/install/katsdpimager
 COPY --chown=kat:kat requirements.txt /tmp/install/requirements.txt
-RUN install_pinned.py -d ~/docker-base/base-requirements.txt -d ~/docker-base/gpu-requirements.txt -r /tmp/install/requirements.txt
+#RUN install_pinned.py -d ~/docker-base/base-requirements.txt -d ~/docker-base/gpu-requirements.txt -r /tmp/install/requirements.txt
+RUN uv pip compile \
+    ~/docker-base/base-requirements.txt \
+    ~/docker-base/gpu-requirements.txt \
+    /tmp/install/requirements.txt \
+    -o /tmp/install/requirements.lock && \
+    uv pip sync /tmp/install/requirements.lock --strict
 
 # Install the current package
 COPY --chown=kat:kat . /tmp/install/katsdpimager
@@ -45,7 +51,7 @@ RUN pip check
 
 #######################################################################
 
-FROM $KATSDPDOCKERBASE_REGISTRY/docker-base-gpu-runtime
+FROM $KATSDPDOCKERBASE_REGISTRY/base-gpu-runtime:focaluvpip
 LABEL maintainer="sdpdev+katsdpimager@ska.ac.za"
 
 # ffmpeg is linked against libx264
