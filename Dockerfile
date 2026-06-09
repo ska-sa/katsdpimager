@@ -44,10 +44,14 @@ RUN uv pip compile \
 
 # Install the current package
 COPY --chown=kat:kat . /tmp/install/katsdpimager
-WORKDIR /tmp/install/katsdpimager
-RUN python ./setup.py clean
-RUN pip install --no-deps .[ms,katdal,pipeline]
-RUN pip check
+#WORKDIR /tmp/install/katsdpimager
+#RUN python ./setup.py clean
+#RUN pip install --no-deps .[ms,katdal,pipeline]
+#RUN pip check
+RUN cd /tmp/install/katsdpimager && \
+       python ./setup.py clean && \
+       uv pip install --no-deps ".[ms,katdal,pipeline]" && \
+       uv pip check
 
 #######################################################################
 
