@@ -5,3 +5,4 @@ fakeredis[lua]
 lupa                        # via fakeredis[lua]
 nose
 pytest
+pytest-cov
