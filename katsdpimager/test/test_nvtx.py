@@ -13,12 +13,12 @@ class TestNvtx:
     MOD = nvtx
 
     @classmethod
-    def setupClass(cls) -> None:
+    def setup_class(cls) -> None:
         # Needs to be done only once for testing with nsys - creating and
         # destroying the same named domain causes problems otherwise.
         cls.domain = cls.MOD.Domain('test_domain')
 
-    def setup(self) -> None:
+    def setup_method(self) -> None:
         self.rstring1 = self.MOD.register_string('hello')
         self.rstring2 = self.MOD.register_string('world', domain=self.domain)
 

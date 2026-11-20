@@ -11,7 +11,7 @@ from .. import primary_beam
 
 
 class TestTrivialPrimaryBeam:
-    def setup(self) -> None:
+    def setup_method(self) -> None:
         self.model = primary_beam.meerkat_v1_beam('L')
         N = 101
         STEP = 0.001

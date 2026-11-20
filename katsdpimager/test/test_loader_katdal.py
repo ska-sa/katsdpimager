@@ -47,7 +47,7 @@ CONTINUUM_COMPONENTS = katpoint.Catalogue([
 
 
 class TestLoaderKatdal:
-    def setup(self):
+    def setup_method(self):
         self.tempdir = tempfile.TemporaryDirectory()
         self.store = NpyFileChunkStore(self.tempdir.name)
         self.shape = (12, 96, len(ANTENNAS) * (len(ANTENNAS) + 1) * 2)
@@ -126,7 +126,7 @@ class TestLoaderKatdal:
             'components': [target.description for target in CONTINUUM_COMPONENTS]
         }
 
-    def teardown(self):
+    def teardown_method(self):
         self._open_patcher.stop()
         self.tempdir.cleanup()
 

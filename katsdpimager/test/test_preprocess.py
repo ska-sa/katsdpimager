@@ -19,7 +19,7 @@ def _empty_recarray(dtype):
 
 
 class BaseTestVisibilityCollector:
-    def setup(self):
+    def setup_method(self):
         self.image_parameters = []
         self.grid_parameters = []
         fixed_image_parameters = parameters.FixedImageParameters(
@@ -159,8 +159,8 @@ class TestVisibilityCollectorMem(BaseTestVisibilityCollector):
 
 
 class TestVisibilityCollectorHDF5(BaseTestVisibilityCollector):
-    def setup(self):
-        super().setup()
+    def setup_method(self):
+        super().setup_method()
         self._tmpfiles = []
 
     def factory(self, *args, **kwargs):
@@ -169,7 +169,7 @@ class TestVisibilityCollectorHDF5(BaseTestVisibilityCollector):
         os.close(handle)
         return preprocess.VisibilityCollectorHDF5(filename, *args, **kwargs)
 
-    def teardown(self):
+    def teardown_method(self):
         for filename in self._tmpfiles:
             try:
                 os.remove(filename)

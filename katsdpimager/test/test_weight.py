@@ -8,7 +8,7 @@ from katsdpimager import weight
 
 
 class TestGridWeights:
-    def setup(self):
+    def setup_method(self):
         self.grid_shape = (4, 100, 200)
         self.uv = np.array([
             [-10, 5, 0, 0],
@@ -57,7 +57,7 @@ class TestGridWeights:
 
 
 class TestDensityWeights:
-    def setup(self):
+    def setup_method(self):
         rs = np.random.RandomState(1)
         self.grid_shape = (4, 50, 107)
         self.data = np.zeros(self.grid_shape, np.float32)
@@ -99,7 +99,7 @@ class TestDensityWeights:
 
 
 class TestMeanWeight:
-    def setup(self):
+    def setup_method(self):
         rs = np.random.RandomState(1)
         self.grid_shape = (4, 50, 107)
         self.data = rs.uniform(size=self.grid_shape).astype(np.float32)

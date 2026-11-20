@@ -21,7 +21,7 @@ from ..profiling import (
 
 
 class TestFrame:
-    def setup(self) -> None:
+    def setup_method(self) -> None:
         self.frame1 = Frame('foo', {'x': 1, 'y': 2})
         self.frame2 = Frame('bar', {'x': 3, 'z': 'hello'}, self.frame1)
 
@@ -64,7 +64,7 @@ class TestFrame:
 
 
 class TestRecord:
-    def setup(self) -> None:
+    def setup_method(self) -> None:
         self.frame = Frame('foo', {'str': 'hello', 'int': 1, 'float': 2.5})
         self.record = Record(self.frame, 12.5, 13.75)
 
@@ -121,7 +121,7 @@ def empty():
 @mock.patch('time.monotonic', return_value=0.0)
 @use_self_profiler
 class TestProfiler:
-    def setup(self) -> None:
+    def setup_method(self) -> None:
         self.profiler = CollectProfiler()
 
     def test_simple(self, monotonic) -> None:
@@ -253,7 +253,7 @@ class DummyEvent(katsdpsigproc.abc.AbstractEvent):
 
 
 class TestFlamegraphProfiler:
-    def setup(self) -> None:
+    def setup_method(self) -> None:
         self.profiler = FlamegraphProfiler()
         self.parent_frame = Frame('parent', {})
         self.child1_frame = Frame('child1', {}, self.parent_frame)

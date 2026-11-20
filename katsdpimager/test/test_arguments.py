@@ -9,18 +9,17 @@ from .. import arguments
 
 
 class TestUnparse:
-    def setup(self):
-        parser = argparse.ArgumentParser()
-        parser.add_argument('--int', type=int)
-        parser.add_argument('--int-default', type=int, default=3)
-        parser.add_argument('--float', type=float)
-        parser.add_argument('--float-default', type=float, default=2.5)
-        parser.add_argument('--str', type=str)
-        parser.add_argument('--str-default', type=str, default='')
-        parser.add_argument('--positive', action='store_true')
-        parser.add_argument('--no-negative', dest='negative', action='store_false')
-        parser.add_argument('--quantity', type=u.Quantity)
-        self.parser = parser
+    def setup_method(self):
+        self.parser = argparse.ArgumentParser()
+        self.parser.add_argument('--int', type=int)
+        self.parser.add_argument('--int-default', type=int, default=3)
+        self.parser.add_argument('--float', type=float)
+        self.parser.add_argument('--float-default', type=float, default=2.5)
+        self.parser.add_argument('--str', type=str)
+        self.parser.add_argument('--str-default', type=str, default='')
+        self.parser.add_argument('--positive', action='store_true')
+        self.parser.add_argument('--no-negative', dest='negative', action='store_false')
+        self.parser.add_argument('--quantity', type=u.Quantity)
 
     def test_no_args(self):
         """Pass no arguments."""

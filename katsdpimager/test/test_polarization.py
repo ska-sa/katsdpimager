@@ -10,7 +10,7 @@ class TestPolarizationMatrix:
     """Tests for :py:func:`katsdpimager.polarization.polarization_matrix`,
     using standard coordinate systems.
     """
-    def setup(self):
+    def setup_method(self):
         self.IQUV = polarization.STOKES_IQUV
         self.IQ = [polarization.STOKES_I, polarization.STOKES_Q]
         self.XY = [polarization.STOKES_XX,

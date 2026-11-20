@@ -13,7 +13,7 @@ from .utils import RandomState
 class TestPredict:
     """Tests for :class:`.Predict`"""
 
-    def setup(self):
+    def setup_method(self):
         # Deliberately use a strange subset of polarizations, to test that
         # the indexing is correct.
         pols = [polarization.STOKES_I,
@@ -93,14 +93,14 @@ class TestPredict:
 
     def test_random(self, context, command_queue):
         """Compare the host and device versions with random data"""
-        self._test_random(context, queue, 1001)
+        self._test_random(context, command_queue, 1001)
 
     def test_few_vis(self, context, command_queue):
         """Test with fewer visibilities than sources.
 
         This is a regression test: the first version had a bug in this case.
         """
-        self._test_random(context, queue, 2)
+        self._test_random(context, command_queue, 2)
 
     def test_extract_sky_image(self):
         components = {

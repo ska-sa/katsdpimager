@@ -22,7 +22,7 @@ def _middle(array, shape):
 
 
 class BaseTest:
-    def setup(self):
+    def setup_method(self):
         pixels = 256
         grid_cover = 180
         w_planes = 32

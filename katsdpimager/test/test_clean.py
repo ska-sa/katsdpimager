@@ -54,7 +54,7 @@ class TestPsfPatch(_TestPsfPatchBase):
 
 
 class TestPsfPatchHost(_TestPsfPatchBase):
-    def setup(self):
+    def setup_method(self):
         self.psf_host = np.zeros((4, 206, 304), np.float32)
 
     def _test(self, threshold=0.01, limit=None):

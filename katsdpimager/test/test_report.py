@@ -7,7 +7,7 @@ from .. import report
 
 
 class TestPolynomialSEFDModel:
-    def setup(self):
+    def setup_method(self):
         self.model_simple = report.PolynomialSEFDModel(
             2 * u.MHz, 10 * u.MHz,
             [[3, 1, 2]] * u.Jy, u.MHz, 0.5)

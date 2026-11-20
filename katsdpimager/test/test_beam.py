@@ -30,7 +30,7 @@ def convolve_beam_reference(model, beam):
 
 class TestConvolveBeam:
     """Test both host and device beam convolution functions"""
-    def setup(self):
+    def setup_method(self):
         self.beam = beam.Beam(models.Gaussian2D(amplitude=3.5, x_mean=0.0, y_mean=0.0,
                                                 x_stddev=2.0, y_stddev=5.0, theta=1))
         self.model = np.zeros((4, 128, 128), np.float32)

@@ -7,7 +7,7 @@ from .. import fast_math
 
 
 class TestExpj2pi:
-    def setup(self):
+    def setup_method(self):
         gen = np.random.Generator(np.random.PCG64(42))
         self.a = gen.random(100) * 1000.0 - 500.0
         self.expected = np.exp(2j * np.pi * self.a)
