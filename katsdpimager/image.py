@@ -4,7 +4,7 @@ It also handles conversion between visibility and image planes.
 """
 
 import numpy as np
-import pkg_resources
+import importlib.resources
 from katsdpsigproc import accel, fft
 
 import katsdpimager.types
@@ -83,7 +83,7 @@ class _LayerImageTemplate:
                 'wgs_x': self.wgs_x,
                 'wgs_y': self.wgs_y,
             },
-            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+            extra_dirs=[str(importlib.resources.files(__name__.split('.')[0]))])
 
 
 class _LayerImage(accel.Operation):
@@ -308,7 +308,7 @@ class ScaleTemplate:
                 'wgsy': self.wgsy,
                 'num_polarizations': num_polarizations
             },
-            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+            extra_dirs=[str(importlib.resources.files(__name__.split('.')[0]))])
 
     def instantiate(self, *args, **kwargs):
         return Scale(self, *args, **kwargs)
@@ -397,7 +397,7 @@ class AddImageTemplate:
                 'wgsy': self.wgsy,
                 'num_polarizations': num_polarizations
             },
-            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+            extra_dirs=[str(importlib.resources.files(__name__.split('.')[0]))])
 
     def instantiate(self, *args, **kwargs):
         return AddImage(self, *args, **kwargs)
@@ -488,7 +488,7 @@ class ApplyPrimaryBeamTemplate:
                 'wgsy': self.wgsy,
                 'num_polarizations': num_polarizations
             },
-            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+            extra_dirs=[str(importlib.resources.files(__name__.split('.')[0]))])
 
     def instantiate(self, *args, **kwargs):
         return ApplyPrimaryBeam(self, *args, **kwargs)

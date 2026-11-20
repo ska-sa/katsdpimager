@@ -19,7 +19,7 @@ import numpy as np
 import numba
 import scipy.stats
 from katsdpsigproc import accel
-import pkg_resources
+import importlib.resources
 
 import katsdpimager.types
 from .profiling import profile_device
@@ -63,7 +63,7 @@ class PsfPatchTemplate:
                 'wgsy': self.wgsy,
                 'num_polarizations': num_polarizations
             },
-            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+            extra_dirs=[str(importlib.resources.files(__name__.split('.')[0]))])
 
     def instantiate(self, *args, **kwargs):
         return PsfPatch(self, *args, **kwargs)
@@ -238,7 +238,7 @@ class NoiseEstTemplate:
                 'tiley': self.tiley,
                 'num_polarizations': num_polarizations
             },
-            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+            extra_dirs=[str(importlib.resources.files(__name__.split('.')[0]))])
 
     def instantiate(self, *args, **kwargs):
         return NoiseEst(self, *args, **kwargs)
@@ -389,7 +389,7 @@ class _UpdateTilesTemplate:
                 'num_polarizations': num_polarizations,
                 'clean_mode': mode
             },
-            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+            extra_dirs=[str(importlib.resources.files(__name__.split('.')[0]))])
 
     def instantiate(self, *args, **kwargs):
         return _UpdateTiles(self, *args, **kwargs)
@@ -507,7 +507,7 @@ class _FindPeakTemplate:
                 'wgsx': self.wgsx,
                 'wgsy': self.wgsy,
             },
-            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+            extra_dirs=[str(importlib.resources.files(__name__.split('.')[0]))])
 
     def instantiate(self, *args, **kwargs):
         return _FindPeak(self, *args, **kwargs)
@@ -616,7 +616,7 @@ class _SubtractPsfTemplate:
                 'wgsx': self.wgsx,
                 'wgsy': self.wgsy
             },
-            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+            extra_dirs=[str(importlib.resources.files(__name__.split('.')[0]))])
 
     def instantiate(self, *args, **kwargs):
         return _SubtractPsf(self, *args, **kwargs)

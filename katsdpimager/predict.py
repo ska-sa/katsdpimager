@@ -16,7 +16,7 @@ import logging
 
 import numpy as np
 import numba
-import pkg_resources
+import importlib.resources
 from astropy import units
 from katsdpsigproc import accel, tune
 
@@ -183,7 +183,7 @@ class PredictTemplate:
         }
         self.program = accel.build(
             context, 'imager_kernels/predict.mako', params,
-            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+            extra_dirs=[str(importlib.resources.files(__name__.split('.')[0]))])
 
     @classmethod
     @tune.autotuner(test={'wgs': 128})

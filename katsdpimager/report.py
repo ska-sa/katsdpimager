@@ -10,7 +10,7 @@ import xml.sax.saxutils
 from datetime import datetime, timezone
 from typing import List, Dict, Tuple, Optional
 
-import pkg_resources
+import importlib.resources
 import jinja2
 import numpy as np
 import katpoint
@@ -572,8 +572,8 @@ def write_report(common_stats: CommonStats, target_stats: List[TargetStats],
 
     resources = bokeh.resources.INLINE.render()
     static = {}
-    for f in pkg_resources.resource_listdir('katsdpimager', 'static'):
-        content = pkg_resources.resource_string('katsdpimager', 'static/' + f)
+    for f in [r.name for r in importlib.resources.files('katsdpimager').joinpath('static').iterdir()]:
+        content = importlib.resources.files('katsdpimager').joinpath('static', f).read_bytes()
         static[f] = content.decode('utf-8')
     context = {
         'common': common_stats,

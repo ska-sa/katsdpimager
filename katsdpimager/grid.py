@@ -120,7 +120,7 @@ import logging
 
 import numpy as np
 import numba
-import pkg_resources
+import importlib.resources
 
 import katsdpsigproc.accel as accel
 import katsdpsigproc.tune as tune
@@ -579,7 +579,7 @@ class GridderTemplate:
             ConvolutionKernelDevice.parameters(fixed_grid_parameters, self.kernel_pad))
         self.program = accel.build(
             context, "imager_kernels/grid.mako", parameters,
-            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+            extra_dirs=[str(importlib.resources.files(__name__.split('.')[0]))])
 
     @classmethod
     @tune.autotuner(test={'wgs_x': 16, 'wgs_y': 8, 'multi_x': 2, 'multi_y': 2})
@@ -631,7 +631,7 @@ class GridderTemplate:
             }
             program = accel.build(
                 context, "imager_kernels/grid.mako", parameters,
-                extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+                extra_dirs=[str(importlib.resources.files(__name__.split('.')[0]))])
             kernel = program.get_kernel('grid')
             uv_bias = (bin_size - 1) // 2 - grid.shape[-1] // 2
 
@@ -902,7 +902,7 @@ class DegridderTemplate:
             ConvolutionKernelDevice.parameters(fixed_grid_parameters, self.kernel_pad))
         self.program = accel.build(
             context, "imager_kernels/degrid.mako", parameters,
-            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+            extra_dirs=[str(importlib.resources.files(__name__.split('.')[0]))])
 
     @classmethod
     @tune.autotuner(test={'wgs_x': 8, 'wgs_y': 4, 'wgs_z': 4, 'multi_x': 2, 'multi_y': 4})
@@ -947,7 +947,7 @@ class DegridderTemplate:
             }
             program = accel.build(
                 context, "imager_kernels/degrid.mako", parameters,
-                extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+                extra_dirs=[str(importlib.resources.files(__name__.split('.')[0]))])
             kernel = program.get_kernel('degrid')
             uv_bias = (bin_size - 1) // 2 - grid.shape[-1] // 2
 

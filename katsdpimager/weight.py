@@ -45,7 +45,7 @@ different beam shapes for the different polarizations.
 
 import enum
 
-import pkg_resources
+import importlib.resources
 import numpy as np
 from katsdpsigproc import accel, fill
 
@@ -81,7 +81,7 @@ class GridWeightsTemplate:
         }
         self.program = accel.build(
             context, "imager_kernels/grid_weights.mako", parameters,
-            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+            extra_dirs=[str(importlib.resources.files(__name__.split('.')[0]))])
 
     def instantiate(self, *args, **kwargs):
         return GridWeights(self, *args, **kwargs)
@@ -208,7 +208,7 @@ class DensityWeightsTemplate:
         }
         self.program = accel.build(
             context, "imager_kernels/density_weights.mako", parameters,
-            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+            extra_dirs=[str(importlib.resources.files(__name__.split('.')[0]))])
 
     def instantiate(self, *args, **kwargs):
         return DensityWeights(self, *args, **kwargs)
@@ -317,7 +317,7 @@ class MeanWeightTemplate:
         }
         self.program = accel.build(
             context, "imager_kernels/mean_weight.mako", parameters,
-            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+            extra_dirs=[str(importlib.resources.files(__name__.split('.')[0]))])
 
     def instantiate(self, *args, **kwargs):
         return MeanWeight(self, *args, **kwargs)

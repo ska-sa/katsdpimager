@@ -37,7 +37,7 @@ and its square root is
 import math
 
 import numpy as np
-import pkg_resources
+import importlib.resources
 from astropy.modeling import models, fitting
 from astropy import units
 from katsdpsigproc import accel, fft
@@ -226,7 +226,7 @@ class FourierBeamTemplate:
         }
         self.program = accel.build(
             context, "imager_kernels/fourier_beam.mako", parameters,
-            extra_dirs=[pkg_resources.resource_filename(__name__, '')])
+            extra_dirs=[str(importlib.resources.files(__name__.split('.')[0]))])
 
     def instantiate(self, *args, **kwargs):
         return FourierBeam(self, *args, **kwargs)

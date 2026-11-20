@@ -10,7 +10,7 @@ except ImportError:
 import scipy.interpolate
 import numba
 import h5py
-import pkg_resources
+import importlib.resources
 import astropy.units as u
 from katsdpmodels.primary_beam import PrimaryBeam, AltAzFrame, RADecFrame, OutputType
 
@@ -178,9 +178,7 @@ BANDS = {'L', 'UHF'}
 def meerkat_v1_beam(band: str) -> TrivialPrimaryBeam:
     if band not in BANDS:
         raise ValueError(f'band ({band}) must be one of {BANDS}')
-    filename = pkg_resources.resource_filename(
-        'katsdpimager',
-        f'models/beams/meerkat/v1/beam_{band}.h5')
+    filename = str(importlib.resources.files('katsdpimager').joinpath(f'models/beams/meerkat/v1/beam_{band}.h5'))
     group = h5py.File(filename, 'r')
     frequencies = group['frequencies'][:] << u.Hz
     step = group['beam'].attrs['step']
