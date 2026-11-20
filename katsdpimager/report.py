@@ -244,13 +244,13 @@ class TargetStats:
     def description(self) -> str:
         return self.target.description
 
-    def _add_channel_range(self, fig: bokeh.plotting.Figure) -> None:
+    def _add_channel_range(self, fig: bokeh.plotting.figure) -> None:
         fig.extra_x_ranges = {'channel': self.channel_range}
         fig.add_layout(bokeh.models.LinearAxis(x_range_name='channel', axis_label='Channel'),
                        'above')
 
     @staticmethod
-    def _line_with_markers(fig: bokeh.plotting.Figure, *args, **kwargs) -> None:
+    def _line_with_markers(fig: bokeh.plotting.figure, *args, **kwargs) -> None:
         fig.line(*args, **kwargs)
         if 'line_color' in kwargs:
             kwargs['fill_color'] = kwargs['line_color']

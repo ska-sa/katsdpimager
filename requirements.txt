@@ -4,7 +4,7 @@
 ansicolors
 astropy
 bokeh
-cffi==1.14.1
+cffi
 contextvars==2.4; python_version<"3.7"
 h5py
 immutables==0.14; python_version<"3.7"          # via contextvars
@@ -13,7 +13,7 @@ matplotlib
 numba
 numpy
 progress==1.5
-pycparser==2.20           # via cffi
+pycparser          # via cffi
 pycuda
 python-casacore
 scipy

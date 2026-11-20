@@ -54,3 +54,31 @@ static_assert(double(MulZ<double>(1.5) * MulZ<double>(2.5)) == 3.75, "MulZ::oper
 static_assert(double(MulZ<double>(0.0) * MulZ<double>(2.5)) == 0.0, "MulZ::operator* is broken");
 static_assert(double(MulZ<double>(0.0) * MulZ<double>(std::numeric_limits<double>::infinity())) == 0.0, "MulZ::operator* is broken");
 static_assert(double(MulZ<double>(std::numeric_limits<double>::quiet_NaN()) * MulZ<double>(0.0)) == 0.0, "MulZ::operator* is broken");
+
+
+// Eigen 3.4.0 (Ubuntu 22.04) requires explicit numeric traits for custom scalar
+// types. Without this, Eigen cannot determine how to extract the real part from
+// MulZ<std::complex<float>> causing a static_cast compilation error.
+// This was not needed with Eigen 3.3.7 (Ubuntu 20.04) which was more permissive
+// about implicit conversions.
+
+#include <Eigen/Core>
+
+namespace Eigen {
+template<typename T>
+struct NumTraits<MulZ<T>> : NumTraits<T>
+{
+    typedef MulZ<typename NumTraits<T>::Real> Real;
+    typedef MulZ<typename NumTraits<T>::NonInteger> NonInteger;
+    typedef MulZ<T> Nested;
+    enum {
+        IsComplex = NumTraits<T>::IsComplex,
+        IsInteger = NumTraits<T>::IsInteger,
+        IsSigned = NumTraits<T>::IsSigned,
+        RequireInitialization = NumTraits<T>::RequireInitialization,
+        ReadCost = NumTraits<T>::ReadCost,
+        AddCost = NumTraits<T>::AddCost,
+        MulCost = NumTraits<T>::MulCost
+    };
+};
+} // namespace Eigen
