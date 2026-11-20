@@ -1,5 +1,7 @@
 """Tests for :py:mod:`katsdpimager.loader_katdal`."""
 
+import pytest
+pytest.importorskip("katdal.test.test_datasources")
 from collections import defaultdict
 import logging
 import tempfile
