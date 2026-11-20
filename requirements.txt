@@ -5,9 +5,7 @@ ansicolors
 astropy
 bokeh
 cffi
-contextvars==2.4; python_version<"3.7"
 h5py
-immutables==0.14; python_version<"3.7"          # via contextvars
 jinja2
 matplotlib
 numba
