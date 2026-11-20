@@ -1,17 +1,16 @@
 """Tests for :mod:`katsdpimager.image`"""
+import pytest
 
 import math
 
 import numpy as np
 from katsdpsigproc import accel
-from katsdpsigproc.test.test_accel import device_test
 
 from .. import image
 from .utils import RandomState
 
 
 class TestLayerToImage:
-    @device_test
     def test(self, context, command_queue):
         slices = 3
         size = 102
@@ -46,7 +45,6 @@ class TestLayerToImage:
 
 
 class TestImageToLayer:
-    @device_test
     def test(self, context, command_queue):
         # Since LayerToImage is tested from first principles, we just check
         # that ImageToLayer correctly inverts it
@@ -89,7 +87,6 @@ class TestImageToLayer:
 
 
 class TestScale:
-    @device_test
     def test(self, context, command_queue):
         shape = (4, 123, 234)
         dtype = np.float32
@@ -116,7 +113,6 @@ class TestAddImage:
             newdim = accel.Dimension(slot.shape[i], min_padded_size=size)
             slot.dimensions[i].link(newdim)
 
-    @device_test
     def test(self, context, command_queue):
         shape = (4, 123, 234)
         dtype = np.float32
@@ -141,7 +137,6 @@ class TestAddImage:
 
 
 class TestApplyPrimaryBeam:
-    @device_test
     def test(self, context, command_queue):
         shape = (4, 123, 234)
         dtype = np.float32

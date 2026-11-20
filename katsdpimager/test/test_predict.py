@@ -1,8 +1,8 @@
 """Tests for :mod:`katsdpimager.predict`"""
+import pytest
 
 import numpy as np
 import katpoint
-from katsdpsigproc.test.test_accel import device_test, force_autotune
 from astropy import units
 from nose.tools import assert_equal
 
@@ -91,13 +91,11 @@ class TestPredict:
         # differences.
         np.testing.assert_allclose(device_vis, vis, rtol=5e-4)
 
-    @device_test
-    def test_random(self, context, queue):
+    def test_random(self, context, command_queue):
         """Compare the host and device versions with random data"""
         self._test_random(context, queue, 1001)
 
-    @device_test
-    def test_few_vis(self, context, queue):
+    def test_few_vis(self, context, command_queue):
         """Test with fewer visibilities than sources.
 
         This is a regression test: the first version had a bug in this case.
@@ -132,9 +130,8 @@ class TestPredict:
         expected_flux[3] *= np.sinc(2047 / 4096 / 8) * np.sinc(0.5 / 8)
         np.testing.assert_allclose(flux, expected_flux)
 
-    @device_test
-    @force_autotune
-    def test_autotune(self, context, queue):
+    @pytest.mark.force_autotune
+    def test_autotune(self, context, command_queue):
         """Check that autotuner runs successfully"""
         predict.PredictTemplate(context, np.float32, 4)
         predict.PredictTemplate(context, np.float64, 4)

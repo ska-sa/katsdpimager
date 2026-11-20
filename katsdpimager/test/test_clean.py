@@ -1,8 +1,8 @@
 """Tests for :py:mod:`katsdpimager.clean`"""
+import pytest
 
 import numpy as np
 import scipy.signal
-from katsdpsigproc.test.test_accel import device_test
 from nose.tools import assert_equal, assert_greater_equal
 
 from .. import clean
@@ -38,7 +38,6 @@ class _TestPsfPatchBase:
 
 
 class TestPsfPatch(_TestPsfPatchBase):
-    @device_test
     def setup(self, context, command_queue):
         self.template = clean.PsfPatchTemplate(context, np.float32, 4)
         self.fn = self.template.instantiate(command_queue, (4, 206, 304))
@@ -76,7 +75,6 @@ class TestClean:
     def _zero_buffer(cls, command_queue, buf):
         buf.set(command_queue, np.zeros(buf.shape, buf.dtype))
 
-    @device_test
     def test_update_tiles(self, context, command_queue):
         image_shape = (4, 567, 456)
         border_pixels = 65
@@ -115,7 +113,6 @@ class TestClean:
                     assert_equal(pos[0] + y0, tile_pos[y, x, 0])
                     assert_equal(pos[1] + x0, tile_pos[y, x, 1])
 
-    @device_test
     def test_find_peak(self, context, command_queue):
         image_shape = (4, 256, 256)
         tile_shape = (72, 67)
@@ -142,7 +139,6 @@ class TestClean:
         np.testing.assert_array_equal(tile_pos[best], peak_pos)
         np.testing.assert_array_equal(dirty[:, peak_pos[0], peak_pos[1]], peak_pixel)
 
-    @device_test
     def test_subtract_psf(self, context, command_queue):
         loop_gain = 0.25
         image_shape = (4, 200, 344)
@@ -191,10 +187,8 @@ class TestClean:
         estimated = fn()
         np.testing.assert_allclose(estimated, std, rtol=rtol)
 
-    @device_test
     def test_noise(self, context, command_queue):
         self._test_noise(context, command_queue, 3.2, 1e-2)
 
-    @device_test
     def test_noise_zero(self, context, command_queue):
         self._test_noise(context, command_queue, 0.0, 0.0)

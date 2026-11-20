@@ -1,10 +1,10 @@
 """Tests for :mod:`katsdpimager.grid`."""
+import pytest
 
 from unittest import mock
 
 import numpy as np
 import astropy.units as units
-from katsdpsigproc.test.test_accel import device_test, force_autotune
 
 from .. import parameters, polarization, grid
 from .utils import RandomState
@@ -137,7 +137,6 @@ class BaseTest:
 
 class TestGridder(BaseTest):
     """Tests for :class:`grid.Gridder`"""
-    @device_test
     def test(self, context, command_queue):
         def callback(max_vis, vis):
             template = grid.GridderTemplate(
@@ -166,9 +165,8 @@ class TestGridder(BaseTest):
             return grid_data.get(command_queue)
         self.do_grid(callback)
 
-    @device_test
-    @force_autotune
-    def test_autotune(self, context, queue):
+    @pytest.mark.force_autotune
+    def test_autotune(self, context, command_queue):
         """Check that the autotuner runs successfully"""
         grid.GridderTemplate(context, self.image_parameters_sp.fixed, self.grid_parameters.fixed)
 
@@ -190,7 +188,6 @@ class TestGridderHost(BaseTest):
 
 class TestDegridder(BaseTest):
     """Tests for :class:`grid.Degridder`"""
-    @device_test
     def test(self, context, command_queue):
         def callback(max_vis, grid_data, weights, vis):
             n_vis = len(self.w_plane)
@@ -216,9 +213,8 @@ class TestDegridder(BaseTest):
             return fn.buffer('vis').get(command_queue)[:n_vis]
         self.do_degrid(callback)
 
-    @device_test
-    @force_autotune
-    def test_autotune(self, context, queue):
+    @pytest.mark.force_autotune
+    def test_autotune(self, context, command_queue):
         """Check that the autotuner runs successfully"""
         grid.DegridderTemplate(context, self.image_parameters_sp.fixed, self.grid_parameters.fixed)
 

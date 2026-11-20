@@ -1,8 +1,8 @@
 """Tests for :mod:`katsdpimager.weight`."""
+import pytest
 
 import numpy as np
 import katsdpsigproc.accel as accel
-from katsdpsigproc.test.test_accel import device_test
 
 from katsdpimager import weight
 
@@ -37,7 +37,6 @@ class TestGridWeights:
         host[sub_rect] = data
         buffer.set(command_queue, host)
 
-    @device_test
     def test(self, context, command_queue):
         template = weight.GridWeightsTemplate(context, 4)
         fn = template.instantiate(command_queue, self.grid_shape, 1000)
@@ -80,7 +79,6 @@ class TestDensityWeights:
         self.rms = np.sqrt(sum_d2w) / sum_dw
         self.normalized_rms = np.sqrt(sum_d2w * sum_w) / sum_dw
 
-    @device_test
     def test(self, context, command_queue):
         template = weight.DensityWeightsTemplate(context, 4)
         fn = template.instantiate(command_queue, self.grid_shape)
@@ -106,7 +104,6 @@ class TestMeanWeight:
         self.grid_shape = (4, 50, 107)
         self.data = rs.uniform(size=self.grid_shape).astype(np.float32)
 
-    @device_test
     def test(self, context, command_queue):
         template = weight.MeanWeightTemplate(context)
         fn = template.instantiate(command_queue, self.grid_shape)

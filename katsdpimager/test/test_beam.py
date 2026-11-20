@@ -1,9 +1,9 @@
 """Tests for :py:mod:`katsdpimager.beam`"""
+import pytest
 
 import numpy as np
 import scipy.signal
 from astropy.modeling import models
-from katsdpsigproc.test.test_accel import device_test, cuda_test
 
 from katsdpimager import beam
 
@@ -45,8 +45,6 @@ class TestConvolveBeam:
         actual = beam.convolve_beam(self.model, self.beam)
         np.testing.assert_allclose(self.expected, actual, rtol=1e-5, atol=1e-5)
 
-    @device_test
-    @cuda_test
     def test_device(self, context, command_queue):
         template = beam.ConvolveBeamTemplate(context, self.model.shape[1:], self.model.dtype)
         fn = template.instantiate(command_queue)

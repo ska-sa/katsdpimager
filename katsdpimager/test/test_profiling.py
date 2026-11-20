@@ -1,4 +1,5 @@
 """Tests for :py:mod:`katsdpimager.profiling`."""
+import pytest
 
 import contextvars
 import functools
@@ -12,7 +13,6 @@ from nose.tools import (
     assert_is, assert_is_none, assert_is_not
 )
 import katsdpsigproc.abc
-from katsdpsigproc.test.test_accel import device_test
 
 from ..profiling import (
     Frame, Record, DeviceRecord, Profiler, CollectProfiler, FlamegraphProfiler,
@@ -142,7 +142,6 @@ class TestProfiler:
             Record(frame1, 0.0, 3.0)
         ])
 
-    @device_test
     def test_profile_device(self, monotonic, ctx: katsdpsigproc.abc.AbstractContext,
                             queue: katsdpsigproc.abc.AbstractCommandQueue) -> None:
         with self.profiler.profile('foo', {'x': 1}):
