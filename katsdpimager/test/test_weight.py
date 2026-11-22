@@ -1,5 +1,4 @@
 """Tests for :mod:`katsdpimager.weight`."""
-import pytest
 
 import numpy as np
 import katsdpsigproc.accel as accel

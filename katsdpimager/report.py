@@ -572,7 +572,8 @@ def write_report(common_stats: CommonStats, target_stats: List[TargetStats],
 
     resources = bokeh.resources.INLINE.render()
     static = {}
-    for f in [r.name for r in importlib.resources.files('katsdpimager').joinpath('static').iterdir()]:
+    static = importlib.resources.files('katsdpimager').joinpath('static')
+    for f in [r.name for r in static.iterdir()]:
         content = importlib.resources.files('katsdpimager').joinpath('static', f).read_bytes()
         static[f] = content.decode('utf-8')
     context = {

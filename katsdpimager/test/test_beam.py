@@ -1,5 +1,4 @@
 """Tests for :py:mod:`katsdpimager.beam`"""
-import pytest
 
 import numpy as np
 import scipy.signal

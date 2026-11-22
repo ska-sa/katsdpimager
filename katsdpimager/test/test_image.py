@@ -1,5 +1,4 @@
 """Tests for :mod:`katsdpimager.image`"""
-import pytest
 
 import math
 

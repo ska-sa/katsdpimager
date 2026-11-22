@@ -1,5 +1,4 @@
 """Tests for :py:mod:`katsdpimager.profiling`."""
-import pytest
 
 import contextvars
 import functools

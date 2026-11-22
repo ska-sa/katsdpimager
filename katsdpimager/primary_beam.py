@@ -178,7 +178,8 @@ BANDS = {'L', 'UHF'}
 def meerkat_v1_beam(band: str) -> TrivialPrimaryBeam:
     if band not in BANDS:
         raise ValueError(f'band ({band}) must be one of {BANDS}')
-    filename = str(importlib.resources.files('katsdpimager').joinpath(f'models/beams/meerkat/v1/beam_{band}.h5'))
+    filename = str(importlib.resources.files('katsdpimager')
+                   .joinpath(f'models/beams/meerkat/v1/beam_{band}.h5'))
     group = h5py.File(filename, 'r')
     frequencies = group['frequencies'][:] << u.Hz
     step = group['beam'].attrs['step']
