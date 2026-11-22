@@ -2,35 +2,35 @@
 
 import pytest
 pytest.importorskip("katdal.test.test_datasources")
-from collections import defaultdict
-import logging
-import tempfile
-from unittest import mock
+from collections import defaultdict  # noqa: E402
+import logging  # noqa: E402
+import tempfile  # noqa: E402
+from unittest import mock  # noqa: E402
 
-import astropy.units as u
-from astropy.coordinates import Angle
-import astropy.table
+import astropy.units as u  # noqa: E402
+from astropy.coordinates import Angle  # noqa: E402
+import astropy.table  # noqa: E402
 
-import numpy as np
-import katpoint
-import katsdptelstate
+import numpy as np  # noqa: E402
+import katpoint  # noqa: E402
+import katsdptelstate  # noqa: E402
 
-import katsdpmodels.rfi_mask
-import katsdpmodels.band_mask
+import katsdpmodels.rfi_mask  # noqa: E402
+import katsdpmodels.band_mask  # noqa: E402
 
-import katdal
-from katdal import VisibilityDataV4
-from katdal.datasources import TelstateDataSource
-from katdal.chunkstore_npy import NpyFileChunkStore
-from katdal.test.test_datasources import make_fake_data_source
+import katdal  # noqa: E402
+from katdal import VisibilityDataV4  # noqa: E402
+from katdal.datasources import TelstateDataSource  # noqa: E402
+from katdal.chunkstore_npy import NpyFileChunkStore  # noqa: E402
+from katdal.test.test_datasources import make_fake_data_source  # noqa: E402
 
-from nose.tools import (
+from nose.tools import (  # noqa: E402
     assert_equal, assert_true, assert_false, assert_is_instance, assert_in,
     assert_logs, assert_raises
 )
 
-from ..loader_katdal import LoaderKatdal
-from .. import polarization
+from ..loader_katdal import LoaderKatdal  # noqa: E402
+from .. import polarization  # noqa: E402
 
 
 ANTENNAS = [
