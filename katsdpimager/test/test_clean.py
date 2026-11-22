@@ -38,7 +38,7 @@ class _TestPsfPatchBase:
 
 
 class TestPsfPatch(_TestPsfPatchBase):
-    def setup(self, context, command_queue):
+    def setup_method(self, context, command_queue):
         self.template = clean.PsfPatchTemplate(context, np.float32, 4)
         self.fn = self.template.instantiate(command_queue, (4, 206, 304))
         self.fn.ensure_all_bound()

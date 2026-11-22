@@ -142,10 +142,10 @@ class TestProfiler:
             Record(frame1, 0.0, 3.0)
         ])
 
-    def test_profile_device(self, monotonic, ctx: katsdpsigproc.abc.AbstractContext,
-                            queue: katsdpsigproc.abc.AbstractCommandQueue) -> None:
+    def test_profile_device(self, monotonic, context: katsdpsigproc.abc.AbstractContext,
+                            command_queue: katsdpsigproc.abc.AbstractCommandQueue) -> None:
         with self.profiler.profile('foo', {'x': 1}):
-            with self.profiler.profile_device(queue, 'bar', {'y': 2}):
+            with self.profiler.profile_device(command_queue, 'bar', {'y': 2}):
                 pass
         assert_equal(len(self.profiler.device_records), 1)
         assert_equal(
