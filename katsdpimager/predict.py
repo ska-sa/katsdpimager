@@ -61,7 +61,7 @@ def _extract_sky_model(image_parameters, grid_parameters, model, phase_centre):
     # I'm not sure that this is mathematically defensible, but the results
     # look good.
     taper = np.sinc(lmn[:, 0:2] / float(ip.image_size * grid_parameters.fixed.oversample))
-    flux *= np.product(taper, axis=1, keepdims=True)
+    flux *= np.prod(taper, axis=1, keepdims=True)
 
     # For each image polarization, find the corresponding index in IQUV
     # for advanced indexing.

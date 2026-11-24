@@ -627,7 +627,7 @@ class GridderTemplate:
                 'bin_y': bin_size,
                 'num_polarizations': num_polarizations,
                 'convolve_kernel_slice_stride': convolve_kernel.padded_shape[2],
-                'convolve_kernel_w_stride': np.product(convolve_kernel.padded_shape[1:])
+                'convolve_kernel_w_stride': np.prod(convolve_kernel.padded_shape[1:])
             }
             program = accel.build(
                 context, "imager_kernels/grid.mako", parameters,
@@ -941,7 +941,7 @@ class DegridderTemplate:
                 'wgs_z': wgs_z,
                 'num_polarizations': num_polarizations,
                 'convolve_kernel_slice_stride': convolve_kernel.padded_shape[2],
-                'convolve_kernel_w_stride': np.product(convolve_kernel.padded_shape[1:]),
+                'convolve_kernel_w_stride': np.prod(convolve_kernel.padded_shape[1:]),
                 'bin_x': bin_size,
                 'bin_y': bin_size
             }
