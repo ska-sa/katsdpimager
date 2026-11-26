@@ -3,3 +3,4 @@ coverage
 fakeredis[lua]
 nose
 pytest
+pytest-cov
