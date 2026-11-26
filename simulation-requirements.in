@@ -3,6 +3,10 @@ katpoint @ git+https://gitlab.com/ska-telescope/katpoint.git
 numpy
 pandas
 python-casacore
-rascil @ git+https://gitlab.com/ska-telescope/external/rascil@v.0.2.0
+# rascil is excluded as it has strict exact version pins (wcwidth==0.2.5,
+# typing-extensions==4.4.0, dask==2.30.0 etc.) that conflict with the
+# base image packages. Uncomment and update once rascil relaxes its
+# version constraints.
+#rascil @ git+https://gitlab.com/ska-telescope/external/rascil@v.0.2.0
 # Needed by RASCIL, but missing from its setup file in 0.2.0
-nifty-gridder @ git+https://gitlab.mpcdf.mpg.de/ift/nifty_gridder.git@f1540b9cca161e1aa32aa3cd09a592b3dac5f16b
+#nifty-gridder @ git+https://gitlab.mpcdf.mpg.de/ift/nifty_gridder.git@f1540b9cca161e1aa32aa3cd09a592b3dac5f16b

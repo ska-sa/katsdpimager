@@ -37,16 +37,10 @@ RUN make DESTDIR=/tmp/ffmpeg-install install-progs install-data
 USER kat
 
 
-ENV PATH="/home/kat/.local/bin:$PATH_PYTHON3" VIRTUAL_ENV="$VIRTUAL_ENV_PYTHON3"
 # Install dependencies
 RUN mkdir -p /tmp/install/katsdpimager
 COPY --chown=kat:kat requirements.txt /tmp/install/requirements.txt
-# Replace install_pinned.py with uv
-RUN uv pip compile /tmp/install/requirements.txt \
-        -c /home/kat/docker-base/base-requirements.lock \
-        -c /home/kat/docker-base/gpu-requirements.lock \
-        -o /tmp/install/requirements.lock && \
-    uv pip install --no-deps -r /tmp/install/requirements.lock && \
+RUN uv pip install --no-deps -r /tmp/install/requirements.txt && \
     uv pip check
 
 
@@ -54,7 +48,6 @@ RUN uv pip compile /tmp/install/requirements.txt \
 COPY --chown=kat:kat . /tmp/install/katsdpimager
 WORKDIR /tmp/install/katsdpimager
 
-# Remove setup.py clean because uv handles this automatically
 RUN uv pip install --no-deps .[ms,katdal,pipeline] && \
     uv pip check
 
